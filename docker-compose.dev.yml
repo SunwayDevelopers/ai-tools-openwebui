@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: open-webui-postgres
+    restart: unless-stopped
+    environment:
+      - 'POSTGRES_DB=${POSTGRES_DB:-openwebui}'
+      - 'POSTGRES_USER=${POSTGRES_USER:-openwebui}'
+      - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: open-webui-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  tika:
+    image: apache/tika:latest-full
+    container_name: open-webui-tika
+    restart: unless-stopped
+    ports:
+      - '9998:9998'
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev.backend
+    container_name: open-webui-backend
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app/backend
+      - /app/backend/open_webui/static
+      - ./CHANGELOG.md:/app/CHANGELOG.md:ro
+    ports:
+      - '8080:8080'
+    environment:
+      - 'DATABASE_URL=postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}'
+      - 'VECTOR_DB=qdrant'
+      - 'QDRANT_URI=http://qdrant:6333'
+      - 'OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}'
+      - 'OPENAI_API_KEY=${OPENAI_API_KEY}'
+      - 'DEFAULT_MODELS=Qwen/Qwen3.6-35B-A3B'
+      - 'CORS_ALLOW_ORIGIN=http://localhost:5173'
+      - 'AIOHTTP_CLIENT_SESSION_SSL=false'
+      - 'REQUESTS_VERIFY=false'
+      - 'CONTENT_EXTRACTION_ENGINE=tika'
+      - 'TIKA_SERVER_URL=http://tika:9998'
+      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-dev-secret-key-change-in-prod}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      tika:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev.frontend
+    container_name: open-webui-frontend
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/static/pyodide
+    ports:
+      - '5173:5173'
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data: {}
+  qdrant_data: {}

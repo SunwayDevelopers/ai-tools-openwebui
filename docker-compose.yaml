@@ -16,13 +16,20 @@ services:
     container_name: open-webui
     volumes:
       - open-webui:/app/backend/data
-    depends_on:
-      - ollama
+    # depends_on:
+    #   - ollama
     ports:
       - ${OPEN_WEBUI_PORT-3000}:8080
     environment:
-      - 'OLLAMA_BASE_URL=http://ollama:11434'
+      # - 'OLLAMA_BASE_URL=http://ollama:11434'
       - 'WEBUI_SECRET_KEY='
+      - 'OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}'
+      - 'OPENAI_API_KEY=${OPENAI_API_KEY}'
+      - 'DEFAULT_MODELS=Qwen/Qwen3.6-35B-A3B'
+      # - 'HTTPX_VERIFY=False'
+      - 'AIOHTTP_CLIENT_SESSION_SSL=false'
+      - 'REQUESTS_VERIFY=false'
+
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
