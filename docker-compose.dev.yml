@@ -40,6 +40,7 @@ services:
       - ./backend:/app/backend
       - /app/backend/open_webui/static
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro
+      - ./static:/app/static:ro
     ports:
       - '8080:8080'
     environment:
@@ -55,6 +56,7 @@ services:
       - 'CONTENT_EXTRACTION_ENGINE=tika'
       - 'TIKA_SERVER_URL=http://tika:9998'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-dev-secret-key-change-in-prod}'
+      - 'STATIC_DIR=/app/static'
     depends_on:
       postgres:
         condition: service_healthy
