@@ -9,6 +9,8 @@ services:
       - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER']
       interval: 5s
@@ -22,6 +24,8 @@ services:
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
+    ports:
+      - '6333:6333'
 
   tika:
     image: apache/tika:latest-full
@@ -29,55 +33,6 @@ services:
     restart: unless-stopped
     ports:
       - '9998:9998'
-
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev.backend
-    container_name: open-webui-backend
-    restart: unless-stopped
-    volumes:
-      - ./backend:/app/backend
-      - /app/backend/open_webui/static
-      - ./CHANGELOG.md:/app/CHANGELOG.md:ro
-      - ./static:/app/static:ro
-    ports:
-      - '8080:8080'
-    environment:
-      - 'DATABASE_URL=postgresql://${POSTGRES_USER:-openwebui}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openwebui}'
-      - 'VECTOR_DB=qdrant'
-      - 'QDRANT_URI=http://qdrant:6333'
-      - 'OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}'
-      - 'OPENAI_API_KEY=${OPENAI_API_KEY}'
-      - 'DEFAULT_MODELS=Qwen/Qwen3.6-35B-A3B'
-      - 'CORS_ALLOW_ORIGIN=http://localhost:5173'
-      - 'AIOHTTP_CLIENT_SESSION_SSL=false'
-      - 'REQUESTS_VERIFY=false'
-      - 'CONTENT_EXTRACTION_ENGINE=tika'
-      - 'TIKA_SERVER_URL=http://tika:9998'
-      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-dev-secret-key-change-in-prod}'
-      - 'STATIC_DIR=/app/static'
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      tika:
-        condition: service_started
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev.frontend
-    container_name: open-webui-frontend
-    volumes:
-      - .:/app
-      - /app/node_modules
-      - /app/static/pyodide
-    ports:
-      - '5173:5173'
-    depends_on:
-      - backend
 
 volumes:
   postgres_data: {}
