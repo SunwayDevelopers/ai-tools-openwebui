@@ -197,15 +197,31 @@ async def generate_title(request: Request, form_data: dict, user=Depends(get_ver
 
     max_tokens = models[task_model_id].get('info', {}).get('params', {}).get('max_tokens', 1000)
 
+    is_ollama = models[task_model_id].get('owned_by') == 'ollama'
     payload = {
         'model': task_model_id,
-        'messages': [{'role': 'user', 'content': content}],
+        'messages': [
+            {
+                'role': 'system',
+                'content': (
+                    'You are a title generation assistant. '
+                    'You must respond with ONLY a valid JSON object and nothing else. '
+                    'Do not answer questions. Do not continue any conversation. '
+                    'Output format: {"title": "<GENERATED_TITLE>"} '
+                    '— replace <GENERATED_TITLE> with an actual 3-5 word title summarizing the chat; '
+                    'never output the literal placeholder.'
+                ),
+            },
+            {'role': 'user', 'content': content},
+        ],
         'stream': False,
         **(
-            {'max_tokens': max_tokens}
-            if models[task_model_id].get('owned_by') == 'ollama'
+            {'max_tokens': max_tokens, 'format': 'json'}
+            if is_ollama
             else {
                 'max_completion_tokens': max_tokens,
+                'response_format': {'type': 'json_object'},
+                'chat_template_kwargs': {'enable_thinking': False},
             }
         ),
         'metadata': {
@@ -223,7 +239,9 @@ async def generate_title(request: Request, form_data: dict, user=Depends(get_ver
         raise e
 
     try:
-        return await generate_chat_completion(request, form_data=payload, user=user)
+        # bypass_system_prompt prevents the model's configured chatbot system prompt
+        # from overriding the title-generation system message above
+        return await generate_chat_completion(request, form_data=payload, user=user, bypass_system_prompt=True)
     except Exception as e:
         log.error('Exception occurred', exc_info=True)
         return JSONResponse(
@@ -344,8 +362,24 @@ async def generate_chat_tags(request: Request, form_data: dict, user=Depends(get
 
     payload = {
         'model': task_model_id,
-        'messages': [{'role': 'user', 'content': content}],
+        'messages': [
+            {
+                'role': 'system',
+                'content': (
+                    'You are a tag generation assistant. '
+                    'You must respond with ONLY a valid JSON object and nothing else. '
+                    'Do not answer questions. Do not continue any conversation. '
+                    'Output format: {"tags": ["tag1", "tag2", ...]}'
+                ),
+            },
+            {'role': 'user', 'content': content},
+        ],
         'stream': False,
+        **(
+            {'format': 'json'}
+            if models[task_model_id].get('owned_by') == 'ollama'
+            else {'response_format': {'type': 'json_object'}}
+        ),
         'metadata': {
             **(request.state.metadata if hasattr(request.state, 'metadata') else {}),
             'task': str(TASKS.TAGS_GENERATION),
@@ -361,7 +395,7 @@ async def generate_chat_tags(request: Request, form_data: dict, user=Depends(get
         raise e
 
     try:
-        return await generate_chat_completion(request, form_data=payload, user=user)
+        return await generate_chat_completion(request, form_data=payload, user=user, bypass_system_prompt=True)
     except Exception as e:
         log.error(f'Error generating chat completion: {e}')
         return JSONResponse(

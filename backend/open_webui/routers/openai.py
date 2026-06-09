@@ -1202,6 +1202,11 @@ async def generate_chat_completion(
                     part.get('text', '') for part in message['content'] if part.get('type') in ('input_text', 'text')
                 )
 
+    # Request usage stats in the final streaming chunk so token counts are available for logging/analytics
+    if not is_responses and payload.get('stream'):
+        payload.setdefault('stream_options', {})
+        payload['stream_options']['include_usage'] = True
+
     payload = json.dumps(payload)
 
     r = None

@@ -20,6 +20,13 @@ export default defineConfig({
 		APP_VERSION: JSON.stringify(process.env.npm_package_version),
 		APP_BUILD_HASH: JSON.stringify(process.env.APP_BUILD_HASH || 'dev-build')
 	},
+	server: {
+		watch: {
+			usePolling: true,
+			interval: 1000,
+			ignored: ['**/.claude/**', '**/node_modules/**', '**/.git/**']
+		}
+	},
 	build: {
 		sourcemap: true
 	},
