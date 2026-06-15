@@ -3,7 +3,7 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / tika  -> Docker (detached, volumes persist between runs)
+#   postgres / qdrant / tika / searxng / minio / valkey -> Docker (detached, volumes persist)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -13,7 +13,7 @@
 # Usage:
 #   .\dev.ps1            start (auto-setup on first run), then runs both servers
 #   .\dev.ps1 -Rebuild   force reinstall pip + npm deps, then start
-#   .\dev.ps1 -Stop      stop Docker infra (postgres, qdrant, tika)
+#   .\dev.ps1 -Stop      stop all Docker infra
 
 [CmdletBinding()]
 param(
@@ -40,8 +40,8 @@ function Import-DotEnv([string]$path) {
 # -- stop ----------------------------------------------------------------------
 
 if ($Stop) {
-    Write-Host "Stopping Docker infra (postgres, qdrant, tika)..." -ForegroundColor Yellow
-    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant tika
+    Write-Host "Stopping Docker infra (postgres, qdrant, tika, searxng, minio, valkey)..." -ForegroundColor Yellow
+    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant tika searxng minio valkey
     exit $LASTEXITCODE
 }
 
@@ -116,8 +116,8 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, tika)..." -ForegroundColor Yellow
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant tika
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, tika, searxng, minio, valkey)..." -ForegroundColor Yellow
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant tika searxng minio valkey
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -134,8 +134,22 @@ Write-Host "      Postgres is healthy." -ForegroundColor Green
 
 $env:CONTENT_EXTRACTION_ENGINE     = 'tika'
 $env:TIKA_SERVER_URL               = 'http://localhost:9998'
+# Web search via the searxng container (docker-compose.dev.yml). These only
+# seed the DB on first boot; after that, Admin Settings -> Web Search wins.
+$env:ENABLE_WEB_SEARCH             = 'true'
+$env:WEB_SEARCH_ENGINE             = 'searxng'
+$env:SEARXNG_QUERY_URL             = 'http://localhost:8888/search?q=<query>'
 $env:AIOHTTP_CLIENT_SESSION_SSL    = 'false'
 $env:REQUESTS_VERIFY               = 'false'
+# Uncomment if corporate TLS interception breaks cert verification when connecting
+# external MCP/OpenAPI tool servers (e.g. staging Sdeck /mcp). Prod default stays on.
+# $env:AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL = 'false'
+# RAG embedding: BAAI/bge-m3 (1024-dim, multilingual; ~2.3GB HF download on first
+# use). Seeds the DB on first boot only; after that, Admin Settings -> Documents
+# wins. Switching from MiniLM (384-dim) requires resetting the vector DB
+# (POST /api/v1/retrieval/reset/db as admin) and re-adding knowledge files.
+$env:RAG_EMBEDDING_MODEL           = 'BAAI/bge-m3'
+$env:RAG_EMBEDDING_BATCH_SIZE      = '8'
 $env:STATIC_DIR                    = "$root\static"
 # Force line-buffered stdout so uvicorn / Python logs appear in real time
 # (without this, log lines sit in the pipe buffer until the browser hits the backend).
