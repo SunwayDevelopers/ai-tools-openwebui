@@ -3057,6 +3057,21 @@ async def get_system_oauth_token(request, user):
     return oauth_token
 
 
+def _strip_reasoning_tags(text: str) -> str:
+    # Non-streaming task responses (title, tags, follow-ups) are not passed through
+    # the streaming tag_output_handler, so thinking blocks must be stripped here
+    # before JSON extraction — otherwise find('{')/rfind('}') slices into the think
+    # content and json.loads fails silently.
+    #
+    # Some backends (e.g. HPE PCAI) convert <think> to <details type="reasoning">
+    # for non-streaming responses; strip those first.
+    text = re.sub(r'<details\b[^>]*>.*?</details>', '', text, flags=re.S | re.I)
+    for start_tag, end_tag in DEFAULT_REASONING_TAGS:
+        pattern = re.escape(start_tag) + r'.*?' + re.escape(end_tag)
+        text = re.sub(pattern, '', text, flags=re.S)
+    return text.strip()
+
+
 async def background_tasks_handler(ctx):
     request = ctx['request']
     form_data = ctx['form_data']
@@ -3140,6 +3155,7 @@ async def background_tasks_handler(ctx):
                     else:
                         follow_ups_string = ''
 
+                    follow_ups_string = _strip_reasoning_tags(follow_ups_string)
                     follow_ups_string = follow_ups_string[
                         follow_ups_string.find('{') : follow_ups_string.rfind('}') + 1
                     ]
@@ -3179,6 +3195,7 @@ async def background_tasks_handler(ctx):
 
                     title = None
                     if tasks[TASKS.TITLE_GENERATION]:
+                        log.info('TITLE GENERATION | chat_id=%s model=%s', metadata.get('chat_id'), message.get('model'))
                         res = await generate_title(
                             request,
                             {
@@ -3188,6 +3205,8 @@ async def background_tasks_handler(ctx):
                             },
                             user,
                         )
+
+                        log.info('TITLE GENERATION | res_type=%s choices=%s', type(res).__name__, len(res.get('choices', [])) if isinstance(res, dict) else 'n/a')
 
                         if res and isinstance(res, dict):
                             if len(res.get('choices', [])) == 1:
@@ -3203,15 +3222,50 @@ async def background_tasks_handler(ctx):
                             else:
                                 title_string = ''
 
-                            title_string = title_string[title_string.find('{') : title_string.rfind('}') + 1]
+                            log.info('TITLE GENERATION | raw_content=%r', title_string[:200])
+                            title_string = _strip_reasoning_tags(title_string)
+                            log.info('TITLE GENERATION | stripped=%r', title_string[:200])
 
-                            try:
-                                title = json.loads(title_string).get('title', user_message)
-                            except Exception as e:
-                                title = ''
+                            # The model sometimes wraps the JSON in prose, or emits a placeholder JSON
+                            # ({"title": "<title>"}) plus additional braces elsewhere. A naive
+                            # find('{')..rfind('}') slice then captures too much and json.loads fails.
+                            # Instead: find every non-nested {...} candidate, try each, keep the first
+                            # whose "title" is real (not a prompt-template placeholder).
+                            placeholder_titles = {
+                                'your concise title here',
+                                '<generated_title>',
+                                '<title>',
+                                '<placeholder>',
+                                'title',
+                                'chat',
+                                'untitled',
+                                '...',
+                                '…',
+                                '. . .',
+                                '..',
+                            }
+                            title = ''
+                            for candidate in re.findall(r'\{[^{}]+\}', title_string):
+                                try:
+                                    candidate_title = json.loads(candidate).get('title', '')
+                                except Exception:
+                                    continue
+                                if not candidate_title:
+                                    continue
+                                normalized = candidate_title.strip().strip('"\'').lower()
+                                # Reject placeholders, prompt-template artifacts, and trivially short
+                                # outputs (e.g. ellipsis, single chars) the model uses as escape hatches.
+                                if normalized in placeholder_titles or len(normalized) < 3:
+                                    log.info('TITLE GENERATION | rejected_candidate=%r', candidate_title)
+                                    continue
+                                title = candidate_title
+                                break
 
                             if not title:
+                                log.info('TITLE GENERATION | no_valid_title_in_response')
                                 title = messages[0].get('content', user_message)
+
+                            log.info('TITLE GENERATION | final_title=%r', title)
 
                             await Chats.update_chat_title_by_id(metadata['chat_id'], title)
 
@@ -3255,6 +3309,7 @@ async def background_tasks_handler(ctx):
                         else:
                             tags_string = ''
 
+                        tags_string = _strip_reasoning_tags(tags_string)
                         tags_string = tags_string[tags_string.find('{') : tags_string.rfind('}') + 1]
 
                         try:
@@ -3517,6 +3572,18 @@ async def non_streaming_chat_response_handler(response, ctx):
 
                     # Save message in the database
                     usage = normalize_usage(response_data.get('usage', {}) or {})
+
+                    if usage:
+                        _task = metadata.get('task', 'chat')
+                        _model = ctx.get('form_data', {}).get('model', '') or metadata.get('model_id', '')
+                        _user = getattr(user, 'email', getattr(user, 'id', '?'))
+                        log.info(
+                            'TOKEN USAGE | model=%s task=%s user=%s | in=%s out=%s total=%s',
+                            _model, _task, _user,
+                            usage.get('input_tokens', '?'),
+                            usage.get('output_tokens', '?'),
+                            usage.get('total_tokens', '?'),
+                        )
 
                     if not metadata.get('chat_id', '').startswith('channel:'):
                         await Chats.upsert_message_to_chat_by_id_and_message_id(
@@ -5144,6 +5211,17 @@ async def streaming_chat_response_handler(response, ctx):
                             metadata['message_id'],
                             {'done': True},
                         )
+
+                if usage:
+                    _task = metadata.get('task', 'chat')
+                    _user = getattr(user, 'email', getattr(user, 'id', '?'))
+                    log.info(
+                        'TOKEN USAGE | model=%s task=%s user=%s | in=%s out=%s total=%s',
+                        model_id, _task, _user,
+                        usage.get('input_tokens', '?'),
+                        usage.get('output_tokens', '?'),
+                        usage.get('total_tokens', '?'),
+                    )
 
                 # Send a webhook notification if the user is not active
                 if request.app.state.config.ENABLE_USER_WEBHOOKS and not await Users.is_user_active(user.id):

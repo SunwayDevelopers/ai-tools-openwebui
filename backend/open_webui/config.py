@@ -154,49 +154,54 @@ CONFIG_DATA = _initialize_config(
 
 STATIC_DIR = Path(os.getenv('STATIC_DIR', OPEN_WEBUI_DIR / 'static')).resolve()
 
-try:
-    if STATIC_DIR.exists():
-        for item in STATIC_DIR.iterdir():
-            if item.is_file() or item.is_symlink():
-                try:
-                    item.unlink()
-                except Exception as e:
-                    pass
-except Exception as e:
-    pass
+# Skip the wipe-and-resync entirely if there is no frontend build to sync from.
+# In dev mode FRONTEND_BUILD_DIR doesn't exist (Vite serves directly), so without
+# this guard the loop would delete every top-level file in STATIC_DIR and have
+# nothing to copy back, destroying favicon.png, robots.txt, manifest.json, etc.
+if (FRONTEND_BUILD_DIR / 'static').exists():
+    try:
+        if STATIC_DIR.exists():
+            for item in STATIC_DIR.iterdir():
+                if item.is_file() or item.is_symlink():
+                    try:
+                        item.unlink()
+                    except Exception as e:
+                        pass
+    except Exception as e:
+        pass
 
-for file_path in (FRONTEND_BUILD_DIR / 'static').glob('**/*'):
-    if file_path.is_file():
-        target_path = STATIC_DIR / file_path.relative_to((FRONTEND_BUILD_DIR / 'static'))
-        target_path.parent.mkdir(parents=True, exist_ok=True)
+    for file_path in (FRONTEND_BUILD_DIR / 'static').glob('**/*'):
+        if file_path.is_file():
+            target_path = STATIC_DIR / file_path.relative_to((FRONTEND_BUILD_DIR / 'static'))
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copyfile(file_path, target_path)
+            except Exception as e:
+                logging.error(f'An error occurred: {e}')
+
+    frontend_favicon = FRONTEND_BUILD_DIR / 'static' / 'favicon.png'
+
+    if frontend_favicon.exists():
         try:
-            shutil.copyfile(file_path, target_path)
+            shutil.copyfile(frontend_favicon, STATIC_DIR / 'favicon.png')
         except Exception as e:
             logging.error(f'An error occurred: {e}')
 
-frontend_favicon = FRONTEND_BUILD_DIR / 'static' / 'favicon.png'
+    frontend_splash = FRONTEND_BUILD_DIR / 'static' / 'splash.png'
 
-if frontend_favicon.exists():
-    try:
-        shutil.copyfile(frontend_favicon, STATIC_DIR / 'favicon.png')
-    except Exception as e:
-        logging.error(f'An error occurred: {e}')
+    if frontend_splash.exists():
+        try:
+            shutil.copyfile(frontend_splash, STATIC_DIR / 'splash.png')
+        except Exception as e:
+            logging.error(f'An error occurred: {e}')
 
-frontend_splash = FRONTEND_BUILD_DIR / 'static' / 'splash.png'
+    frontend_loader = FRONTEND_BUILD_DIR / 'static' / 'loader.js'
 
-if frontend_splash.exists():
-    try:
-        shutil.copyfile(frontend_splash, STATIC_DIR / 'splash.png')
-    except Exception as e:
-        logging.error(f'An error occurred: {e}')
-
-frontend_loader = FRONTEND_BUILD_DIR / 'static' / 'loader.js'
-
-if frontend_loader.exists():
-    try:
-        shutil.copyfile(frontend_loader, STATIC_DIR / 'loader.js')
-    except Exception as e:
-        logging.error(f'An error occurred: {e}')
+    if frontend_loader.exists():
+        try:
+            shutil.copyfile(frontend_loader, STATIC_DIR / 'loader.js')
+        except Exception as e:
+            logging.error(f'An error occurred: {e}')
 
 
 # --- Storage Provider ---
@@ -3115,7 +3120,7 @@ Generate a concise, 3-5 word title with an emoji summarizing the chat history.
 - The output must be a single, raw JSON object, without any markdown code fences or other encapsulating text.
 - Ensure no conversational text, affirmations, or explanations precede or follow the raw JSON output, as this will cause direct parsing failure.
 ### Output:
-JSON format: { "title": "your concise title here" }
+JSON format: { "title": "<GENERATED_TITLE>" }  (replace <GENERATED_TITLE> with an actual 3-5 word title; never output the literal placeholder)
 ### Examples:
 - { "title": "📉 Stock Market Trends" },
 - { "title": "🍪 Perfect Chocolate Chip Recipe" },
