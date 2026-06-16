@@ -30,9 +30,144 @@
 	font-display: swap;
 }
 
+/*
+ * Sunway SChat.ai brand typeface — SunwaySans.
+ * Source: @sunway/brand-assets v0.2.0 (github:SunwayDevelopers/sunway-brand-assets).
+ * woff2 files vendored to /static/assets/fonts/. No SemiBold (600) ships; 600 falls back to 700.
+ */
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-light.woff2') format('woff2');
+	font-weight: 300;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-lightitalic.woff2') format('woff2');
+	font-weight: 300;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-regular.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-italic.woff2') format('woff2');
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-medium.woff2') format('woff2');
+	font-weight: 500;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-mediumitalic.woff2') format('woff2');
+	font-weight: 500;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-bold.woff2') format('woff2');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-bolditalic.woff2') format('woff2');
+	font-weight: 700;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-extrabold.woff2') format('woff2');
+	font-weight: 800;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-extrabolditalic.woff2') format('woff2');
+	font-weight: 800;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-black.woff2') format('woff2');
+	font-weight: 900;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'SunwaySans';
+	src: url('/assets/fonts/sunwaysans-blackitalic.woff2') format('woff2');
+	font-weight: 900;
+	font-style: italic;
+	font-display: swap;
+}
+
 /* --app-text-scale is updated via the UI Scale slider (Interface.svelte) */
 :root {
 	--app-text-scale: 1;
+
+	/* Sunway SChat.ai design tokens (light mode). Source: sunway-ai-platform style guide. */
+	--brand-primary: #e33a3d;
+	--brand-primary-hover: #cc2f32;
+	--brand-soft: #ffe0e4;
+	--brand-success: #16a163;
+	--brand-warning: #d97706;
+	--brand-error: #dc2626;
+	--brand-info: #2563eb;
+
+	--brand-gradient-bg: linear-gradient(
+		160deg,
+		#ffe0e4 0%,
+		#f3e8ff 25%,
+		#e8f0fe 50%,
+		#fbfaf8 75%,
+		#fbfaf8 100%
+	);
+	--brand-glass-bg: rgba(255, 255, 255, 0.55);
+	--brand-glass-border: rgba(255, 255, 255, 0.7);
+	--brand-glass-blur: 16px;
+	--brand-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+	--brand-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+	--brand-glow-primary: 0 0 14px rgba(227, 58, 61, 0.15), 0 0 5px rgba(227, 58, 61, 0.08);
+}
+
+/* Dark mode: brand-consistent variant - dark surfaces + a subtle warm/cool tint and red accent,
+   instead of forcing translucent glass onto black (which reads as muddy). */
+.dark {
+	--brand-gradient-bg: linear-gradient(
+		160deg,
+		#1b1416 0%,
+		#16131a 25%,
+		#121821 50%,
+		#0e0e0e 75%,
+		#0a0a0a 100%
+	);
+	--brand-glass-bg: rgba(22, 22, 24, 0.55);
+	--brand-glass-border: rgba(255, 255, 255, 0.08);
+}
+
+/* App-shell background: the signature Sunway gradient (replaces the flat white / gray-900 shell). */
+.app-shell-bg {
+	background: var(--brand-gradient-bg);
+	background-attachment: fixed;
 }
 
 html {
@@ -119,7 +254,7 @@ textarea::placeholder {
 }
 
 .font-primary {
-	font-family: 'Archivo', 'Vazirmatn', sans-serif;
+	font-family: 'SunwaySans', 'Archivo', 'Vazirmatn', sans-serif;
 }
 
 .drag-region {

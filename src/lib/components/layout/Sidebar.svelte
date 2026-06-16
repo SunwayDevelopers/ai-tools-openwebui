@@ -1007,7 +1007,7 @@
 				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-3"
 			>
 				<a
-					class="flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition no-drag-region"
+					class="flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition no-drag-region hidden"
 					href="/"
 					draggable="false"
 					on:click={newChatHandler}
@@ -1024,7 +1024,7 @@
 						id="sidebar-webui-name"
 						class=" self-center font-medium text-gray-850 dark:text-white font-primary"
 					>
-						{$WEBUI_NAME}
+						<img src="{WEBUI_BASE_URL}/static/schat-wordmark.svg" class="h-6 w-auto dark:hidden" alt="{$WEBUI_NAME}" /><img src="{WEBUI_BASE_URL}/static/schat-wordmark-dark.svg" class="h-6 w-auto hidden dark:block" alt="{$WEBUI_NAME}" />
 					</div>
 				</a>
 				<Tooltip
