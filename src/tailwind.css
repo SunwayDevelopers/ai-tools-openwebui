@@ -15,6 +15,20 @@
 	--color-gray-850: oklch(0.27 0 0);
 	--color-gray-900: oklch(0.2 0 0);
 	--color-gray-950: oklch(0.16 0 0);
+
+	/* Sunway SChat.ai brand accent — remaps OpenWebUI's default blue accent to brand red (#E33A3D).
+	   Centralized here so the whole app (buttons, links, focus rings, checkboxes) picks up brand red. */
+	--color-blue-50: #fdecec;
+	--color-blue-100: #fbd5d6;
+	--color-blue-200: #f6abad;
+	--color-blue-300: #f08183;
+	--color-blue-400: #ec5a5c;
+	--color-blue-500: #e33a3d;
+	--color-blue-600: #cc2f32;
+	--color-blue-700: #a82629;
+	--color-blue-800: #841e20;
+	--color-blue-900: #6b1819;
+	--color-blue-950: #3a0c0d;
 }
 
 /*
@@ -39,8 +53,8 @@
 	html,
 	pre {
 		font-family:
-			-apple-system, BlinkMacSystemFont, 'Inter', 'Vazirmatn', ui-sans-serif, system-ui, 'Segoe UI',
-			Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif, 'Helvetica Neue', Arial,
+			'SunwaySans', -apple-system, BlinkMacSystemFont, 'Inter', 'Vazirmatn', ui-sans-serif, system-ui,
+			'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif, 'Helvetica Neue', Arial,
 			'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
 	}
 

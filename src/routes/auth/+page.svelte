@@ -151,10 +151,10 @@
 
 			if (isDarkMode) {
 				const darkImage = new Image();
-				darkImage.src = `${WEBUI_BASE_URL}/static/favicon-dark.png`;
+				darkImage.src = `${WEBUI_BASE_URL}/static/schat-wordmark-dark.svg`;
 
 				darkImage.onload = () => {
-					logo.src = `${WEBUI_BASE_URL}/static/favicon-dark.png`;
+					logo.src = `${WEBUI_BASE_URL}/static/schat-wordmark-dark.svg`;
 					logo.style.filter = ''; // Ensure no inversion is applied if favicon-dark.png exists
 				};
 
@@ -262,8 +262,8 @@
 									<img
 										id="logo"
 										crossorigin="anonymous"
-										src="{WEBUI_BASE_URL}/static/favicon.png"
-										class="size-24 rounded-full"
+										src="{WEBUI_BASE_URL}/static/schat-wordmark.svg"
+										class="h-12 w-auto"
 										alt="{$WEBUI_NAME} logo"
 									/>
 								</div>
@@ -614,8 +614,8 @@
 						<img
 							id="logo"
 							crossorigin="anonymous"
-							src="{WEBUI_BASE_URL}/static/favicon.png"
-							class=" w-6 rounded-full"
+							src="{WEBUI_BASE_URL}/static/schat-wordmark.svg"
+							class="h-7 w-auto"
 							alt=""
 						/>
 					</div>
