@@ -569,6 +569,12 @@ except (ValueError, TypeError):
 # unarchiving an already-archived chat is still allowed so any can be recovered.
 ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'True').lower() == 'true'
 
+# Voice features (STT mic, TTS read-aloud, Call mode). Default on. When false the
+# voice UI is hidden for EVERYONE incl. admins (the per-user chat.stt/tts/call
+# permissions only hide it for non-admins). Code is kept — reversible by flipping
+# this back to true.
+ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'True').lower() == 'true'
+
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA
 # which is aggressively blocked by Cloudflare, Wikipedia, and similar services.

@@ -757,6 +757,7 @@
 								<div class=" self-center">{$i18n.t('Personalization')}</div>
 							</button>
 						{:else if tabId === 'audio'}
+							{#if $config?.enable_voice ?? true}
 							<button
 								role="tab"
 								aria-controls="tab-audio"
@@ -780,6 +781,7 @@
 								</div>
 								<div class=" self-center">{$i18n.t('Audio')}</div>
 							</button>
+							{/if}
 						{:else if tabId === 'data_controls'}
 							<button
 								role="tab"
@@ -918,7 +920,7 @@
 							toast.success($i18n.t('Settings saved successfully!'));
 						}}
 					/>
-				{:else if selectedTab === 'audio'}
+				{:else if selectedTab === 'audio' && ($config?.enable_voice ?? true)}
 					<Audio
 						{saveSettings}
 						on:save={() => {
