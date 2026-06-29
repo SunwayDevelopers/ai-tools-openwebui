@@ -512,6 +512,63 @@ AIOHTTP_CLIENT_SESSION_SSL = os.getenv('AIOHTTP_CLIENT_SESSION_SSL', 'True').low
 # When False (default), outbound HTTP requests do not follow 3xx redirects.
 AIOHTTP_CLIENT_ALLOW_REDIRECTS = os.getenv('AIOHTTP_CLIENT_ALLOW_REDIRECTS', 'False').lower() == 'true'
 
+# Content-extraction (Docling/Tika) HTTP request timeout in seconds. Bounds how long
+# a single extract call may block a worker thread, so a hung/slow extractor server
+# can't pin it forever. Kept above DOCLING_SERVE_MAX_SYNC_WAIT (600) so the docling
+# server's own cap fires first and returns a clean error.
+try:
+    CONTENT_EXTRACTION_REQUEST_TIMEOUT = int(os.getenv('CONTENT_EXTRACTION_REQUEST_TIMEOUT', '620'))
+except (ValueError, TypeError):
+    CONTENT_EXTRACTION_REQUEST_TIMEOUT = 620
+
+# Max concurrent document extractions per process. Bounds how many uploads can be
+# parsed/OCR'd at once so an upload burst can't exhaust the default thread pool.
+try:
+    CONTENT_EXTRACTION_MAX_CONCURRENCY = int(os.getenv('CONTENT_EXTRACTION_MAX_CONCURRENCY', '4'))
+except (ValueError, TypeError):
+    CONTENT_EXTRACTION_MAX_CONCURRENCY = 4
+
+# PDF fast-path: when the engine is Docling and this is enabled, born-digital PDFs
+# are extracted with pypdf (milliseconds) instead of Docling, which only runs for
+# scanned / low-text PDFs that actually need OCR. Default off -- enabling trades
+# Docling's richer layout/table structure for speed on born-digital PDFs.
+RAG_PDF_FAST_PATH = os.getenv('RAG_PDF_FAST_PATH', 'False').lower() == 'true'
+try:
+    RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = int(os.getenv('RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE', '100'))
+except (ValueError, TypeError):
+    RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = 100
+
+
+# Retention: max chats a non-admin user may keep, enforced as a hard cap on chat
+# creation ("delete one to create a new one"). 0 disables the cap. The 1-month
+# rolling expiry sweep is a separate mechanism.
+try:
+    MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '0'))
+except (ValueError, TypeError):
+    MAX_CHATS_PER_USER = 0
+
+# Retention sweep: rolling deletion of chats (and the files/vectors they own
+# exclusively) whose last activity is older than CHAT_RETENTION_DAYS. 0 disables
+# the sweep. INTERVAL throttles how often it runs (cluster-wide, via a Redis
+# lock); BATCH caps chats purged per run so Qdrant/storage aren't hammered.
+try:
+    CHAT_RETENTION_DAYS = int(os.getenv('CHAT_RETENTION_DAYS', '0'))
+except (ValueError, TypeError):
+    CHAT_RETENTION_DAYS = 0
+try:
+    RETENTION_SWEEP_INTERVAL = int(os.getenv('RETENTION_SWEEP_INTERVAL', '3600'))
+except (ValueError, TypeError):
+    RETENTION_SWEEP_INTERVAL = 3600
+try:
+    RETENTION_SWEEP_BATCH = int(os.getenv('RETENTION_SWEEP_BATCH', '100'))
+except (ValueError, TypeError):
+    RETENTION_SWEEP_BATCH = 100
+
+# Chat archive feature. Default on (upstream behavior). When false, users cannot
+# archive chats — the archive endpoints reject it and the UI hides the controls;
+# unarchiving an already-archived chat is still allowed so any can be recovered.
+ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'True').lower() == 'true'
+
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA
 # which is aggressively blocked by Cloudflare, Wikipedia, and similar services.

@@ -1463,6 +1463,14 @@ class ChatTable:
         except Exception:
             return None
 
+    async def count_chats_by_user_id(self, user_id: str, db: AsyncSession | None = None) -> int:
+        # Counts ALL of a user's chats (incl. pinned AND archived) for the per-user
+        # cap — no exceptions, per policy. (Other count_* methods filter archived
+        # out for their own list views; the cap deliberately does not.)
+        async with get_async_db_context(db) as session:
+            result = await session.execute(select(func.count(Chat.id)).filter_by(user_id=user_id))
+            return result.scalar() or 0
+
     async def count_chats_by_tag_name_and_user_id(
         self, tag_name: str, user_id: str, db: AsyncSession | None = None
     ) -> int:
@@ -1713,6 +1721,53 @@ class ChatTable:
             )
             all_chat_files = result.scalars().all()
             return [ChatFileModel.model_validate(chat_file) for chat_file in all_chat_files]
+
+    async def get_chat_files_by_chat_id(
+        self, chat_id: str, db: AsyncSession | None = None
+    ) -> list[ChatFileModel]:
+        async with get_async_db_context(db) as session:
+            result = await session.execute(
+                select(ChatFile).filter_by(chat_id=chat_id).order_by(ChatFile.created_at.asc())
+            )
+            return [ChatFileModel.model_validate(cf) for cf in result.scalars().all()]
+
+    async def get_chat_ids_by_file_id(self, file_id: str, db: AsyncSession | None = None) -> list[str]:
+        """All chat IDs that reference this file (via chat_file)."""
+        async with get_async_db_context(db) as session:
+            result = await session.execute(
+                select(ChatFile.chat_id).filter(ChatFile.file_id == file_id).distinct()
+            )
+            return [row[0] for row in result.all()]
+
+    async def get_expired_chat_ids(
+        self, cutoff: int, limit: int, db: AsyncSession | None = None
+    ) -> list[str]:
+        """Chat IDs whose last activity (updated_at, epoch seconds) is older than
+        `cutoff`, oldest first. Used by the retention sweep."""
+        async with get_async_db_context(db) as session:
+            result = await session.execute(
+                select(Chat.id)
+                .filter(Chat.updated_at < cutoff)
+                .order_by(Chat.updated_at.asc())
+                .limit(limit)
+            )
+            return [row[0] for row in result.all()]
+
+    async def get_chat_ids_by_user_id(self, user_id: str, db: AsyncSession | None = None) -> list[str]:
+        """All chat IDs owned by a user. Used to purge files before deleting all
+        of a user's chats."""
+        async with get_async_db_context(db) as session:
+            result = await session.execute(select(Chat.id).filter_by(user_id=user_id))
+            return [row[0] for row in result.all()]
+
+    async def get_chat_ids_by_user_id_and_folder_id(
+        self, user_id: str, folder_id: str, db: AsyncSession | None = None
+    ) -> list[str]:
+        """All chat IDs in a user's folder. Used to purge files before deleting a
+        folder's chats."""
+        async with get_async_db_context(db) as session:
+            result = await session.execute(select(Chat.id).filter_by(user_id=user_id, folder_id=folder_id))
+            return [row[0] for row in result.all()]
 
     async def delete_chat_file(self, chat_id: str, file_id: str, db: AsyncSession | None = None) -> bool:
         try:

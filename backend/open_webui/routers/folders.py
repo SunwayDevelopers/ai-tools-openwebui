@@ -22,6 +22,7 @@ from open_webui.models.folders import (
 from open_webui.utils.access_control import has_permission
 from open_webui.utils.access_control.files import get_accessible_folder_files
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.retention import purge_chats_files
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -297,6 +298,11 @@ async def delete_folder_by_id(
 
                 for folder_id in folder_ids:
                     if delete_contents:
+                        # Retention: purge files/vectors of this folder's chats first.
+                        await purge_chats_files(
+                            await Chats.get_chat_ids_by_user_id_and_folder_id(user.id, folder_id, db=db),
+                            db=db,
+                        )
                         await Chats.delete_chats_by_user_id_and_folder_id(user.id, folder_id, db=db)
                     else:
                         await Chats.move_chats_by_user_id_and_folder_id(user.id, folder_id, None, db=db)

@@ -52,6 +52,7 @@ router = APIRouter()
 
 
 from open_webui.utils.access_control.files import has_access_to_file
+from open_webui.utils.retention import purge_file
 
 ############################
 # Upload File
@@ -277,6 +278,21 @@ async def upload_file_handler(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ERROR_MESSAGES.DEFAULT(f'File type {file_extension} is not allowed'),
+                )
+
+        # Enforce the configured max file size server-side. FILE_MAX_SIZE is in MB
+        # (matches the frontend check); browser-only enforcement is bypassable by
+        # direct API/MCP callers, so we also reject here before writing to storage.
+        FILE_MAX_SIZE = request.app.state.config.FILE_MAX_SIZE
+        if FILE_MAX_SIZE not in (None, '') and file.size is not None:
+            try:
+                max_bytes = int(FILE_MAX_SIZE) * 1024 * 1024
+            except (TypeError, ValueError):
+                max_bytes = None
+            if max_bytes is not None and file.size > max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=ERROR_MESSAGES.DEFAULT(f'File size exceeds the {FILE_MAX_SIZE} MB limit'),
                 )
 
         # replace filename with uuid
@@ -869,31 +885,19 @@ async def delete_file_by_id(id: str, user=Depends(get_verified_user), db: AsyncS
         )
 
     if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'write', user, db=db):
-        # Clean up KB associations and embeddings before deleting
-        knowledges = await Knowledges.get_knowledges_by_file_id(id, db=db)
-        for knowledge in knowledges:
-            # Remove KB-file relationship
-            await Knowledges.remove_file_from_knowledge_by_id(knowledge.id, id, db=db)
-            # Clean KB embeddings (same logic as /knowledge/{id}/file/remove)
-            try:
-                await ASYNC_VECTOR_DB_CLIENT.delete(collection_name=knowledge.id, filter={'file_id': id})
-                if file.hash:
-                    await ASYNC_VECTOR_DB_CLIENT.delete(collection_name=knowledge.id, filter={'hash': file.hash})
-            except Exception as e:
-                log.debug(f'KB embedding cleanup for {knowledge.id}: {e}')
-
-        result = await Files.delete_file_by_id(id, db=db)
+        # Full purge (KB associations + vectors, DB row, storage bytes, and the
+        # file-{id} collection) lives in utils.retention.purge_file so the
+        # retention cascade reuses the exact same logic.
+        try:
+            result = await purge_file(file, db=db)
+        except Exception as e:
+            log.exception(e)
+            log.error('Error deleting files')
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ERROR_MESSAGES.DEFAULT('Error deleting files'),
+            )
         if result:
-            try:
-                await asyncio.to_thread(Storage.delete_file, file.path)
-                await ASYNC_VECTOR_DB_CLIENT.delete(collection_name=f'file-{id}')
-            except Exception as e:
-                log.exception(e)
-                log.error('Error deleting files')
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.DEFAULT('Error deleting files'),
-                )
             return {'message': 'File deleted successfully'}
         else:
             raise HTTPException(
