@@ -9,7 +9,8 @@
 		settings,
 		scrollPaginationEnabled,
 		currentChatPage,
-		pinnedChats
+		pinnedChats,
+		config
 	} from '$lib/stores';
 
 	import {
@@ -219,20 +220,22 @@
 				</div>
 			{/if}
 
-			<div>
-				<div class="py-0.5 flex w-full justify-between">
-					<div class="self-center text-xs">{$i18n.t('Archived Chats')}</div>
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							showArchivedChatsModal = true;
-						}}
-						type="button"
-					>
-						<span class="self-center">{$i18n.t('Manage')}</span>
-					</button>
+			{#if $config?.enable_chat_archive ?? true}
+				<div>
+					<div class="py-0.5 flex w-full justify-between">
+						<div class="self-center text-xs">{$i18n.t('Archived Chats')}</div>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								showArchivedChatsModal = true;
+							}}
+							type="button"
+						>
+							<span class="self-center">{$i18n.t('Manage')}</span>
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<div class="py-0.5 flex w-full justify-between">
@@ -249,20 +252,22 @@
 				</div>
 			</div>
 
-			<div>
-				<div class="py-0.5 flex w-full justify-between">
-					<div class="self-center text-xs">{$i18n.t('Archive All Chats')}</div>
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							showArchiveConfirmDialog = true;
-						}}
-						type="button"
-					>
-						<span class="self-center">{$i18n.t('Archive All')}</span>
-					</button>
+			{#if $config?.enable_chat_archive ?? true}
+				<div>
+					<div class="py-0.5 flex w-full justify-between">
+						<div class="self-center text-xs">{$i18n.t('Archive All Chats')}</div>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								showArchiveConfirmDialog = true;
+							}}
+							type="button"
+						>
+							<span class="self-center">{$i18n.t('Archive All')}</span>
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<div class="py-0.5 flex w-full justify-between">

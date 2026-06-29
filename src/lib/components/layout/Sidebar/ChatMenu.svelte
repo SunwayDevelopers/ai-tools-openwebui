@@ -20,7 +20,7 @@
 		getChatPinnedStatusById,
 		toggleChatPinnedStatusById
 	} from '$lib/apis/chats';
-	import { chats, folders, settings, theme, user } from '$lib/stores';
+	import { chats, config, folders, settings, theme, user } from '$lib/stores';
 	import { createMessagesList } from '$lib/utils';
 	import { downloadChatAsPDF } from '$lib/apis/utils';
 	import Download from '$lib/components/icons/Download.svelte';
@@ -430,16 +430,18 @@
 				</DropdownSub>
 			{/if}
 
-			<button
-				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					archiveChatHandler();
-				}}
-			>
-				<ArchiveBox strokeWidth="1.5" />
-				<div class="flex items-center">{$i18n.t('Archive')}</div>
-			</button>
+			{#if $config?.enable_chat_archive ?? true}
+				<button
+					draggable="false"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					on:click={() => {
+						archiveChatHandler();
+					}}
+				>
+					<ArchiveBox strokeWidth="1.5" />
+					<div class="flex items-center">{$i18n.t('Archive')}</div>
+				</button>
+			{/if}
 
 			<button
 				draggable="false"

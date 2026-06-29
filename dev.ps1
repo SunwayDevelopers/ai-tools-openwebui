@@ -3,7 +3,7 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / tika / searxng / minio / valkey -> Docker (detached, volumes persist)
+#   postgres / qdrant / docling / searxng / minio / valkey -> Docker (detached, volumes persist)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -40,8 +40,8 @@ function Import-DotEnv([string]$path) {
 # -- stop ----------------------------------------------------------------------
 
 if ($Stop) {
-    Write-Host "Stopping Docker infra (postgres, qdrant, tika, searxng, minio, valkey)..." -ForegroundColor Yellow
-    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant tika docling searxng minio valkey
+    Write-Host "Stopping Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
+    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant docling searxng minio valkey
     exit $LASTEXITCODE
 }
 
@@ -116,8 +116,8 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, tika, searxng, minio, valkey)..." -ForegroundColor Yellow
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant tika docling searxng minio valkey createbuckets
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant docling searxng minio valkey createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -202,6 +202,17 @@ $env:PYTHONUNBUFFERED              = '1'
 $env:PYTHONIOENCODING              = 'utf-8'
 # Windows can't make symlinks without admin or Developer Mode; HF falls back to copies anyway.
 $env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
+# Retention & limits (schat policy). Plain env reads -> take effect on restart.
+# NOTE: CHAT_RETENTION_DAYS>0 also arms the background sweep, which DELETES chats
+# (+ their files/vectors) inactive >N days. Your actively-used dev chats are safe
+# (recent updated_at); only long-abandoned ones would be swept.
+$env:MAX_CHATS_PER_USER            = '30'
+$env:CHAT_RETENTION_DAYS           = '30'
+$env:ENABLE_CHAT_ARCHIVE           = 'false'
+$env:RAG_PDF_FAST_PATH             = 'true'
+# Voice (STT/TTS/Call) deferred for internal rollout — hide UI for everyone incl.
+# admins. Plain env flag (not PersistentConfig), so this takes effect on restart.
+$env:ENABLE_VOICE                  = 'false'
 if (-not $env:WEBUI_SECRET_KEY) { $env:WEBUI_SECRET_KEY = 'dev-secret-key-change-in-prod-not-for-real-use' }
 if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash' }
 

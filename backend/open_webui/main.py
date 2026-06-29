@@ -430,6 +430,7 @@ from open_webui.env import (
     CHANGELOG,
     CHAT_RETENTION_DAYS,
     ENABLE_CHAT_ARCHIVE,
+    ENABLE_VOICE,
     MAX_CHATS_PER_USER,
     DEPLOYMENT_ID,
     ENABLE_AUDIT_GET_REQUESTS,
@@ -2494,6 +2495,7 @@ async def get_app_config(request: Request):
                     'chat_retention_days': CHAT_RETENTION_DAYS,
                 },
                 'enable_chat_archive': ENABLE_CHAT_ARCHIVE,
+                'enable_voice': ENABLE_VOICE,
                 'permissions': {**app.state.config.USER_PERMISSIONS},
                 'google_drive': {
                     'client_id': GOOGLE_DRIVE_CLIENT_ID.value,

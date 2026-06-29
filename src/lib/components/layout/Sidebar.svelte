@@ -44,7 +44,8 @@
 		updateChatFolderIdById,
 		importChats,
 		deleteAllChats,
-		getChatListBySearchText
+		getChatListBySearchText,
+		getChatCount
 	} from '$lib/apis/chats';
 	import { createNewFolder, getFolders, updateFolderParentIdById } from '$lib/apis/folders';
 	import { createNewNote, getPinnedNoteList, toggleNotePinnedStatusById } from '$lib/apis/notes';
@@ -56,6 +57,7 @@
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
 	import ChatItem from './Sidebar/ChatItem.svelte';
+	import RetentionNotice from '../common/RetentionNotice.svelte';
 	import Spinner from '../common/Spinner.svelte';
 	import Loader from '../common/Loader.svelte';
 	import Folder from '../common/Folder.svelte';
@@ -96,6 +98,17 @@
 
 	let showPinnedModels = false;
 	let showPinnedNotes = false;
+
+	// Live per-user chat count for the retention cap display. Refreshes whenever
+	// the chat list store changes (create / delete / load).
+	let chatCount = 0;
+	$: if (typeof localStorage !== 'undefined' && localStorage.token && $chats) {
+		getChatCount(localStorage.token)
+			.then((c) => {
+				if (typeof c === 'number') chatCount = c;
+			})
+			.catch(() => {});
+	}
 	let showChannels = false;
 	let showFolders = false;
 
@@ -1349,6 +1362,17 @@
 							}}
 						/>
 					</Folder>
+				{/if}
+
+				{#if ($config?.retention?.chat_retention_days ?? 0) > 0 || ($config?.retention?.max_chats_per_user ?? 0) > 0}
+					<div class="px-2 mt-0.5 space-y-1">
+						<RetentionNotice variant="banner" />
+						{#if ($config?.retention?.max_chats_per_user ?? 0) > 0}
+							<div class="flex justify-end pr-1">
+								<RetentionNotice variant="counter" {chatCount} />
+							</div>
+						{/if}
+					</div>
 				{/if}
 
 				<Folder
