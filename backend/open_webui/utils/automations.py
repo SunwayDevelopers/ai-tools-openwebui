@@ -26,10 +26,12 @@ from zoneinfo import ZoneInfo
 from dateutil.rrule import rrulestr
 from fastapi import Request
 from open_webui.constants import ERROR_MESSAGES
+from open_webui.env import CHAT_RETENTION_DAYS, RETENTION_SWEEP_BATCH, RETENTION_SWEEP_INTERVAL
 from open_webui.internal.db import get_async_db
 from open_webui.models.automations import AutomationModel, AutomationRuns, Automations
 from open_webui.models.chats import ChatForm, Chats
 from open_webui.models.users import Users
+from open_webui.utils.retention import run_retention_sweep
 from open_webui.utils.task import prompt_template
 from starlette.datastructures import Headers
 
@@ -158,6 +160,34 @@ async def automation_worker_loop(app) -> None:
     await scheduler_worker_loop(app)
 
 
+# Process-local throttle for the retention sweep when no Redis lock is available.
+_last_retention_sweep = 0.0
+
+
+async def _maybe_run_retention_sweep(app) -> None:
+    """Run the retention sweep at most once per RETENTION_SWEEP_INTERVAL, cluster-
+    wide. With Redis, an NX lock whose TTL == the interval lets exactly one replica
+    run each cycle (and doubles as the throttle). Without Redis (single instance),
+    a process-local timestamp throttles instead.
+    """
+    redis = getattr(app.state, 'redis', None)
+    if redis is not None:
+        got = await redis.set('retention:sweep:lock', '1', nx=True, ex=RETENTION_SWEEP_INTERVAL)
+        if not got:
+            return
+    else:
+        global _last_retention_sweep
+        now = time.time()
+        if now - _last_retention_sweep < RETENTION_SWEEP_INTERVAL:
+            return
+        _last_retention_sweep = now
+
+    async with get_async_db() as db:
+        deleted = await run_retention_sweep(CHAT_RETENTION_DAYS, RETENTION_SWEEP_BATCH, db=db)
+    if deleted:
+        log.info(f'Retention sweep removed {deleted} expired chat(s)')
+
+
 async def scheduler_worker_loop(app) -> None:
     """Unified background scheduler for all time-based work.
 
@@ -189,6 +219,13 @@ async def scheduler_worker_loop(app) -> None:
                     await _check_calendar_alerts(app)
                 except Exception:
                     log.exception('Scheduler: calendar alert error')
+
+            # ── Retention sweep ──
+            if CHAT_RETENTION_DAYS:
+                try:
+                    await _maybe_run_retention_sweep(app)
+                except Exception:
+                    log.exception('Scheduler: retention sweep error')
 
         except Exception:
             log.exception('Scheduler worker error')

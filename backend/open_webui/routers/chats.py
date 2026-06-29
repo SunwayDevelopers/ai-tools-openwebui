@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
+from open_webui.env import ENABLE_CHAT_ARCHIVE, MAX_CHATS_PER_USER
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.access_grants import AccessGrants
@@ -35,6 +36,7 @@ from open_webui.utils.access_control import filter_allowed_access_grants, has_pe
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.middleware import serialize_output
 from open_webui.utils.misc import get_message_list
+from open_webui.utils.retention import purge_chat_files, purge_chats_files
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -503,8 +505,25 @@ async def delete_all_user_chats(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
+    # Retention: purge files/vectors owned exclusively by the user's chats first
+    # (chat_file links cascade away once the chats are deleted).
+    await purge_chats_files(await Chats.get_chat_ids_by_user_id(user.id, db=db), db=db)
     result = await Chats.delete_chats_by_user_id(user.id, db=db)
     return result
+
+
+############################
+# GetChatCount  (active, non-archived — for the per-user cap UI)
+# Defined before any GET /{id} route so 'count' isn't captured as an id.
+############################
+
+
+@router.get('/count', response_model=int)
+async def get_chat_count(
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    return await Chats.count_chats_by_user_id(user.id, db=db)
 
 
 ############################
@@ -554,6 +573,18 @@ async def create_new_chat(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
+    # Enforce the per-user chat cap (hard block; 0 disables it, admins exempt).
+    if MAX_CHATS_PER_USER and user.role != 'admin':
+        chat_count = await Chats.count_chats_by_user_id(user.id, db=db)
+        if chat_count >= MAX_CHATS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ERROR_MESSAGES.DEFAULT(
+                    f'You have reached the maximum of {MAX_CHATS_PER_USER} chats. '
+                    'Please delete a chat before creating a new one.'
+                ),
+            )
+
     # Reject a folder_id that doesn't belong to the caller. Without this the
     # row is persisted with a dangling foreign reference — no read path
     # surfaces it across users (all chat reads are user_id-filtered), but
@@ -807,6 +838,11 @@ async def get_archived_session_user_chat_list(
 
 @router.post('/archive/all', response_model=bool)
 async def archive_all_chats(user=Depends(get_verified_user), db: AsyncSession = Depends(get_async_session)):
+    if not ENABLE_CHAT_ARCHIVE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
     return await Chats.archive_all_chats_by_user_id(user.id, db=db)
 
 
@@ -1134,6 +1170,9 @@ async def delete_chat_by_id(
             )
         await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
 
+        # Retention: purge files/vectors owned exclusively by this chat before it
+        # goes (chat_file links cascade away with the chat). KB/shared files kept.
+        await purge_chat_files(id, db=db)
         result = await Chats.delete_chat_by_id(id, db=db)
 
         return result
@@ -1152,6 +1191,9 @@ async def delete_chat_by_id(
             )
         await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
 
+        # Retention: purge files/vectors owned exclusively by this chat before it
+        # goes (chat_file links cascade away with the chat). KB/shared files kept.
+        await purge_chat_files(id, db=db)
         result = await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
         return result
 
@@ -1321,6 +1363,13 @@ async def archive_chat_by_id(
     db: AsyncSession = Depends(get_async_session),
 ):
     chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    # Archiving disabled: block the archive direction; still allow unarchiving so
+    # any pre-existing archived chats can be recovered.
+    if not ENABLE_CHAT_ARCHIVE and chat and not chat.archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
     if chat:
         chat = await Chats.toggle_chat_archive_by_id(id, db=db)
 

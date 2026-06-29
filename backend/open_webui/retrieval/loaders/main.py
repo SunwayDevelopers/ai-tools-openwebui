@@ -17,7 +17,15 @@ from langchain_community.document_loaders import (
     YoutubeLoader,
 )
 from langchain_core.documents import Document
-from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL, GLOBAL_LOG_LEVEL, REQUESTS_VERIFY
+from open_webui.env import (
+    AIOHTTP_CLIENT_SESSION_SSL,
+    CONTENT_EXTRACTION_MAX_CONCURRENCY,
+    CONTENT_EXTRACTION_REQUEST_TIMEOUT,
+    GLOBAL_LOG_LEVEL,
+    RAG_PDF_FAST_PATH,
+    RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE,
+    REQUESTS_VERIFY,
+)
 from open_webui.retrieval.loaders.datalab_marker import DatalabMarkerLoader
 from open_webui.retrieval.loaders.external_document import ExternalDocumentLoader
 from open_webui.retrieval.loaders.mineru import MinerULoader
@@ -26,6 +34,11 @@ from open_webui.retrieval.loaders.paddleocr_vl import PaddleOCRVLLoader
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
+
+# Bounds concurrent document extractions per process (see env.py
+# CONTENT_EXTRACTION_MAX_CONCURRENCY). Acquired in Loader.aload so an upload burst
+# can't exhaust the default asyncio.to_thread worker pool.
+_EXTRACTION_SEMAPHORE = asyncio.Semaphore(CONTENT_EXTRACTION_MAX_CONCURRENCY)
 
 known_source_ext = [
     'go',
@@ -157,7 +170,13 @@ class TikaLoader:
             endpoint += '/'
         endpoint += 'tika/text'
 
-        r = requests.put(endpoint, data=data, headers=headers, verify=REQUESTS_VERIFY)
+        r = requests.put(
+            endpoint,
+            data=data,
+            headers=headers,
+            verify=REQUESTS_VERIFY,
+            timeout=(10, CONTENT_EXTRACTION_REQUEST_TIMEOUT),
+        )
 
         if r.ok:
             raw_metadata = r.json()
@@ -203,6 +222,7 @@ class DoclingLoader:
                 },
                 headers=headers,
                 verify=AIOHTTP_CLIENT_SESSION_SSL,
+                timeout=(10, CONTENT_EXTRACTION_REQUEST_TIMEOUT),
             )
         if r.ok:
             result = r.json()
@@ -232,9 +252,44 @@ class Loader:
         self.kwargs = kwargs
 
     def load(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
+        file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
+
+        # PDF fast-path: born-digital PDFs are extracted by pypdf in milliseconds,
+        # whereas Docling runs layout+OCR models on every page and can take minutes
+        # / time out (e.g. a 14MB annual report). When enabled, try pypdf first and
+        # only fall back to the engine when the PDF looks scanned (no text layer).
+        if RAG_PDF_FAST_PATH and file_ext == 'pdf' and self.engine == 'docling':
+            fast_docs = None
+            try:
+                fast_docs = PyPDFLoader(
+                    file_path,
+                    extract_images=self.kwargs.get('PDF_EXTRACT_IMAGES'),
+                    mode=self.kwargs.get('PDF_LOADER_MODE', 'page'),
+                ).load()
+            except Exception as e:
+                log.warning(f'PDF fast-path: pypdf failed ({e}); falling back to {self.engine}')
+            if fast_docs and self._pdf_looks_digital(fast_docs):
+                log.info(
+                    f'PDF fast-path: born-digital ({len(fast_docs)} pages) via pypdf, skipped {self.engine}'
+                )
+                return [
+                    Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata)
+                    for doc in fast_docs
+                ]
+            log.info(f'PDF fast-path: scanned/low-text — falling back to {self.engine} for OCR')
+
         loader = self._get_loader(filename, file_content_type, file_path)
         docs = loader.load()
         return [Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata) for doc in docs]
+
+    def _pdf_looks_digital(self, docs: list[Document]) -> bool:
+        """True if pypdf extracted enough text per page to treat the PDF as
+        born-digital; scanned/image-only PDFs yield ~0 chars/page. Threshold is
+        RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE."""
+        if not docs:
+            return False
+        total_chars = sum(len((doc.page_content or '').strip()) for doc in docs)
+        return (total_chars / len(docs)) >= RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE
 
     async def aload(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
         """
@@ -246,7 +301,8 @@ class Loader:
         loop for the entire parse — minutes for large PDFs. This offloads
         the work to a worker thread so the loop stays responsive.
         """
-        return await asyncio.to_thread(self.load, filename, file_content_type, file_path)
+        async with _EXTRACTION_SEMAPHORE:
+            return await asyncio.to_thread(self.load, filename, file_content_type, file_path)
 
     def _is_text_file(self, file_ext: str, file_content_type: str) -> bool:
         return file_ext in known_source_ext or (

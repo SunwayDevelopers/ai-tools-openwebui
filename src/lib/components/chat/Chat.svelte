@@ -2800,21 +2800,28 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
-			chat = await createNewChat(
-				localStorage.token,
-				{
-					id: _chatId,
-					title: $i18n.t('New Chat'),
-					models: selectedModels,
-					system: $settings.system ?? undefined,
-					params: params,
-					history: history,
-					messages: createMessagesList(history, history.currentId),
-					tags: [],
-					timestamp: Date.now()
-				},
-				$selectedFolder?.id
-			);
+			try {
+				chat = await createNewChat(
+					localStorage.token,
+					{
+						id: _chatId,
+						title: $i18n.t('New Chat'),
+						models: selectedModels,
+						system: $settings.system ?? undefined,
+						params: params,
+						history: history,
+						messages: createMessagesList(history, history.currentId),
+						tags: [],
+						timestamp: Date.now()
+					},
+					$selectedFolder?.id
+				);
+			} catch (error) {
+				// Surface the server message (e.g. the per-user chat-cap limit)
+				// instead of a generic / [object Object] error, then abort.
+				toast.error(error?.detail ?? `${error}`);
+				throw error;
+			}
 
 			_chatId = chat.id;
 			await chatId.set(_chatId);

@@ -428,6 +428,9 @@ from open_webui.env import (
     AUDIT_LOG_LEVEL,
     BYPASS_MODEL_ACCESS_CONTROL,
     CHANGELOG,
+    CHAT_RETENTION_DAYS,
+    ENABLE_CHAT_ARCHIVE,
+    MAX_CHATS_PER_USER,
     DEPLOYMENT_ID,
     ENABLE_AUDIT_GET_REQUESTS,
     ENABLE_COMPRESSION_MIDDLEWARE,
@@ -2486,6 +2489,11 @@ async def get_app_config(request: Request):
                         'height': app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT,
                     },
                 },
+                'retention': {
+                    'max_chats_per_user': MAX_CHATS_PER_USER,
+                    'chat_retention_days': CHAT_RETENTION_DAYS,
+                },
+                'enable_chat_archive': ENABLE_CHAT_ARCHIVE,
                 'permissions': {**app.state.config.USER_PERMISSIONS},
                 'google_drive': {
                     'client_id': GOOGLE_DRIVE_CLIENT_ID.value,
