@@ -23,6 +23,20 @@ from fastapi import (
 from fastapi.responses import FileResponse, StreamingResponse
 from open_webui.config import BYPASS_ADMIN_ACCESS_CONTROL, STORAGE_LOCAL_CACHE, STORAGE_PROVIDER, UPLOAD_DIR
 from open_webui.constants import ERROR_MESSAGES
+from open_webui.env import ENABLE_IMAGE_OCR_FALLBACK
+
+# Content-extraction engines that can OCR image files (png/jpeg/tiff/...). When the
+# image OCR fallback is enabled and one of these is configured, uploaded images are
+# routed through extraction instead of being rejected, so text-only models can read
+# document images/screenshots. 'external' is handled by the base condition already.
+IMAGE_OCR_CAPABLE_ENGINES = {
+    'docling',
+    'datalab_marker',
+    'document_intelligence',
+    'mistral_ocr',
+    'mineru',
+    'paddleocr_vl',
+}
 from open_webui.internal.db import get_async_db_context, get_async_session
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.channels import Channels
@@ -146,6 +160,14 @@ async def process_uploaded_file(
                 content_type
                 and content_type.startswith(('image/', 'video/'))
                 and request.app.state.config.CONTENT_EXTRACTION_ENGINE != 'external'
+                # Sunway image OCR fallback: let images through to process_file when an
+                # OCR-capable engine (Docling et al.) is configured, so text-only models
+                # can read them. Videos and non-capable engines still skip/raise below.
+                and not (
+                    content_type.startswith('image/')
+                    and ENABLE_IMAGE_OCR_FALLBACK
+                    and request.app.state.config.CONTENT_EXTRACTION_ENGINE in IMAGE_OCR_CAPABLE_ENGINES
+                )
             ):
                 # Media files without an external extraction engine
                 if content_type.startswith('video/'):
@@ -248,6 +270,7 @@ async def upload_file_handler(
     user=Depends(get_verified_user),
     background_tasks: Optional[BackgroundTasks] = None,
     db: Optional[AsyncSession] = None,
+    validate_extension: bool = True,
 ):
     log.info(f'file.content_type: {file.content_type} {process}')
 
@@ -269,7 +292,12 @@ async def upload_file_handler(
         # Remove the leading dot from the file extension and lowercase it
         file_extension = file_extension[1:].lower() if file_extension else ''
 
-        if process and request.app.state.config.ALLOWED_FILE_EXTENSIONS:
+        # Enforce the configured extension allowlist server-side, independent of the
+        # `process` flag. The check used to be gated on `process`, so a direct API/MCP
+        # caller could bypass it with `?process=false` and upload a disallowed type
+        # (e.g. .exe). Trusted server-side callers (generated images/audio) pass
+        # validate_extension=False to opt out; the public route always validates.
+        if validate_extension and request.app.state.config.ALLOWED_FILE_EXTENSIONS:
             request.app.state.config.ALLOWED_FILE_EXTENSIONS = [
                 ext for ext in request.app.state.config.ALLOWED_FILE_EXTENSIONS if ext
             ]

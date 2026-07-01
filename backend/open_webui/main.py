@@ -430,6 +430,7 @@ from open_webui.env import (
     CHANGELOG,
     CHAT_RETENTION_DAYS,
     ENABLE_CHAT_ARCHIVE,
+    ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_VOICE,
     MAX_CHATS_PER_USER,
     DEPLOYMENT_ID,
@@ -2489,6 +2490,9 @@ async def get_app_config(request: Request):
                         'width': app.state.config.FILE_IMAGE_COMPRESSION_WIDTH,
                         'height': app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT,
                     },
+                    # Sunway: when on, images for non-vision models are OCR'd to text
+                    # instead of being blocked at upload (see ENABLE_IMAGE_OCR_FALLBACK).
+                    'image_ocr_fallback': ENABLE_IMAGE_OCR_FALLBACK,
                 },
                 'retention': {
                     'max_chats_per_user': MAX_CHATS_PER_USER,

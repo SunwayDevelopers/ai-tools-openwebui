@@ -744,9 +744,21 @@
 			}
 
 			if (file['type'].startsWith('image/')) {
-				if (visionCapableModels.length === 0) {
+				// Sunway image OCR fallback: when a selected model lacks vision, route the
+				// image through OCR (upload with process=true) so text-only models get its
+				// text, instead of blocking. Not available in temporary chats (no upload).
+				const effectiveModelCount = atSelectedModel?.id ? 1 : selectedModels.length;
+				const someModelLacksVision = visionCapableModels.length !== effectiveModelCount;
+				const ocrFallback = ($config?.file?.image_ocr_fallback ?? false) && !$temporaryChatEnabled;
+				const useOcr = ocrFallback && someModelLacksVision;
+
+				if (visionCapableModels.length === 0 && !ocrFallback) {
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
 					return;
+				}
+
+				if (useOcr) {
+					toast.info($i18n.t('Image will be read as text for model(s) without vision support.'));
 				}
 
 				const compressImageHandler = async (imageUrl, settings = {}, config = {}) => {
@@ -805,7 +817,11 @@
 						const blob = await (await fetch(imageUrl)).blob();
 						const compressedFile = new File([blob], file.name, { type: file.type });
 
-						uploadFileHandler(compressedFile, false);
+						// process=true when OCR fallback applies, so Docling extracts the
+						// image's text at upload; otherwise keep the fast vision-only path.
+						// context:'full' guarantees the OCR'd text is injected in full rather
+						// than query-gated chunks (a generic prompt could otherwise drop it).
+						uploadFileHandler(compressedFile, useOcr, useOcr ? { context: 'full' } : {});
 					}
 				};
 
