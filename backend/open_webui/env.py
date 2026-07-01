@@ -528,6 +528,35 @@ try:
 except (ValueError, TypeError):
     CONTENT_EXTRACTION_MAX_CONCURRENCY = 4
 
+# Wall-clock cap (seconds) on a single in-process extraction. The HTTP engines have
+# CONTENT_EXTRACTION_REQUEST_TIMEOUT, but the in-process loaders (pypdf, unstructured,
+# csv, text) have no timeout of their own, so a pathological file could hang an
+# extraction slot indefinitely. Set above CONTENT_EXTRACTION_REQUEST_TIMEOUT so the
+# engine's own timeout fires first for a clean error; this is the backstop. Note: a
+# timed-out worker thread cannot be force-killed and keeps running in the background,
+# but the slot is released and the upload is marked failed.
+try:
+    CONTENT_EXTRACTION_TIMEOUT = int(os.getenv('CONTENT_EXTRACTION_TIMEOUT', '660'))
+except (ValueError, TypeError):
+    CONTENT_EXTRACTION_TIMEOUT = 660
+
+# Max total extracted text (characters) accepted from a single file. Archive-based
+# formats (docx/xlsx/pptx are ZIP containers) and crafted PDFs can expand to gigabytes
+# of text ("decompression bomb"); reject before that reaches chunking/embedding/DB.
+# Set well above any legitimate document but far below bomb territory. 0 disables.
+try:
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = int(os.getenv('CONTENT_EXTRACTION_MAX_OUTPUT_CHARS', '30000000'))
+except (ValueError, TypeError):
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = 30000000
+
+# Image OCR fallback (Sunway): when a selected model is NOT vision-capable
+# (capabilities.vision = false in Admin > Models), uploaded images are run through
+# the content-extraction engine (Docling OCR) and their extracted text is injected as
+# context instead of an image_url the text-only model can't consume. Lets text models
+# like DeepSeek "read" document images/screenshots. Purely visual images still need a
+# vision model. Default on.
+ENABLE_IMAGE_OCR_FALLBACK = os.getenv('ENABLE_IMAGE_OCR_FALLBACK', 'True').lower() == 'true'
+
 # PDF fast-path: when the engine is Docling and this is enabled, born-digital PDFs
 # are extracted with pypdf (milliseconds) instead of Docling, which only runs for
 # scanned / low-text PDFs that actually need OCR. Default off -- enabling trades

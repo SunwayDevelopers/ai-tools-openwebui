@@ -33,6 +33,7 @@ from open_webui.env import (
     CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS,
     CHAT_RESPONSE_STREAM_DELTA_CHUNK_SIZE,
     ENABLE_CHAT_RESPONSE_BASE64_IMAGE_URL_CONVERSION,
+    ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_QUERIES_CACHE,
     ENABLE_REALTIME_CHAT_SAVE,
     ENABLE_RESPONSES_API_STATEFUL,
@@ -2116,7 +2117,15 @@ def apply_params_to_form_data(form_data, model):
     return form_data
 
 
-async def convert_url_images_to_base64(form_data, user=None):
+def model_supports_vision(model) -> bool:
+    """Whether the model advertises vision. Mirrors the frontend's
+    `capabilities.vision ?? true` — unset means vision-capable."""
+    if not isinstance(model, dict):
+        return True
+    return model.get('info', {}).get('meta', {}).get('capabilities', {}).get('vision', True)
+
+
+async def convert_url_images_to_base64(form_data, user=None, drop_images=False):
     messages = form_data.get('messages', [])
 
     for message in messages:
@@ -2129,6 +2138,13 @@ async def convert_url_images_to_base64(form_data, user=None):
         for item in content:
             if not isinstance(item, dict) or item.get('type') != 'image_url':
                 new_content.append(item)
+                continue
+
+            # Sunway image OCR fallback: for a non-vision model, drop image_url parts
+            # entirely — the image's OCR'd text is injected separately as a file source,
+            # so the text-only model gets the readable content instead of an image it
+            # cannot consume.
+            if drop_images:
                 continue
 
             image_url = item.get('image_url', {}).get('url', '')
@@ -2415,7 +2431,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         except Exception:
             pass
 
-    form_data = await convert_url_images_to_base64(form_data, user=user)
+    # Sunway: strip image_url parts for non-vision models (image OCR fallback). Their
+    # OCR'd text is injected via the file-source path, so the model receives readable
+    # text instead of an image it can't process.
+    drop_images = ENABLE_IMAGE_OCR_FALLBACK and not model_supports_vision(model)
+    form_data = await convert_url_images_to_base64(form_data, user=user, drop_images=drop_images)
 
     event_emitter = await get_event_emitter(metadata)
     event_caller = await get_event_call(metadata)

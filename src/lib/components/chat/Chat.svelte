@@ -1935,7 +1935,11 @@
 			..._files.filter(
 				(item) =>
 					['doc', 'text', 'note', 'chat', 'folder', 'collection'].includes(item.type) ||
-					(item.type === 'file' && !(item?.content_type ?? '').startsWith('image/'))
+					// Sunway: include OCR'd images (marked context:'full') in the context
+					// payload so text-only models get their extracted text. Vision-only
+					// images (no OCR) stay excluded — they're sent as image_url instead.
+					(item.type === 'file' &&
+						(!(item?.content_type ?? '').startsWith('image/') || item?.context === 'full'))
 			)
 		);
 		chatFiles = chatFiles.filter(
@@ -2290,7 +2294,10 @@
 			...(userMessage?.files ?? []).filter(
 				(item) =>
 					['doc', 'text', 'note', 'chat', 'collection', 'folder'].includes(item.type) ||
-					(item.type === 'file' && !(item?.content_type ?? '').startsWith('image/'))
+					// Sunway: include OCR'd images (marked context:'full') so text-only
+					// models receive their extracted text (see submitPrompt).
+					(item.type === 'file' &&
+						(!(item?.content_type ?? '').startsWith('image/') || item?.context === 'full'))
 			)
 		);
 		// Remove duplicates

@@ -226,7 +226,13 @@ Write-Host ""
 
 Set-Location $root
 
-$beCmd = ".venv\Scripts\uvicorn.exe open_webui.main:app --host 0.0.0.0 --port 8080 --reload --app-dir backend"
+# --ws wsproto: serve WebSockets via wsproto instead of the deprecated `websockets`
+# legacy impl, whose transport-level keepalive_ping has a concurrency bug
+# (AssertionError in _drain_helper) that drops the socket during long/idle tool
+# calls (e.g. Sdeck MCP slide generation). wsproto has no redundant transport ping,
+# so Socket.IO's own heartbeat is the single liveness signal. Fixes the chat spinner
+# that hangs after a long MCP run even though the response already completed + persisted.
+$beCmd = ".venv\Scripts\uvicorn.exe open_webui.main:app --host 0.0.0.0 --port 8080 --reload --app-dir backend --ws wsproto"
 $feCmd = "npm run dev"
 
 & "$root\node_modules\.bin\concurrently.cmd" `
