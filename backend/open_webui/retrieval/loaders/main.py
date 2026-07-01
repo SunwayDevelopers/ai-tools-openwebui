@@ -20,7 +20,9 @@ from langchain_core.documents import Document
 from open_webui.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
     CONTENT_EXTRACTION_MAX_CONCURRENCY,
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS,
     CONTENT_EXTRACTION_REQUEST_TIMEOUT,
+    CONTENT_EXTRACTION_TIMEOUT,
     GLOBAL_LOG_LEVEL,
     RAG_PDF_FAST_PATH,
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE,
@@ -302,7 +304,33 @@ class Loader:
         the work to a worker thread so the loop stays responsive.
         """
         async with _EXTRACTION_SEMAPHORE:
-            return await asyncio.to_thread(self.load, filename, file_content_type, file_path)
+            # (A) Wall-clock backstop. The in-process loaders have no timeout of their
+            # own, so a pathological file could pin an extraction slot indefinitely.
+            # On timeout we release the slot and surface a clean error; the orphaned
+            # worker thread can't be force-killed but no longer blocks new uploads.
+            try:
+                docs = await asyncio.wait_for(
+                    asyncio.to_thread(self.load, filename, file_content_type, file_path),
+                    timeout=CONTENT_EXTRACTION_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                raise Exception(
+                    f'Content extraction for {filename} exceeded the '
+                    f'{CONTENT_EXTRACTION_TIMEOUT}s limit and was aborted.'
+                )
+
+            # (B) Decompression-bomb guard. A small archive-based file (docx/xlsx/pptx
+            # are ZIP containers) or crafted PDF can expand to gigabytes of text; reject
+            # before it reaches chunking/embedding/the vector DB.
+            if CONTENT_EXTRACTION_MAX_OUTPUT_CHARS:
+                total_chars = sum(len(doc.page_content or '') for doc in docs)
+                if total_chars > CONTENT_EXTRACTION_MAX_OUTPUT_CHARS:
+                    raise Exception(
+                        f'Extracted content from {filename} ({total_chars} chars) exceeds the '
+                        f'{CONTENT_EXTRACTION_MAX_OUTPUT_CHARS}-char limit and was rejected.'
+                    )
+
+            return docs
 
     def _is_text_file(self, file_ext: str, file_content_type: str) -> bool:
         return file_ext in known_source_ext or (
