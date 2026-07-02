@@ -3215,7 +3215,9 @@ async def background_tasks_handler(ctx):
 
                     title = None
                     if tasks[TASKS.TITLE_GENERATION]:
-                        log.info('TITLE GENERATION | chat_id=%s model=%s', metadata.get('chat_id'), message.get('model'))
+                        log.info(
+                            'TITLE GENERATION | chat_id=%s model=%s', metadata.get('chat_id'), message.get('model')
+                        )
                         res = await generate_title(
                             request,
                             {
@@ -3226,7 +3228,11 @@ async def background_tasks_handler(ctx):
                             user,
                         )
 
-                        log.info('TITLE GENERATION | res_type=%s choices=%s', type(res).__name__, len(res.get('choices', [])) if isinstance(res, dict) else 'n/a')
+                        log.info(
+                            'TITLE GENERATION | res_type=%s choices=%s',
+                            type(res).__name__,
+                            len(res.get('choices', [])) if isinstance(res, dict) else 'n/a',
+                        )
 
                         if res and isinstance(res, dict):
                             if len(res.get('choices', [])) == 1:
@@ -3599,7 +3605,9 @@ async def non_streaming_chat_response_handler(response, ctx):
                         _user = getattr(user, 'email', getattr(user, 'id', '?'))
                         log.info(
                             'TOKEN USAGE | model=%s task=%s user=%s | in=%s out=%s total=%s',
-                            _model, _task, _user,
+                            _model,
+                            _task,
+                            _user,
                             usage.get('input_tokens', '?'),
                             usage.get('output_tokens', '?'),
                             usage.get('total_tokens', '?'),
@@ -5237,7 +5245,9 @@ async def streaming_chat_response_handler(response, ctx):
                     _user = getattr(user, 'email', getattr(user, 'id', '?'))
                     log.info(
                         'TOKEN USAGE | model=%s task=%s user=%s | in=%s out=%s total=%s',
-                        model_id, _task, _user,
+                        model_id,
+                        _task,
+                        _user,
                         usage.get('input_tokens', '?'),
                         usage.get('output_tokens', '?'),
                         usage.get('total_tokens', '?'),
