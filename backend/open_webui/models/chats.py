@@ -1722,9 +1722,7 @@ class ChatTable:
             all_chat_files = result.scalars().all()
             return [ChatFileModel.model_validate(chat_file) for chat_file in all_chat_files]
 
-    async def get_chat_files_by_chat_id(
-        self, chat_id: str, db: AsyncSession | None = None
-    ) -> list[ChatFileModel]:
+    async def get_chat_files_by_chat_id(self, chat_id: str, db: AsyncSession | None = None) -> list[ChatFileModel]:
         async with get_async_db_context(db) as session:
             result = await session.execute(
                 select(ChatFile).filter_by(chat_id=chat_id).order_by(ChatFile.created_at.asc())
@@ -1734,22 +1732,15 @@ class ChatTable:
     async def get_chat_ids_by_file_id(self, file_id: str, db: AsyncSession | None = None) -> list[str]:
         """All chat IDs that reference this file (via chat_file)."""
         async with get_async_db_context(db) as session:
-            result = await session.execute(
-                select(ChatFile.chat_id).filter(ChatFile.file_id == file_id).distinct()
-            )
+            result = await session.execute(select(ChatFile.chat_id).filter(ChatFile.file_id == file_id).distinct())
             return [row[0] for row in result.all()]
 
-    async def get_expired_chat_ids(
-        self, cutoff: int, limit: int, db: AsyncSession | None = None
-    ) -> list[str]:
+    async def get_expired_chat_ids(self, cutoff: int, limit: int, db: AsyncSession | None = None) -> list[str]:
         """Chat IDs whose last activity (updated_at, epoch seconds) is older than
         `cutoff`, oldest first. Used by the retention sweep."""
         async with get_async_db_context(db) as session:
             result = await session.execute(
-                select(Chat.id)
-                .filter(Chat.updated_at < cutoff)
-                .order_by(Chat.updated_at.asc())
-                .limit(limit)
+                select(Chat.id).filter(Chat.updated_at < cutoff).order_by(Chat.updated_at.asc()).limit(limit)
             )
             return [row[0] for row in result.all()]
 

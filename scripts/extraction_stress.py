@@ -10,6 +10,7 @@ Generates synthetic files at three scales each, runs them through the real
 Run inside the app env (WEBUI_SECRET_KEY etc. set). docx is skipped (no
 python-docx installed to generate one); bring a real .docx sample to test it.
 """
+
 import argparse
 import csv as csvmod
 import os
@@ -84,8 +85,8 @@ def main():
     loader = Loader(engine=args.engine, **kwargs)
 
     tmp = tempfile.mkdtemp(prefix='extr_stress_')
-    print(f"engine={args.engine or '(lightweight built-ins)'}  tmp={tmp}")
-    print(f"\n{'type':5} {'scale':11} {'size':>9} {'gen_s':>7} {'extract_s':>10} {'mem_MB':>8} {'chars':>12}")
+    print(f'engine={args.engine or "(lightweight built-ins)"}  tmp={tmp}')
+    print(f'\n{"type":5} {"scale":11} {"size":>9} {"gen_s":>7} {"extract_s":>10} {"mem_MB":>8} {"chars":>12}')
     print('-' * 70)
     try:
         for typ, ext, ct, gen, scales in JOBS:
