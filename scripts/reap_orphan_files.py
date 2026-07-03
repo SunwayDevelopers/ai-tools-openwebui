@@ -14,6 +14,7 @@ Recommended: dry-run first and review the count / sample; then --purge in
 batches (re-run until 'found' is 0). Run off-peak -- the note/chat JSON scans
 are full-table per candidate.
 """
+
 import argparse
 import asyncio
 
@@ -31,15 +32,15 @@ async def main() -> None:
 
     mode = 'PURGE' if args.purge else 'DRY-RUN (no deletion)'
     mb = summary['bytes'] / (1024 * 1024)
-    print(f"\n=== ORPHAN-FILE REAP [{mode}] ===")
-    print(f"  older than : {args.days} days     batch limit : {args.batch}")
-    print(f"  orphans found : {summary['found']}   (~{mb:.1f} MB)")
+    print(f'\n=== ORPHAN-FILE REAP [{mode}] ===')
+    print(f'  older than : {args.days} days     batch limit : {args.batch}')
+    print(f'  orphans found : {summary["found"]}   (~{mb:.1f} MB)')
     if args.purge:
-        print(f"  files purged  : {summary['purged']}")
+        print(f'  files purged  : {summary["purged"]}')
     if summary['sample']:
-        print(f"  sample ids    : {', '.join(summary['sample'])}")
+        print(f'  sample ids    : {", ".join(summary["sample"])}')
     if not args.purge and summary['found']:
-        print("\n  Review the above, then re-run with --purge to delete (batched).")
+        print('\n  Review the above, then re-run with --purge to delete (batched).')
 
 
 if __name__ == '__main__':

@@ -179,6 +179,6 @@ async def reap_orphan_files(older_than_days: int, batch_limit: int, dry_run: boo
             if await purge_file(file, db=db):
                 summary['purged'] += 1
         except Exception as e:
-            log.warning(f"Orphan reap: failed to purge file {c['id']}: {e}")
-    log.info(f"Orphan reap: purged {summary['purged']}/{summary['found']} orphaned files ({summary['bytes']} bytes)")
+            log.warning(f'Orphan reap: failed to purge file {c["id"]}: {e}')
+    log.info(f'Orphan reap: purged {summary["purged"]}/{summary["found"]} orphaned files ({summary["bytes"]} bytes)')
     return summary

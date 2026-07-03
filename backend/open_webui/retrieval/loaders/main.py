@@ -271,12 +271,9 @@ class Loader:
             except Exception as e:
                 log.warning(f'PDF fast-path: pypdf failed ({e}); falling back to {self.engine}')
             if fast_docs and self._pdf_looks_digital(fast_docs):
-                log.info(
-                    f'PDF fast-path: born-digital ({len(fast_docs)} pages) via pypdf, skipped {self.engine}'
-                )
+                log.info(f'PDF fast-path: born-digital ({len(fast_docs)} pages) via pypdf, skipped {self.engine}')
                 return [
-                    Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata)
-                    for doc in fast_docs
+                    Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata) for doc in fast_docs
                 ]
             log.info(f'PDF fast-path: scanned/low-text — falling back to {self.engine} for OCR')
 
@@ -541,7 +538,17 @@ class Loader:
                 format_lines=self.kwargs.get('DATALAB_MARKER_FORMAT_LINES', False),
                 output_format=self.kwargs.get('DATALAB_MARKER_OUTPUT_FORMAT', 'markdown'),
             )
-        elif self.engine == 'docling' and self.kwargs.get('DOCLING_SERVER_URL'):
+        elif (
+            self.engine == 'docling'
+            and self.kwargs.get('DOCLING_SERVER_URL')
+            # Docling only parses 2007+ (OOXML) Office files, so legacy binary formats
+            # must fall through to the local loaders below: .xls works via
+            # unstructured -> pandas/xlrd; .doc/.ppt additionally require LibreOffice
+            # (soffice) on PATH, which the container image does not ship. Match on
+            # extension, not content type: Windows browsers with Excel installed
+            # report .csv as application/vnd.ms-excel, and csv must stay on Docling.
+            and file_ext not in ('doc', 'xls', 'ppt')
+        ):
             if self._is_text_file(file_ext, file_content_type):
                 loader = TextLoader(file_path, encoding=self._detect_text_encoding(file_path))
             else:
@@ -686,17 +693,23 @@ class Loader:
                 'application/vnd.ms-excel',
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             ] or file_ext in ['xls', 'xlsx']:
-                try:
-                    from langchain_community.document_loaders import UnstructuredExcelLoader
-
-                    loader = UnstructuredExcelLoader(file_path)
-                except ImportError:
-                    log.warning(
-                        "The 'unstructured' package is not installed. "
-                        'Falling back to pandas for Excel file loading. '
-                        'Install unstructured for better results: pip install unstructured'
-                    )
+                if file_ext == 'xls':
+                    # Legacy BIFF .xls goes straight to pandas/xlrd: unstructured's
+                    # partition_xlsx pre-scans with msoffcrypto, which crashes
+                    # (struct.error) on minimal xlwt-style streams that xlrd reads fine.
                     loader = ExcelLoader(file_path)
+                else:
+                    try:
+                        from langchain_community.document_loaders import UnstructuredExcelLoader
+
+                        loader = UnstructuredExcelLoader(file_path)
+                    except ImportError:
+                        log.warning(
+                            "The 'unstructured' package is not installed. "
+                            'Falling back to pandas for Excel file loading. '
+                            'Install unstructured for better results: pip install unstructured'
+                        )
+                        loader = ExcelLoader(file_path)
             elif file_content_type in [
                 'application/vnd.ms-powerpoint',
                 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
