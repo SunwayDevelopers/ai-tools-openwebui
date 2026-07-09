@@ -188,22 +188,33 @@
 		<div>
 			<div class="mb-1 text-sm font-medium">{$i18n.t('Chats')}</div>
 
-			<div>
-				<div class="py-0.5 flex w-full justify-between">
-					<div class="self-center text-xs">{$i18n.t('Import Chats')}</div>
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							chatImportInputElement.click();
-						}}
-						type="button"
-					>
-						<span class="self-center">{$i18n.t('Import')}</span>
-					</button>
+			<!-- Sunway: Import Chats hidden for everyone incl. admins — imports bypass the
+			     30-chat retention cap (only /chats/new enforces it). Code kept, gated off.
+			     Note: the backend /chats/import endpoint stays reachable (UI hiding is not a
+			     security boundary) and a drag-drop import fallback exists in Sidebar/
+			     RecursiveFolder for cross-instance chat drags (inert in normal use). -->
+			{#if false}
+				<div>
+					<div class="py-0.5 flex w-full justify-between">
+						<div class="self-center text-xs">{$i18n.t('Import Chats')}</div>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								chatImportInputElement.click();
+							}}
+							type="button"
+						>
+							<span class="self-center">{$i18n.t('Import')}</span>
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 
-			{#if $user?.role === 'admin' || ($user.permissions?.chat?.export ?? true)}
+			<!-- Sunway: bulk JSON "Export Chats" hidden for everyone incl. admins — dev/portability
+			     format (not human-readable) and a dead-end now that Import is hidden. The useful
+			     per-chat readable download (PDF/TXT/JSON) in the chat menu stays. Code kept, gated
+			     off (replaced the chat.export permission gate, which admins bypassed). See CLAUDE.md. -->
+			{#if false}
 				<div>
 					<div class="py-0.5 flex w-full justify-between">
 						<div class="self-center text-xs">{$i18n.t('Export Chats')}</div>
@@ -285,23 +296,27 @@
 			</div>
 		</div>
 
-		<div>
-			<div class="mb-1 text-sm font-medium">{$i18n.t('Files')}</div>
-
+		<!-- Sunway: personal file-management surface deferred (no persistent user memory).
+		     Hidden for everyone incl. admins; kept in code, gated off. Flip to re-enable. -->
+		{#if false}
 			<div>
-				<div class="py-0.5 flex w-full justify-between">
-					<div class="self-center text-xs">{$i18n.t('Manage Files')}</div>
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							showFilesModal = true;
-						}}
-						type="button"
-					>
-						<span class="self-center">{$i18n.t('Manage')}</span>
-					</button>
+				<div class="mb-1 text-sm font-medium">{$i18n.t('Files')}</div>
+
+				<div>
+					<div class="py-0.5 flex w-full justify-between">
+						<div class="self-center text-xs">{$i18n.t('Manage Files')}</div>
+						<button
+							class="p-1 px-3 text-xs flex rounded-sm transition"
+							on:click={() => {
+								showFilesModal = true;
+							}}
+							type="button"
+						>
+							<span class="self-center">{$i18n.t('Manage')}</span>
+						</button>
+					</div>
 				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 </div>

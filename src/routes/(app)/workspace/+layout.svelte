@@ -20,6 +20,17 @@
 	let loaded = false;
 
 	onMount(async () => {
+		// Sunway: Models & Tools workspace are deferred and hidden for EVERYONE incl. admins
+		// (see CLAUDE.md → "Deferred / hidden features"). Block direct-URL access too, so there
+		// is no admin back-door into the deferred screens. Reverse by removing this block.
+		if (
+			$page.url.pathname.includes('/workspace/models') ||
+			$page.url.pathname.includes('/workspace/tools')
+		) {
+			await goto('/');
+			return;
+		}
+
 		if ($user?.role !== 'admin') {
 			if ($page.url.pathname.includes('/models') && !$user?.permissions?.workspace?.models) {
 				goto('/');
@@ -84,7 +95,9 @@
 					<div
 						class="flex gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent py-1 touch-auto pointer-events-auto"
 					>
-						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.models}
+						<!-- Sunway: Models workspace deferred (no custom presets) — hidden for everyone incl. admins.
+						     Original gate was: user.role === 'admin' OR permissions.workspace.models -->
+						{#if false}
 							<a
 								draggable="false"
 								aria-current={$page.url.pathname.includes('/workspace/models') ? 'page' : null}
@@ -132,7 +145,9 @@
 							</a>
 						{/if}
 
-						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.tools}
+						<!-- Sunway: Tools workspace deferred (arbitrary-code risk) — hidden for everyone incl. admins.
+						     Original gate was: user.role === 'admin' OR permissions.workspace.tools -->
+						{#if false}
 							<a
 								draggable="false"
 								aria-current={$page.url.pathname.includes('/workspace/tools') ? 'page' : null}

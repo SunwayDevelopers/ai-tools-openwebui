@@ -28,8 +28,10 @@
 	let searchDebounceTimer: ReturnType<typeof setTimeout>;
 
 	export let filteredItems = [];
+	// Sunway: Attach Webpage deferred — the `false &&` drops the URL/YouTube attach items
+	// from the '#' palette (mirrors the hidden "Attach Webpage" input-menu entry). See CLAUDE.md.
 	$: filteredItems = [
-		...(query.startsWith('http')
+		...(false && query.startsWith('http')
 			? isYoutubeUrl(query)
 				? [{ type: 'youtube', name: query, description: query }]
 				: [
@@ -202,7 +204,9 @@
 		{/if}
 	{/each}
 
-	{#if isYoutubeUrl(query)}
+	<!-- Sunway: Attach Webpage deferred — URL/YouTube attach buttons gated off with the
+	     filteredItems entries above. See CLAUDE.md. -->
+	{#if false && isYoutubeUrl(query)}
 		<button
 			class="px-2 py-1 rounded-xl w-full text-left bg-gray-50 dark:bg-gray-800 dark:text-gray-100 selected-command-option-button"
 			type="button"
@@ -230,7 +234,7 @@
 				</div>
 			</div>
 		</button>
-	{:else if query.startsWith('http')}
+	{:else if false && query.startsWith('http')}
 		<button
 			class="px-2 py-1 rounded-xl w-full text-left bg-gray-50 dark:bg-gray-800 dark:text-gray-100 selected-command-option-button"
 			type="button"

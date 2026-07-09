@@ -34,7 +34,8 @@
 		createMessagesList,
 		formatDate,
 		removeDetails,
-		removeAllDetails
+		removeAllDetails,
+		stripInternalImageEmbeds
 	} from '$lib/utils';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import equal from 'fast-deep-equal';
@@ -831,9 +832,12 @@
 							{:else if message.content && message.error !== true}
 								<!-- always show message contents even if there's an error -->
 								<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->
+								<!-- Sunway: stripInternalImageEmbeds — generated images are attached as
+								files (rendered above); models sometimes re-embed a (often stale) file
+								URL as markdown, showing a duplicate/old image. See utils/index.ts -->
 								<ContentRenderer
 									id={`${chatId}-${message.id}`}
-									content={message.content}
+									content={stripInternalImageEmbeds(message.content)}
 									sources={message.sources}
 									floatingButtons={message?.done &&
 										!readOnly &&
@@ -995,7 +999,10 @@
 
 							{#if message.done}
 								{#if !readOnly}
-									{#if $user?.role === 'user' ? ($user?.permissions?.chat?.edit ?? true) : true}
+									<!-- Sunway: editing MODEL responses disabled for everyone — rewriting assistant
+									     output fabricates model-attributed content (data integrity, same class as
+									     Generate Message Pair). User-message editing stays. See CLAUDE.md. -->
+									{#if false}
 										<Tooltip content={$i18n.t('Edit')} placement="bottom">
 											<button
 												aria-label={$i18n.t('Edit')}

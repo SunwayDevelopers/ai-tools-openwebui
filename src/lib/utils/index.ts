@@ -1028,6 +1028,23 @@ export const removeAllDetails = (content) => {
 	}).trim();
 };
 
+// Sunway: markdown image embeds pointing at internal file URLs, e.g.
+// ![alt](/api/v1/files/<id>/content). Generated images are already attached to
+// the message as files and rendered by the files strip; when a model
+// additionally embeds a file URL in its text (often a stale URL copied from
+// replayed history) the chat shows a duplicate or older image. Stripped at
+// render time in ResponseMessage; the backend strips the same pattern from
+// replayed history (backend/open_webui/utils/misc.py).
+const internalImageEmbedRegex =
+	/!\[[^\]]*\]\(\s*(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/)\s]+)?\/api\/v1\/files\/[^)]*?\)/g;
+
+export const stripInternalImageEmbeds = (content: string) => {
+	if (!content || !content.includes('![')) {
+		return content;
+	}
+	return replaceOutsideCode(content, (segment) => segment.replace(internalImageEmbedRegex, ''));
+};
+
 export const processDetails = (content) => {
 	content = removeDetails(content, ['reasoning', 'code_interpreter']);
 

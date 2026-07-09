@@ -1278,11 +1278,15 @@
 							dispatch('submit', prompt);
 						}}
 					>
-						<button
-							id="generate-message-pair-button"
-							class="hidden"
-							on:click={() => createMessagePair(prompt)}
-						/>
+						<!-- Sunway: Generate Message Pair disabled (fabricates an assistant turn; see CLAUDE.md).
+						     Its only trigger, the keyboard shortcut, is also disabled in (app)/+layout.svelte. -->
+						{#if false}
+							<button
+								id="generate-message-pair-button"
+								class="hidden"
+								on:click={() => createMessagePair(prompt)}
+							/>
+						{/if}
 
 						<!-- Task list display -->
 						{#if isActive && chatTasks.length > 0}
