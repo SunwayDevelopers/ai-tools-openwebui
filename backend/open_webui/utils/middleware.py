@@ -105,9 +105,11 @@ from open_webui.utils.misc import (
     is_string_allowed,
     merge_system_messages,
     prepend_to_first_user_message_content,
+    redact_stale_image_tool_urls,
     replace_system_message_content,
     set_last_user_message_content,
     strip_empty_content_blocks,
+    strip_internal_image_embeds,
 )
 from open_webui.utils.payload import apply_system_prompt_to_body
 from open_webui.utils.plugin import load_function_module_by_id
@@ -2231,9 +2233,18 @@ def process_messages_with_output(
 
         # Strip 'output' field before adding (LLM shouldn't see it)
         clean_message = {k: v for k, v in message.items() if k != 'output'}
+        # Sunway: legacy assistant messages (no structured output) can carry
+        # model-emitted markdown embeds of internal file URLs — strip them so
+        # replayed history doesn't reseed the duplicate-image behavior
+        if clean_message.get('role') == 'assistant' and isinstance(clean_message.get('content'), str):
+            clean_message['content'] = strip_internal_image_embeds(clean_message['content'])
         processed.append(clean_message)
 
-    return processed
+    # Sunway: redact image URLs from all but the most recent image-tool result —
+    # smaller models copy stale URLs from replayed history into markdown embeds,
+    # which the UI would show as a second (older) image. The latest result keeps
+    # its URLs so edit_image chaining still works.
+    return redact_stale_image_tool_urls(processed)
 
 
 SKILL_MENTION_RE = re.compile(r'<\$([^|>]+)\|?[^>]*>')

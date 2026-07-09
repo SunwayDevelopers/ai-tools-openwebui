@@ -19,6 +19,12 @@ export const WEBUI_VERSION = APP_VERSION;
 export const WEBUI_BUILD_HASH = APP_BUILD_HASH;
 export const REQUIRED_OLLAMA_VERSION = '0.1.16';
 
+// Sunway: schat.ai product version (user-facing), tracked separately from the
+// upstream Open WebUI version (WEBUI_VERSION), which is shown as the "Powered by
+// Open WebUI v…" attribution + our upstream-sync baseline. First release = 0.1.0
+// (aligned with sdeck; 1.0.0 reserved for a stability milestone). See AUDIT-033.
+export const SCHAT_VERSION = '0.1.0';
+
 export const SUPPORTED_FILE_TYPE = [
 	'application/epub+zip',
 	'application/pdf',
