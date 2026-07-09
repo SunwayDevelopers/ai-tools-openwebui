@@ -568,9 +568,9 @@ except (ValueError, TypeError):
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = 100
 
 
-# Retention: max chats a non-admin user may keep, enforced as a hard cap on chat
-# creation ("delete one to create a new one"). 0 disables the cap. The 1-month
-# rolling expiry sweep is a separate mechanism.
+# Retention: max chats a user may keep (ALL roles incl. admins), enforced as a
+# hard cap on chat creation ("delete one to create a new one"). 0 disables the
+# cap. The 1-month rolling expiry sweep is a separate mechanism.
 try:
     MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '0'))
 except (ValueError, TypeError):
@@ -603,6 +603,14 @@ ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'True').lower() == 'true'
 # permissions only hide it for non-admins). Code is kept — reversible by flipping
 # this back to true.
 ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'True').lower() == 'true'
+
+# Temporary Chat. Default on (upstream behavior). When false, every entry point is
+# hidden/disabled for EVERYONE incl. admins (the per-user chat.temporary permission
+# only hides it for non-admins): navbar toggle, Ctrl+Shift+' shortcut, the
+# ?temporary-chat=true URL param, temporary_enforced auto-enable, and the
+# "Temporary Chat by Default" setting. There is no server-side surface to disable —
+# a temporary chat is simply a chat that is never persisted.
+ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'True').lower() == 'true'
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA

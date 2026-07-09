@@ -213,6 +213,31 @@ $env:RAG_PDF_FAST_PATH             = 'true'
 # Voice (STT/TTS/Call) deferred for internal rollout — hide UI for everyone incl.
 # admins. Plain env flag (not PersistentConfig), so this takes effect on restart.
 $env:ENABLE_VOICE                  = 'false'
+# Temporary Chat hidden for internal rollout — hides the navbar toggle, shortcut,
+# ?temporary-chat=true URL param, and "Temporary Chat by Default" setting for
+# everyone incl. admins. Plain env flag, takes effect on restart.
+$env:ENABLE_TEMPORARY_CHAT         = 'false'
+# Version update check off — internal rollout shouldn't ping GitHub for Open WebUI
+# releases or show employees upstream release numbers. Plain env; server returns
+# current==latest so the About "Check for updates" UI stays hidden.
+$env:ENABLE_VERSION_UPDATE_CHECK   = 'false'
+# Deferred features — hidden from the UI for everyone incl. admins (schat rollout).
+# IMPORTANT: these are PersistentConfig — the env only SEEDS the DB on FIRST boot.
+# On an existing dev DB (postgres volume persists), also flip them off in
+# Admin Settings for the change to take effect now. In prod, set the same env in the
+# Helm manifest before the first deploy, or toggle in Admin Settings post-deploy.
+$env:ENABLE_NOTES                  = 'false'   # Notes workspace (deferred: no user memory)
+$env:ENABLE_MEMORIES               = 'false'   # Personalization / Memory tab (deferred)
+$env:ENABLE_FOLDERS                = 'false'   # Chat folders / grouping (redundant w/ retention)
+$env:ENABLE_CODE_INTERPRETER       = 'false'   # Code interpreter chat toggle (deferred)
+$env:ENABLE_CALENDAR               = 'false'   # Calendar (deferred w/ Outlook integration; default-on upstream + user-visible!)
+$env:ENABLE_AUTOMATIONS            = 'false'   # Automations / scheduled prompts (deferred)
+$env:ENABLE_MESSAGE_RATING         = 'false'   # Good/Bad Response thumbs on model messages (deferred; hides for everyone incl. admins)
+# Hide the whole Settings -> Interface tab from USERS (~30 cosmetic/confusing toggles at once).
+# Admins keep it via the role bypass (several toggles genuinely useful to the AI team).
+# PersistentConfig (part of USER_PERMISSIONS): on an existing DB flip "Interface Settings
+# Access" off under Admin Panel -> Users -> Groups -> default permissions.
+$env:USER_PERMISSIONS_SETTINGS_INTERFACE = 'false'
 if (-not $env:WEBUI_SECRET_KEY) { $env:WEBUI_SECRET_KEY = 'dev-secret-key-change-in-prod-not-for-real-use' }
 if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash' }
 

@@ -293,7 +293,11 @@
 			</div>
 		</div>
 
-		{#if $user?.role === 'admin' || (($user?.permissions.chat?.controls ?? true) && ($user?.permissions.chat?.system_prompt ?? true))}
+		<!-- Sunway: user-level System Prompt hidden for everyone incl. admins — it silently layers
+		     on top of the team-configured model system prompts and would skew curated behavior.
+		     Model-level prompts live in Admin Settings → Models. See CLAUDE.md.
+		     Original gate was: admin OR (chat.controls AND chat.system_prompt) -->
+		{#if false}
 			<hr class="border-gray-100/30 dark:border-gray-850/30 my-3" />
 
 			<div>
@@ -310,7 +314,10 @@
 			</div>
 		{/if}
 
-		{#if $user?.role === 'admin' || (($user?.permissions.chat?.controls ?? true) && ($user?.permissions.chat?.params ?? true))}
+		<!-- Sunway: user-level Advanced Parameters hidden for everyone incl. admins — same rationale
+		     as the per-chat Controls hide; model-level params live in Admin Settings → Models.
+		     Original gate was: admin OR (chat.controls AND chat.params) -->
+		{#if false}
 			<div class="mt-2 space-y-3 pr-1.5">
 				<div class="flex justify-between items-center text-sm">
 					<div class="  font-medium">{$i18n.t('Advanced Parameters')}</div>

@@ -663,7 +663,12 @@
 		selectedChatId = null;
 		selectedFolder.set(null);
 
-		if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
+		// Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md)
+		if (
+			($config?.enable_temporary_chat ?? true) &&
+			$user?.role !== 'admin' &&
+			$user?.permissions?.chat?.temporary_enforced
+		) {
 			await temporaryChatEnabled.set(true);
 		} else {
 			await temporaryChatEnabled.set(false);
@@ -1037,7 +1042,15 @@
 						id="sidebar-webui-name"
 						class=" self-center font-medium text-gray-850 dark:text-white font-primary"
 					>
-						<img src="{WEBUI_BASE_URL}/static/schat-wordmark.svg" class="h-6 w-auto dark:hidden" alt="{$WEBUI_NAME}" /><img src="{WEBUI_BASE_URL}/static/schat-wordmark-dark.svg" class="h-6 w-auto hidden dark:block" alt="{$WEBUI_NAME}" />
+						<img
+							src="{WEBUI_BASE_URL}/static/schat-wordmark.svg"
+							class="h-6 w-auto dark:hidden"
+							alt={$WEBUI_NAME}
+						/><img
+							src="{WEBUI_BASE_URL}/static/schat-wordmark-dark.svg"
+							class="h-6 w-auto hidden dark:block"
+							alt={$WEBUI_NAME}
+						/>
 					</div>
 				</a>
 				<Tooltip

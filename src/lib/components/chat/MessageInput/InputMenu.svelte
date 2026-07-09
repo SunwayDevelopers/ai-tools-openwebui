@@ -152,93 +152,106 @@
 						</button>
 					</Tooltip>
 
-					<Tooltip
-						content={fileUploadCapableModels.length !== selectedModels.length
-							? $i18n.t('Model(s) do not support file upload')
-							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
-								: ''}
-						className="w-full"
-					>
-						<button
-							class="flex w-full gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							type="button"
-							on:click={() => {
-								if (fileUploadEnabled) {
-									if (!detectMobile()) {
-										screenCaptureHandler();
-									} else {
-										const cameraInputElement = document.getElementById('camera-input');
+					<!-- Sunway: camera/screen Capture deferred — hidden for everyone incl. admins; kept in code, gated off. -->
+					{#if false}
+						<Tooltip
+							content={fileUploadCapableModels.length !== selectedModels.length
+								? $i18n.t('Model(s) do not support file upload')
+								: !fileUploadEnabled
+									? $i18n.t('You do not have permission to upload files.')
+									: ''}
+							className="w-full"
+						>
+							<button
+								class="flex w-full gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
+									? 'opacity-50'
+									: ''}"
+								type="button"
+								on:click={() => {
+									if (fileUploadEnabled) {
+										if (!detectMobile()) {
+											screenCaptureHandler();
+										} else {
+											const cameraInputElement = document.getElementById('camera-input');
 
-										if (cameraInputElement) {
-											cameraInputElement.click();
+											if (cameraInputElement) {
+												cameraInputElement.click();
+											}
 										}
+										show = false;
 									}
-									show = false;
-								}
-							}}
-						>
-							<Camera />
-							<div class=" line-clamp-1">{$i18n.t('Capture')}</div>
-						</button>
-					</Tooltip>
+								}}
+							>
+								<Camera />
+								<div class=" line-clamp-1">{$i18n.t('Capture')}</div>
+							</button>
+						</Tooltip>
+					{/if}
 
-					<Tooltip
-						content={!webUploadEnabled
-							? $i18n.t('You do not have permission to upload web content.')
-							: ''}
-						className="w-full"
-					>
-						<button
-							class="flex w-full gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl {!webUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							type="button"
-							on:click={() => {
-								if (webUploadEnabled) {
-									showAttachWebpageModal = true;
-									show = false;
-								}
-							}}
-						>
-							<GlobeAlt />
-							<div class="line-clamp-1">{$i18n.t('Attach Webpage')}</div>
-						</button>
-					</Tooltip>
-
-					<Tooltip
-						content={fileUploadCapableModels.length !== selectedModels.length
-							? $i18n.t('Model(s) do not support file upload')
-							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
+					<!-- Sunway: "Attach Webpage" deferred — hidden for everyone incl. admins; kept in
+					     code, gated off. Web SEARCH stays in scope — this only removes attaching a
+					     specific page as a file. Also gated in Commands/Knowledge.svelte ('#' URL attach). -->
+					{#if false}
+						<Tooltip
+							content={!webUploadEnabled
+								? $i18n.t('You do not have permission to upload web content.')
 								: ''}
-						className="w-full"
-					>
-						<button
-							class="flex gap-2 w-full items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							on:click={() => {
-								if (fileUploadEnabled) {
-									tab = 'files';
-								}
-							}}
+							className="w-full"
 						>
-							<DocumentArrowUp />
+							<button
+								class="flex w-full gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl {!webUploadEnabled
+									? 'opacity-50'
+									: ''}"
+								type="button"
+								on:click={() => {
+									if (webUploadEnabled) {
+										showAttachWebpageModal = true;
+										show = false;
+									}
+								}}
+							>
+								<GlobeAlt />
+								<div class="line-clamp-1">{$i18n.t('Attach Webpage')}</div>
+							</button>
+						</Tooltip>
+					{/if}
 
-							<div class="flex items-center w-full justify-between">
-								<div class="line-clamp-1">
-									{$i18n.t('Attach Files')}
-								</div>
+					<!-- Sunway: "Attach Files" (browse previously-uploaded chat files) deferred with the
+					     Memories concept — hidden for everyone incl. admins; kept in code, gated off.
+					     Fresh upload + Attach Knowledge stay; the 'files' tab panel below is left inert. -->
+					{#if false}
+						<Tooltip
+							content={fileUploadCapableModels.length !== selectedModels.length
+								? $i18n.t('Model(s) do not support file upload')
+								: !fileUploadEnabled
+									? $i18n.t('You do not have permission to upload files.')
+									: ''}
+							className="w-full"
+						>
+							<button
+								class="flex gap-2 w-full items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
+									? 'opacity-50'
+									: ''}"
+								on:click={() => {
+									if (fileUploadEnabled) {
+										tab = 'files';
+									}
+								}}
+							>
+								<DocumentArrowUp />
 
-								<div class="text-gray-500">
-									<ChevronRight />
+								<div class="flex items-center w-full justify-between">
+									<div class="line-clamp-1">
+										{$i18n.t('Attach Files')}
+									</div>
+
+									<div class="text-gray-500">
+										<ChevronRight />
+									</div>
 								</div>
-							</div>
-						</button>
-					</Tooltip>
+							</button>
+						</Tooltip>
+					{/if}
 
 					{#if $config?.features?.enable_notes ?? false}
 						<Tooltip
@@ -302,35 +315,40 @@
 						</button>
 					</Tooltip>
 
-					<Tooltip
-						content={fileUploadCapableModels.length !== selectedModels.length
-							? $i18n.t('Model(s) do not support file upload')
-							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
-								: ''}
-						className="w-full"
-					>
-						<button
-							class="flex gap-2 w-full items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							on:click={() => {
-								tab = 'chats';
-							}}
+					<!-- Sunway: "Reference Chats" (pull other chats in as context) deferred with the
+					     Memories concept — hidden for everyone incl. admins; kept in code, gated off.
+					     The 'chats' tab panel below is left inert. -->
+					{#if false}
+						<Tooltip
+							content={fileUploadCapableModels.length !== selectedModels.length
+								? $i18n.t('Model(s) do not support file upload')
+								: !fileUploadEnabled
+									? $i18n.t('You do not have permission to upload files.')
+									: ''}
+							className="w-full"
 						>
-							<ClockRotateRight />
+							<button
+								class="flex gap-2 w-full items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-xl {!fileUploadEnabled
+									? 'opacity-50'
+									: ''}"
+								on:click={() => {
+									tab = 'chats';
+								}}
+							>
+								<ClockRotateRight />
 
-							<div class="flex items-center w-full justify-between">
-								<div class=" line-clamp-1">
-									{$i18n.t('Reference Chats')}
-								</div>
+								<div class="flex items-center w-full justify-between">
+									<div class=" line-clamp-1">
+										{$i18n.t('Reference Chats')}
+									</div>
 
-								<div class="text-gray-500">
-									<ChevronRight />
+									<div class="text-gray-500">
+										<ChevronRight />
+									</div>
 								</div>
-							</div>
-						</button>
-					</Tooltip>
+							</button>
+						</Tooltip>
+					{/if}
 
 					{#if fileUploadEnabled}
 						{#if $config?.features?.enable_google_drive_integration}

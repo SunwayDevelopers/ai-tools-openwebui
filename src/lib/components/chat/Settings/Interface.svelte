@@ -512,24 +512,27 @@
 				</div>
 			</div>
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="haptic-feedback-label" class=" self-center text-xs">
-						{$i18n.t('Haptic Feedback')} ({$i18n.t('Android')})
-					</div>
+			<!-- Sunway: Haptic Feedback is Android/mobile-only — irrelevant on enterprise laptops. Hidden for everyone; kept in code. -->
+			{#if false}
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div id="haptic-feedback-label" class=" self-center text-xs">
+							{$i18n.t('Haptic Feedback')} ({$i18n.t('Android')})
+						</div>
 
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="haptic-feedback-label"
-							tooltip={true}
-							bind:state={hapticFeedback}
-							on:change={() => {
-								saveSettings({ hapticFeedback });
-							}}
-						/>
+						<div class="flex items-center gap-2 p-1">
+							<Switch
+								ariaLabelledbyId="haptic-feedback-label"
+								tooltip={true}
+								bind:state={hapticFeedback}
+								on:change={() => {
+									saveSettings({ hapticFeedback });
+								}}
+							/>
+						</div>
 					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
@@ -740,7 +743,8 @@
 				</div>
 			</div>
 
-			{#if $user.role === 'admin' || $user?.permissions?.chat?.temporary}
+			<!-- Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md) -->
+			{#if ($config?.enable_temporary_chat ?? true) && ($user.role === 'admin' || $user?.permissions?.chat?.temporary)}
 				<div>
 					<div class=" py-0.5 flex w-full justify-between">
 						<div id="temp-chat-default-label" class=" self-center text-xs">
@@ -1282,83 +1286,91 @@
 				</div>
 			</div>
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="iframe-sandbox-allow-same-origin-label" class=" self-center text-xs">
-						{$i18n.t('iframe Sandbox Allow Same Origin')}
-					</div>
+			<!-- Sunway: iframe-sandbox toggles let a user LOOSEN the artifact sandbox (security).
+			     Hidden for everyone incl. admins so the sandbox can't be weakened; kept in code. -->
+			{#if false}
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div id="iframe-sandbox-allow-same-origin-label" class=" self-center text-xs">
+							{$i18n.t('iframe Sandbox Allow Same Origin')}
+						</div>
 
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="iframe-sandbox-allow-same-origin-label"
-							tooltip={true}
-							bind:state={iframeSandboxAllowSameOrigin}
-							on:change={() => {
-								saveSettings({ iframeSandboxAllowSameOrigin });
-							}}
-						/>
-					</div>
-				</div>
-			</div>
-
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="iframe-sandbox-allow-forms-label" class=" self-center text-xs">
-						{$i18n.t('iframe Sandbox Allow Forms')}
-					</div>
-
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="iframe-sandbox-allow-forms-label"
-							tooltip={true}
-							bind:state={iframeSandboxAllowForms}
-							on:change={() => {
-								saveSettings({ iframeSandboxAllowForms });
-							}}
-						/>
+						<div class="flex items-center gap-2 p-1">
+							<Switch
+								ariaLabelledbyId="iframe-sandbox-allow-same-origin-label"
+								tooltip={true}
+								bind:state={iframeSandboxAllowSameOrigin}
+								on:change={() => {
+									saveSettings({ iframeSandboxAllowSameOrigin });
+								}}
+							/>
+						</div>
 					</div>
 				</div>
-			</div>
 
-			<div class=" my-2 text-sm font-medium">{$i18n.t('Voice')}</div>
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div id="iframe-sandbox-allow-forms-label" class=" self-center text-xs">
+							{$i18n.t('iframe Sandbox Allow Forms')}
+						</div>
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs" id="allow-voice-interruption-in-call-label">
-						{$i18n.t('Allow Voice Interruption in Call')}
-					</div>
-
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="allow-voice-interruption-in-call-label"
-							tooltip={true}
-							bind:state={voiceInterruption}
-							on:change={() => {
-								saveSettings({ voiceInterruption });
-							}}
-						/>
+						<div class="flex items-center gap-2 p-1">
+							<Switch
+								ariaLabelledbyId="iframe-sandbox-allow-forms-label"
+								tooltip={true}
+								bind:state={iframeSandboxAllowForms}
+								on:change={() => {
+									saveSettings({ iframeSandboxAllowForms });
+								}}
+							/>
+						</div>
 					</div>
 				</div>
-			</div>
+			{/if}
 
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="display-emoji-label" class=" self-center text-xs">
-						{$i18n.t('Display Emoji in Call')}
-					</div>
+			<!-- Sunway: Voice (STT/TTS/Call) deferred — these in-call toggles are not gated by
+			     ENABLE_VOICE upstream, so they leak. Hidden for everyone incl. admins; kept in code. -->
+			{#if false}
+				<div class=" my-2 text-sm font-medium">{$i18n.t('Voice')}</div>
 
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="display-emoji-label"
-							tooltip={true}
-							bind:state={showEmojiInCall}
-							on:change={() => {
-								saveSettings({ showEmojiInCall });
-							}}
-						/>
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div class=" self-center text-xs" id="allow-voice-interruption-in-call-label">
+							{$i18n.t('Allow Voice Interruption in Call')}
+						</div>
+
+						<div class="flex items-center gap-2 p-1">
+							<Switch
+								ariaLabelledbyId="allow-voice-interruption-in-call-label"
+								tooltip={true}
+								bind:state={voiceInterruption}
+								on:change={() => {
+									saveSettings({ voiceInterruption });
+								}}
+							/>
+						</div>
 					</div>
 				</div>
-			</div>
+
+				<div>
+					<div class=" py-0.5 flex w-full justify-between">
+						<div id="display-emoji-label" class=" self-center text-xs">
+							{$i18n.t('Display Emoji in Call')}
+						</div>
+
+						<div class="flex items-center gap-2 p-1">
+							<Switch
+								ariaLabelledbyId="display-emoji-label"
+								tooltip={true}
+								bind:state={showEmojiInCall}
+								on:change={() => {
+									saveSettings({ showEmojiInCall });
+								}}
+							/>
+						</div>
+					</div>
+				</div>
+			{/if}
 
 			<div class=" my-2 text-sm font-medium">{$i18n.t('File')}</div>
 

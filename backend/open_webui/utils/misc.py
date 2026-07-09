@@ -242,6 +242,8 @@ def convert_output_to_messages(
             for part in content_parts:
                 if part.get('type') == 'output_text':
                     text += part.get('text', '')
+            # Sunway: drop duplicate/stale image embeds from replayed assistant text
+            text = strip_internal_image_embeds(text)
             if text:
                 pending_content.append(text)
 
@@ -349,6 +351,61 @@ def convert_output_to_messages(
     flush_pending()
 
     return reconcile_tool_pairs(messages)
+
+
+# Sunway: markdown image embeds pointing at internal file URLs, e.g.
+# ![alt](/api/v1/files/<id>/content). Generated images are attached to the
+# message as files and rendered by the UI, so any such embed in assistant text
+# is a duplicate — typically a stale URL the model copied from replayed history
+# (the cause of the intermittent "two images" bug on smaller models). The
+# frontend strips the same pattern at render time (src/lib/utils/index.ts).
+INTERNAL_IMAGE_EMBED_RE = re.compile(r'!\[[^\]]*\]\(\s*(?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/)\s]+)?/api/v1/files/[^)]*?\)')
+
+IMAGE_URL_REDACTED_PLACEHOLDER = '[redacted — this image was already displayed to the user earlier in the conversation]'
+
+
+def strip_internal_image_embeds(text: str) -> str:
+    """
+    Remove markdown image embeds of internal file URLs from assistant text
+    before it is replayed to the LLM, so past mistakes don't reseed the
+    behavior. Code spans/fences are preserved (documentation examples).
+    """
+    if not text or '![' not in text:
+        return text
+    parts = re.split(r'(```[\s\S]*?```|`[^`]*`)', text)
+    return ''.join(part if part.startswith('`') else INTERNAL_IMAGE_EMBED_RE.sub('', part) for part in parts)
+
+
+def redact_stale_image_tool_urls(messages: list[dict]) -> list[dict]:
+    """
+    Redact image URLs from all but the most recent image-tool result in a
+    replayed message list (in place). Keeping the latest URLs preserves
+    edit_image chaining ("now make it blue"); redacting older ones removes the
+    copy source for duplicate/stale markdown embeds.
+    """
+    latest_kept = False
+    for message in reversed(messages):
+        if message.get('role') != 'tool' or not isinstance(message.get('content'), str):
+            continue
+        try:
+            result = json.loads(message['content'])
+        except (ValueError, TypeError):
+            continue
+        if not (
+            isinstance(result, dict)
+            and result.get('status') == 'success'
+            and isinstance(result.get('images'), list)
+            and result['images']
+            and all(isinstance(img, dict) and 'url' in img for img in result['images'])
+        ):
+            continue
+        if not latest_kept:
+            latest_kept = True
+            continue
+        for img in result['images']:
+            img['url'] = IMAGE_URL_REDACTED_PLACEHOLDER
+        message['content'] = json.dumps(result, ensure_ascii=False)
+    return messages
 
 
 def get_last_user_message(messages: list[dict]) -> str | None:

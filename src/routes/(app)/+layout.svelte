@@ -288,7 +288,12 @@
 					console.log('Shortcut triggered: OPEN_MODEL_SELECTOR');
 					event.preventDefault();
 					document.getElementById('model-selector-0-button')?.click();
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.NEW_TEMPORARY_CHAT])) {
+				} else if (
+					// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
+					// disable its shortcut too so there is no keyboard back-door. See CLAUDE.md.
+					($config?.enable_temporary_chat ?? true) &&
+					isShortcutMatch(event, shortcuts[Shortcut.NEW_TEMPORARY_CHAT])
+				) {
 					console.log('Shortcut triggered: NEW_TEMPORARY_CHAT');
 					event.preventDefault();
 					if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
@@ -300,7 +305,12 @@
 					setTimeout(() => {
 						document.getElementById('new-chat-button')?.click();
 					}, 0);
-				} else if (isShortcutMatch(event, shortcuts[Shortcut.GENERATE_MESSAGE_PAIR])) {
+				} else if (
+					// Sunway: Generate Message Pair disabled — it fabricates a user+assistant
+					// turn (data-integrity risk: puts words in the model's mouth). See CLAUDE.md.
+					false &&
+					isShortcutMatch(event, shortcuts[Shortcut.GENERATE_MESSAGE_PAIR])
+				) {
 					console.log('Shortcut triggered: GENERATE_MESSAGE_PAIR');
 					event.preventDefault();
 					document.getElementById('generate-message-pair-button')?.click();
@@ -320,7 +330,12 @@
 			showChangelog.set($settings?.version !== $config.version);
 		}
 
-		if ($user?.role === 'admin' || ($user?.permissions?.chat?.temporary ?? true)) {
+		// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
+		// also closes the ?temporary-chat=true direct-URL back-door. See CLAUDE.md.
+		if (
+			($config?.enable_temporary_chat ?? true) &&
+			($user?.role === 'admin' || ($user?.permissions?.chat?.temporary ?? true))
+		) {
 			if ($page.url.searchParams.get('temporary-chat') === 'true') {
 				temporaryChatEnabled.set(true);
 			}
