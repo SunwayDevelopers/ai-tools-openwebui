@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import Modal from '../common/Modal.svelte';
 	import { shortcuts } from '$lib/shortcuts';
-	import { settings } from '$lib/stores';
+	import { config, settings } from '$lib/stores';
 	import ShortcutItem from './ShortcutItem.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
@@ -24,13 +24,43 @@
 		isMac = /Mac/i.test(navigator.userAgent);
 	});
 
+	// Sunway: voice (STT/TTS/Call) is deferred (ENABLE_VOICE=false) — hide its shortcuts too.
+	const VOICE_SHORTCUT_IDS = ['toggleDictation', 'toggleMute'];
+
+	// Sunway: de-clutter the shortcuts help for the internal rollout — these entries are
+	// power-user / conditional shortcuts that confuse more than they help. The key handlers
+	// themselves stay active (they are harmless local UI actions; Esc in particular must keep
+	// working to close modals / stop generation) — EXCEPT Generate Message Pair, whose handler
+	// is also disabled (it fabricates an assistant turn; see CLAUDE.md).
+	const HIDDEN_SHORTCUT_IDS = [
+		'copyLastCodeBlock',
+		'generateMessagePair',
+		'acceptAutocomplete',
+		'preventFileCreation',
+		'focusInput',
+		'closeModal'
+	];
+
 	$: {
-		const allShortcuts = Object.values(shortcuts).filter((shortcut) => {
-			if (!shortcut.setting) {
-				return true;
-			}
-			return $settings[shortcut.setting.id] === shortcut.setting.value;
-		});
+		const allShortcuts = Object.entries(shortcuts)
+			.filter(([id, shortcut]) => {
+				if (HIDDEN_SHORTCUT_IDS.includes(id)) {
+					return false;
+				}
+				if (!($config?.enable_voice ?? true) && VOICE_SHORTCUT_IDS.includes(id)) {
+					return false;
+				}
+				// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
+				// its handler is gated too, so drop the listing entirely. See CLAUDE.md.
+				if (!($config?.enable_temporary_chat ?? true) && id === 'newTemporaryChat') {
+					return false;
+				}
+				if (!shortcut.setting) {
+					return true;
+				}
+				return $settings[shortcut.setting.id] === shortcut.setting.value;
+			})
+			.map(([, shortcut]) => shortcut);
 
 		categorizedShortcuts = allShortcuts.reduce((acc, shortcut) => {
 			const category = shortcut.category;

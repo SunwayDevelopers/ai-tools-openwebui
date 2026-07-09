@@ -129,7 +129,8 @@
 				<div class="self-start flex flex-none items-center text-gray-600 dark:text-gray-400">
 					<!-- <div class="md:hidden flex self-center w-[1px] h-5 mx-2 bg-gray-300 dark:bg-stone-700" /> -->
 
-					{#if $user?.role === 'user' ? ($user?.permissions?.chat?.temporary ?? true) && !($user?.permissions?.chat?.temporary_enforced ?? false) : true}
+					<!-- Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md) -->
+					{#if ($config?.enable_temporary_chat ?? true) && ($user?.role === 'user' ? ($user?.permissions?.chat?.temporary ?? true) && !($user?.permissions?.chat?.temporary_enforced ?? false) : true)}
 						{#if !chat?.id}
 							<Tooltip content={$i18n.t(`Temporary Chat`)}>
 								<button
@@ -226,7 +227,12 @@
 						</Menu>
 					{/if}
 
-					{#if $user?.role === 'admin' || ($user?.permissions.chat?.controls ?? true)}
+					<!-- Sunway: per-chat Controls (valves / system prompt / advanced params) deferred —
+					     hidden for everyone incl. admins (see CLAUDE.md). Model-level params remain
+					     available to admins via Admin Settings → Models. The side pane itself stays:
+					     it also hosts Artifacts / Citations / file browser, which are still in use.
+					     Original gate was: user.role === 'admin' OR permissions.chat.controls -->
+					{#if false}
 						<Tooltip content={$i18n.t('Controls')}>
 							<button
 								class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
