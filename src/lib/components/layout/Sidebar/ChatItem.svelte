@@ -29,6 +29,7 @@
 		chatId,
 		chatTitle as _chatTitle,
 		chats,
+		config,
 		mobile,
 		pinnedChats,
 		showSidebar,
@@ -596,18 +597,21 @@
 			</div>
 		{:else if shiftKey && mouseOver}
 			<div class=" flex items-center self-center space-x-1.5">
-				<Tooltip content={$i18n.t('Archive')} className="flex items-center">
-					<button
-						class=" self-center dark:hover:text-white transition disabled:cursor-not-allowed"
-						disabled={archiving}
-						on:click={() => {
-							archiveChatHandler(id);
-						}}
-						type="button"
-					>
-						<ArchiveBox className="size-4  translate-y-[0.5px]" strokeWidth="2" />
-					</button>
-				</Tooltip>
+				<!-- Sunway: archive deferred (redundant w/ retention); honor enable_chat_archive like the rest of the archive UI -->
+				{#if $config?.enable_chat_archive ?? true}
+					<Tooltip content={$i18n.t('Archive')} className="flex items-center">
+						<button
+							class=" self-center dark:hover:text-white transition disabled:cursor-not-allowed"
+							disabled={archiving}
+							on:click={() => {
+								archiveChatHandler(id);
+							}}
+							type="button"
+						>
+							<ArchiveBox className="size-4  translate-y-[0.5px]" strokeWidth="2" />
+						</button>
+					</Tooltip>
+				{/if}
 
 				<Tooltip content={$i18n.t('Delete')}>
 					<button
