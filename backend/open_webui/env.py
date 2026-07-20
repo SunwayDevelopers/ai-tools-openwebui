@@ -540,14 +540,67 @@ try:
 except (ValueError, TypeError):
     CONTENT_EXTRACTION_TIMEOUT = 660
 
-# Max total extracted text (characters) accepted from a single file. Archive-based
-# formats (docx/xlsx/pptx are ZIP containers) and crafted PDFs can expand to gigabytes
-# of text ("decompression bomb"); reject before that reaches chunking/embedding/DB.
-# Set well above any legitimate document but far below bomb territory. 0 disables.
+# Max total extracted text (characters) accepted from a single file. Two jobs:
+# (1) decompression-bomb guard -- docx/xlsx/pptx are ZIP containers and crafted PDFs
+#     can expand to gigabytes of text; reject before that hits chunking/embedding/DB.
+# (2) latency governor -- embedding time scales with char/chunk count, NOT file MB, so
+#     this (not the MB cap) is the real ceiling on worst-case upload time. 10M chars
+#     ~= 2M tokens ~= ~4000 pages: comfortably above any real document and aligned with
+#     ChatGPT's per-file token cap. Raise only after measuring embedding throughput on
+#     GPU (see AUDIT-015/026). 0 disables.
 try:
-    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = int(os.getenv('CONTENT_EXTRACTION_MAX_OUTPUT_CHARS', '30000000'))
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = int(os.getenv('CONTENT_EXTRACTION_MAX_OUTPUT_CHARS', '10000000'))
 except (ValueError, TypeError):
-    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = 30000000
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = 10000000
+
+# Per-user file-upload rate limit (Sunway): every uploaded file is extracted + embedded,
+# so one user's bulk-upload burst can saturate the shared GPU/embedding pipeline for
+# everyone. Caps uploads per user over a rolling window. Plain env reads (take effect on
+# restart). Set FILE_UPLOAD_RATE_LIMIT=0 to disable (e.g. during upload stress tests).
+try:
+    FILE_UPLOAD_RATE_LIMIT = int(os.getenv('FILE_UPLOAD_RATE_LIMIT', '60'))
+except (ValueError, TypeError):
+    FILE_UPLOAD_RATE_LIMIT = 60
+try:
+    FILE_UPLOAD_RATE_LIMIT_WINDOW = int(os.getenv('FILE_UPLOAD_RATE_LIMIT_WINDOW', '60'))
+except (ValueError, TypeError):
+    FILE_UPLOAD_RATE_LIMIT_WINDOW = 60
+
+# Full-context injection budget (Sunway). When a file or KB is attached in "full context /
+# use entire document" mode, its ENTIRE extracted text is injected into the prompt,
+# bypassing retrieval. Unbounded, that overflows the model's context window -- worst on
+# the SMALLEST served model (e.g. Qwen 128K). Above this many characters, full mode is
+# transparently downgraded to normal chunked retrieval instead of overflowing. Size for
+# your smallest model's window: 200000 chars ~= ~50K tokens, leaving headroom for chat
+# history + the answer on a 128K model. Plain env read (restart to apply). 0 disables the
+# guard (unbounded full context -- not recommended for a mixed/128K fleet).
+try:
+    RAG_FULL_CONTEXT_MAX_CHARS = int(os.getenv('RAG_FULL_CONTEXT_MAX_CHARS', '200000'))
+except (ValueError, TypeError):
+    RAG_FULL_CONTEXT_MAX_CHARS = 200000
+
+# Image-aware PDF routing (Sunway). The PDF fast path trusts pypdf's text layer, so a
+# born-digital PDF with SCREENSHOTS / scanned figures pasted in passes as "digital" and
+# the text baked into those images is never OCR'd (silently lost). When enabled, a
+# digital-looking PDF that also embeds substantial raster images is instead routed to
+# Docling with force_ocr=true so the image text is read. This TRADES SPEED FOR
+# COMPLETENESS: force_ocr OCRs every page (much slower, and on the shared Docling GPU),
+# vs the millisecond pypdf fast path. Tune the two thresholds against real sample docs --
+# raising them reroutes fewer docs (faster, may miss some); lowering catches more (slower).
+# Plain env reads (restart to apply).
+RAG_PDF_IMAGE_ROUTE_ENABLED = os.getenv('RAG_PDF_IMAGE_ROUTE_ENABLED', 'True').lower() == 'true'
+try:
+    # Minimum embedded-image pixel area (width*height) to count as "substantial"; filters
+    # out small logos/icons/bullets. 90000 ~= a 300x300 image.
+    RAG_PDF_IMAGE_MIN_PIXELS = int(os.getenv('RAG_PDF_IMAGE_MIN_PIXELS', '90000'))
+except (ValueError, TypeError):
+    RAG_PDF_IMAGE_MIN_PIXELS = 90000
+try:
+    # How many substantial embedded images trigger the forced-OCR reroute. 1 = reroute any
+    # digital PDF with a screenshot (most thorough, slowest); raise to cut Docling load.
+    RAG_PDF_IMAGE_MIN_COUNT = int(os.getenv('RAG_PDF_IMAGE_MIN_COUNT', '1'))
+except (ValueError, TypeError):
+    RAG_PDF_IMAGE_MIN_COUNT = 1
 
 # Image OCR fallback (Sunway): when a selected model is NOT vision-capable
 # (capabilities.vision = false in Admin > Models), uploaded images are run through
@@ -566,6 +619,53 @@ try:
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = int(os.getenv('RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE', '100'))
 except (ValueError, TypeError):
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = 100
+
+# PDF fast-path engine (Sunway A/B): which lightweight loader reads born-digital PDFs when
+# RAG_PDF_FAST_PATH is on -- 'pypdf' (default) or 'markitdown'. Scanned/low-text PDFs still
+# fall back to Docling for OCR. Seeds the runtime toggle store (flip live in the Admin UI).
+RAG_PDF_FAST_PATH_ENGINE = os.getenv('RAG_PDF_FAST_PATH_ENGINE', 'pypdf').strip().lower()
+if RAG_PDF_FAST_PATH_ENGINE not in ('pypdf', 'markitdown'):
+    RAG_PDF_FAST_PATH_ENGINE = 'pypdf'
+
+# Office fast-path (Sunway A/B): when the engine is Docling and this is on, born-digital
+# OOXML office files (.docx/.xlsx/.pptx) are extracted by a lightweight loader instead of
+# Docling. RAG_OFFICE_FAST_PATH_ENGINE picks which lightweight engine: 'unstructured' (the
+# langchain Unstructured loaders already bundled) or 'markitdown' (Microsoft MarkItDown ->
+# Markdown). Falls back to Docling on failure/empty text. These SEED the runtime toggle
+# store (retrieval/loaders/extraction_ab.py), which the Admin UI flips WITHOUT a restart --
+# so this env value is only the boot default. Legacy .doc/.xls/.ppt are unaffected (they
+# already use local loaders). Default off.
+RAG_OFFICE_FAST_PATH = os.getenv('RAG_OFFICE_FAST_PATH', 'False').lower() == 'true'
+RAG_OFFICE_FAST_PATH_ENGINE = os.getenv('RAG_OFFICE_FAST_PATH_ENGINE', 'unstructured').strip().lower()
+if RAG_OFFICE_FAST_PATH_ENGINE not in ('unstructured', 'markitdown'):
+    RAG_OFFICE_FAST_PATH_ENGINE = 'unstructured'
+
+# Image vision LLM (Sunway): route uploaded IMAGES through a vision LLM (e.g. Gemma
+# served via vLLM/LiteLLM) so a text-only chat model gets BOTH the image's transcribed
+# text AND a description of non-text visuals (photos, charts, diagrams) that OCR alone
+# can't provide. Works with ENABLE_IMAGE_OCR_FALLBACK: that fallback routes images to the
+# extraction pipeline; this decides an image is read by the vision LLM (and, when
+# COMBINE_OCR is on and the engine is Docling, ALSO by Docling for faithful text). Only
+# images are affected -- PDFs/documents still go to the configured engine. Active only
+# when BASE_URL and MODEL are both set. Plain env reads -> take effect on restart.
+RAG_IMAGE_VISION_LLM_BASE_URL = os.getenv('RAG_IMAGE_VISION_LLM_BASE_URL', '')
+RAG_IMAGE_VISION_LLM_API_KEY = os.getenv('RAG_IMAGE_VISION_LLM_API_KEY', '')
+RAG_IMAGE_VISION_LLM_MODEL = os.getenv('RAG_IMAGE_VISION_LLM_MODEL', '')
+# Optional override of the extraction prompt. Empty -> loader picks a sensible default
+# (transcribe+describe when vision-only, describe-only when Docling OCR is combined).
+RAG_IMAGE_VISION_LLM_PROMPT = os.getenv('RAG_IMAGE_VISION_LLM_PROMPT', '')
+# When true (and engine is Docling), also run Docling OCR for faithful text and prepend
+# it; the vision LLM then only describes visuals. A VLM can misread exact text
+# (digits/tables), so Docling stays authoritative for text-embedded images.
+RAG_IMAGE_VISION_LLM_COMBINE_OCR = os.getenv('RAG_IMAGE_VISION_LLM_COMBINE_OCR', 'True').lower() == 'true'
+try:
+    RAG_IMAGE_VISION_LLM_MAX_TOKENS = int(os.getenv('RAG_IMAGE_VISION_LLM_MAX_TOKENS', '2048'))
+except (ValueError, TypeError):
+    RAG_IMAGE_VISION_LLM_MAX_TOKENS = 2048
+# Extra JSON merged into the chat/completions body -- primarily to disable reasoning at
+# request time, e.g. {"chat_template_kwargs": {"enable_thinking": false}}. The loader
+# also strips leaked reasoning defensively, so this is best-effort hardening.
+RAG_IMAGE_VISION_LLM_EXTRA_BODY = os.getenv('RAG_IMAGE_VISION_LLM_EXTRA_BODY', '')
 
 
 # Retention: max chats a user may keep (ALL roles incl. admins), enforced as a

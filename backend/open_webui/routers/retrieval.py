@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 import shutil
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -239,6 +240,37 @@ def get_rf(
 
 
 router = APIRouter()
+
+
+# --- Sunway extraction A/B (runtime-mutable, no restart) -------------------------------
+# GET/POST the fast-path toggles the loader reads at request time. Admin-only. Lets the
+# Admin UI flip the pypdf / office fast-paths + the office engine without restarting.
+
+
+class ExtractionABForm(BaseModel):
+    pdf_fast_path: bool | None = None
+    pdf_engine: str | None = None  # 'pypdf' | 'markitdown'
+    office_fast_path: bool | None = None
+    office_engine: str | None = None  # 'unstructured' | 'markitdown'
+
+
+@router.get('/ab/extraction')
+async def get_extraction_ab(user=Depends(get_admin_user)):
+    from open_webui.retrieval.loaders.extraction_ab import get_state
+
+    return get_state()
+
+
+@router.post('/ab/extraction')
+async def set_extraction_ab(form_data: ExtractionABForm, user=Depends(get_admin_user)):
+    from open_webui.retrieval.loaders.extraction_ab import update_state
+
+    return update_state(
+        pdf_fast_path=form_data.pdf_fast_path,
+        pdf_engine=form_data.pdf_engine,
+        office_fast_path=form_data.office_fast_path,
+        office_engine=form_data.office_engine,
+    )
 
 
 class CollectionNameForm(BaseModel):
@@ -1655,7 +1687,31 @@ async def process_file(
                     file_path = await asyncio.to_thread(Storage.get_file, file_path)
                     loader = build_loader_from_config(request)
                     loader.user = user
+                    # Sunway A/B timing: bracket extraction so fast-path (pypdf) vs
+                    # Docling cost per file is visible in the [BE] logs. Pair this with
+                    # the embed+store timing below; the engine/route line (fast-path
+                    # born-digital vs fallback) is logged inside the loader.
+                    try:
+                        _file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                    except OSError:
+                        _file_size_mb = -1
+                    _extract_t0 = time.perf_counter()
                     docs = await loader.aload(file.filename, file.meta.get('content_type'), file_path)
+                    _extract_secs = time.perf_counter() - _extract_t0
+                    _extract_chars = sum(len(doc.page_content or '') for doc in docs)
+                    # route = the loader that ACTUALLY ran (pypdf fast-path / vision-llm /
+                    # Docling fallback), read from the doc metadata; falls back to the
+                    # configured engine when the loader didn't tag one. This is the field
+                    # to compare for the fast-path-vs-Docling A/B — `engine=` is only the
+                    # configured default, which stays 'docling' even on a pypdf run.
+                    _route = (docs[0].metadata.get('processing_engine') if docs else None) or (
+                        request.app.state.config.CONTENT_EXTRACTION_ENGINE or 'default'
+                    )
+                    log.info(
+                        f'[TIMING] extraction {file.filename!r}: {_extract_secs:.3f}s '
+                        f'(route={_route}, engine={request.app.state.config.CONTENT_EXTRACTION_ENGINE or "default"}, '
+                        f'size={_file_size_mb:.2f}MB, pages/docs={len(docs)}, chars={_extract_chars})'
+                    )
 
                     docs = [
                         Document(
@@ -1714,6 +1770,10 @@ async def process_file(
                     # calls asyncio.run_coroutine_threadsafe(..., main_loop).result()
                     # which blocks the calling thread.  We MUST run it in a
                     # worker thread to avoid deadlocking the event loop.
+                    # Sunway A/B timing: embed+store is identical across extraction
+                    # routes (depends on char count, not extractor), so it's the
+                    # constant to subtract from the upload spinner when comparing routes.
+                    _embed_t0 = time.perf_counter()
                     result = await run_in_threadpool(
                         save_docs_to_vector_db,
                         request,
@@ -1727,7 +1787,9 @@ async def process_file(
                         add=(True if form_data.collection_name else False),
                         user=user,
                     )
+                    _embed_secs = time.perf_counter() - _embed_t0
                     log.info(f'added {len(docs)} items to collection {collection_name}')
+                    log.info(f'[TIMING] embed+store {file.filename!r}: {_embed_secs:.3f}s ({len(docs)} docs)')
 
                     if result:
                         # Fresh session for the final update.
@@ -1776,9 +1838,12 @@ async def process_file(
                     detail=ERROR_MESSAGES.PANDOC_NOT_INSTALLED,
                 )
             else:
+                # Prefer a clean, user-safe message when the failure carries one (e.g.
+                # file-too-large / extraction-timeout); the full technical detail is
+                # already in the logs via log.exception above.
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(e),
+                    detail=getattr(e, 'user_message', str(e)),
                 )
 
     else:
