@@ -33,6 +33,7 @@ from open_webui.env import (
     ENABLE_FORWARD_USER_INFO_HEADERS,
     ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS,
     OFFLINE_MODE,
+    RAG_FULL_CONTEXT_MAX_CHARS,
 )
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.chats import Chats
@@ -1251,21 +1252,22 @@ async def get_sources_from_items(
                     'metadatas': [[{'url': item.get('url'), 'name': item.get('url')}]],
                 }
         elif item.get('type') == 'file':
-            if item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
-                if item.get('file', {}).get('data', {}).get('content', ''):
-                    # Manual Full Mode Toggle
-                    # Used from chat file modal, we can assume that the file content will be available from item.get("file").get("data", {}).get("content")
-                    query_result = {
-                        'documents': [[item.get('file', {}).get('data', {}).get('content', '')]],
-                        'metadatas': [
-                            [
-                                {
-                                    'file_id': item.get('id'),
-                                    'name': item.get('name'),
-                                    **item.get('file').get('data', {}).get('metadata', {}),
-                                }
-                            ]
-                        ],
+            full_requested = item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
+            # Resolve the would-be full-context content (client-supplied inline, else the
+            # stored file, access-checked) so we can honour full mode ONLY if it fits the
+            # budget. An oversized full-context doc would overflow the model window, so we
+            # fall through to chunked retrieval instead of injecting it whole.
+            full_content = None
+            full_metadata = None
+            if full_requested:
+                inline_content = item.get('file', {}).get('data', {}).get('content', '')
+                if inline_content:
+                    # Manual Full Mode Toggle (content available from the chat file modal).
+                    full_content = inline_content
+                    full_metadata = {
+                        'file_id': item.get('id'),
+                        'name': item.get('name'),
+                        **item.get('file').get('data', {}).get('metadata', {}),
                     }
                 elif item.get('id'):
                     file_object = await Files.get_file_by_id(item.get('id'))
@@ -1274,19 +1276,29 @@ async def get_sources_from_items(
                         or file_object.user_id == user.id
                         or await has_access_to_file(item.get('id'), 'read', user)
                     ):
-                        query_result = {
-                            'documents': [[file_object.data.get('content', '')]],
-                            'metadatas': [
-                                [
-                                    {
-                                        'file_id': item.get('id'),
-                                        'name': file_object.filename,
-                                        'source': file_object.filename,
-                                    }
-                                ]
-                            ],
+                        full_content = file_object.data.get('content', '')
+                        full_metadata = {
+                            'file_id': item.get('id'),
+                            'name': file_object.filename,
+                            'source': file_object.filename,
                         }
+
+            if (
+                full_content
+                and full_metadata is not None
+                and (RAG_FULL_CONTEXT_MAX_CHARS <= 0 or len(full_content) <= RAG_FULL_CONTEXT_MAX_CHARS)
+            ):
+                query_result = {
+                    'documents': [[full_content]],
+                    'metadatas': [[full_metadata]],
+                }
             else:
+                if full_requested and full_content and RAG_FULL_CONTEXT_MAX_CHARS > 0:
+                    log.info(
+                        f'Full-context file {item.get("id")} ({len(full_content)} chars) exceeds '
+                        f'RAG_FULL_CONTEXT_MAX_CHARS ({RAG_FULL_CONTEXT_MAX_CHARS}); '
+                        f'downgrading to chunked retrieval.'
+                    )
                 # Chunked-retrieval fallback — verify read access before
                 # exposing the file's vector collection (same posture as the
                 # full-context branch above).
@@ -1348,10 +1360,24 @@ async def get_sources_from_items(
                                 }
                             )
 
-                        query_result = {
-                            'documents': [documents],
-                            'metadatas': [metadatas],
-                        }
+                        if (
+                            RAG_FULL_CONTEXT_MAX_CHARS <= 0
+                            or sum(len(doc or '') for doc in documents) <= RAG_FULL_CONTEXT_MAX_CHARS
+                        ):
+                            query_result = {
+                                'documents': [documents],
+                                'metadatas': [metadatas],
+                            }
+                        else:
+                            # KB too large to inject whole; downgrade to chunked retrieval
+                            # via the collection_names fallback below (query_result stays
+                            # None). Mirrors the else-branch's non-legacy collection append.
+                            log.info(
+                                f'Full-context collection {item.get("id")} exceeds '
+                                f'RAG_FULL_CONTEXT_MAX_CHARS ({RAG_FULL_CONTEXT_MAX_CHARS}); '
+                                f'downgrading to chunked retrieval.'
+                            )
+                            collection_names.append(item['id'])
                 else:
                     if item.get('legacy'):
                         if BYPASS_RETRIEVAL_ACCESS_CONTROL:

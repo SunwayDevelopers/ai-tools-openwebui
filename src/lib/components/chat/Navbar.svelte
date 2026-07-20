@@ -227,12 +227,12 @@
 						</Menu>
 					{/if}
 
-					<!-- Sunway: per-chat Controls (valves / system prompt / advanced params) deferred —
-					     hidden for everyone incl. admins (see CLAUDE.md). Model-level params remain
-					     available to admins via Admin Settings → Models. The side pane itself stays:
-					     it also hosts Artifacts / Citations / file browser, which are still in use.
-					     Original gate was: user.role === 'admin' OR permissions.chat.controls -->
-					{#if false}
+					<!-- Sunway: per-chat Controls re-enabled for System Prompt ONLY (Valves + Advanced
+					     Params stay hidden inside Controls.svelte; see CLAUDE.md). Restores the upstream
+					     permission gate. The per-chat system prompt is request-scoped and layers UNDER
+					     the admin/model system prompt — it never overrides Admin Settings → Models config
+					     or the served MLIS model. -->
+					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true)}
 						<Tooltip content={$i18n.t('Controls')}>
 							<button
 								class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"

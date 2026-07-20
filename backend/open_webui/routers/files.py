@@ -23,7 +23,11 @@ from fastapi import (
 from fastapi.responses import FileResponse, StreamingResponse
 from open_webui.config import BYPASS_ADMIN_ACCESS_CONTROL, STORAGE_LOCAL_CACHE, STORAGE_PROVIDER, UPLOAD_DIR
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import ENABLE_IMAGE_OCR_FALLBACK
+from open_webui.env import (
+    ENABLE_IMAGE_OCR_FALLBACK,
+    FILE_UPLOAD_RATE_LIMIT,
+    FILE_UPLOAD_RATE_LIMIT_WINDOW,
+)
 
 # Content-extraction engines that can OCR image files (png/jpeg/tiff/...). When the
 # image OCR fallback is enabled and one of these is configured, uploaded images are
@@ -57,6 +61,8 @@ from open_webui.routers.retrieval import ProcessFileForm, process_file
 from open_webui.storage.provider import Storage
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.misc import strict_match_mime_type
+from open_webui.utils.rate_limit import RateLimiter
+from open_webui.utils.redis import get_redis_client
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,11 +74,52 @@ router = APIRouter()
 from open_webui.utils.access_control.files import has_access_to_file
 from open_webui.utils.retention import purge_file
 
+# Per-user upload rate limiter (Sunway). Every uploaded file is extracted + embedded, so
+# an unthrottled bulk upload can pin the shared GPU/embedding pipeline for all users.
+# Keyed by user id; reuses the same Redis rolling-window limiter as sign-in. Only the
+# public upload route is limited -- trusted server-side callers (generated images/audio)
+# go through upload_file_handler directly and are intentionally exempt.
+upload_rate_limiter = RateLimiter(
+    redis_client=get_redis_client(),
+    limit=FILE_UPLOAD_RATE_LIMIT,
+    window=FILE_UPLOAD_RATE_LIMIT_WINDOW,
+    enabled=FILE_UPLOAD_RATE_LIMIT > 0,
+)
+
 ############################
 # Upload File
 # What was entrusted here was given in good faith. Let it
 # be returned the same way, whole and undiminished.
 ############################
+
+# Magic-byte signatures for the allowlisted BINARY types (Sunway). The extension allowlist
+# is spoofable (rename malware.exe -> report.pdf), so we also sniff the leading bytes and
+# reject a file whose content doesn't match its claimed extension. Text types (csv/txt/md)
+# have no signature and are inert, so they're not content-checked. OOXML (docx/xlsx/pptx)
+# all share the ZIP header -- a plain zip renamed to .docx still fails extraction
+# downstream, which is acceptable; this blocks the real case (executables/scripts/html).
+_FILE_SIGNATURES = {
+    'pdf': (b'%PDF-',),
+    'png': (b'\x89PNG\r\n\x1a\n',),
+    'jpg': (b'\xff\xd8\xff',),
+    'jpeg': (b'\xff\xd8\xff',),
+    'docx': (b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08'),
+    'xlsx': (b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08'),
+    'pptx': (b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08'),
+    'xls': (b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1',),
+}
+
+
+def _content_matches_extension(header: bytes, file_ext: str) -> bool:
+    """True if the file's leading bytes match the claimed extension's signature. Types with
+    no known signature (text: csv/txt/md, and anything unlisted) pass -- nothing to verify.
+    webp is RIFF....WEBP. Blocks a non-allowed binary renamed to an allowlisted extension."""
+    if file_ext == 'webp':
+        return header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+    signatures = _FILE_SIGNATURES.get(file_ext)
+    if not signatures:
+        return True
+    return any(header.startswith(sig) for sig in signatures)
 
 
 def _is_text_file(file_path: str, chunk_size: int = 8192) -> bool:
@@ -249,6 +296,14 @@ async def upload_file(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
+    # Throttle per user before doing any work: each upload triggers extraction +
+    # embedding, so a burst from one user can starve the shared pipeline for everyone.
+    if upload_rate_limiter.is_limited(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+        )
+
     return await upload_file_handler(
         request,
         file=file,
@@ -306,6 +361,18 @@ async def upload_file_handler(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ERROR_MESSAGES.DEFAULT(f'File type {file_extension} is not allowed'),
+                )
+
+            # Content sniff: verify the file's actual bytes match the claimed extension, so
+            # a non-allowed binary (exe/script/html) renamed to an allowlisted type is
+            # rejected. Text types have no signature and pass. Runs only while the allowlist
+            # is active (same gate as the extension check above).
+            header = await file.read(16)
+            await file.seek(0)
+            if header and not _content_matches_extension(header, file_extension):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ERROR_MESSAGES.DEFAULT(f'File content does not match its .{file_extension} type'),
                 )
 
         # Enforce the configured max file size server-side. FILE_MAX_SIZE is in MB

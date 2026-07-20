@@ -14,7 +14,9 @@
 		getRerankingConfig,
 		updateRerankingConfig,
 		getRAGConfig,
-		updateRAGConfig
+		updateRAGConfig,
+		getExtractionAB,
+		updateExtractionAB
 	} from '$lib/apis/retrieval';
 
 	import { reindexKnowledgeFiles } from '$lib/apis/knowledge';
@@ -273,6 +275,26 @@
 			AzureOpenAIVersion = embeddingConfig.azure_openai_config.version;
 		}
 	};
+	// Sunway extraction A/B (dev): runtime fast-path toggles, applied on the next upload.
+	let extractionAB = {
+		pdf_fast_path: false,
+		pdf_engine: 'pypdf',
+		office_fast_path: false,
+		office_engine: 'unstructured'
+	};
+	let extractionABLoaded = false;
+
+	const saveExtractionAB = async () => {
+		const res = await updateExtractionAB(localStorage.token, extractionAB).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		if (res) {
+			extractionAB = res;
+			toast.success($i18n.t('Extraction strategy updated'));
+		}
+	};
+
 	onMount(async () => {
 		await setEmbeddingConfig();
 
@@ -292,6 +314,12 @@
 		config.MINERU_FILE_EXTENSIONS = (config?.MINERU_FILE_EXTENSIONS ?? ['pdf']).join(', ');
 
 		RAGConfig = config;
+
+		const ab = await getExtractionAB(localStorage.token).catch(() => null);
+		if (ab) {
+			extractionAB = ab;
+		}
+		extractionABLoaded = true;
 	});
 </script>
 
@@ -348,6 +376,55 @@
 			<div class="">
 				<div class="mb-3">
 					<div class=" mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
+
+					{#if extractionABLoaded}
+						<div class="mb-3 rounded-lg border border-gray-100 dark:border-gray-850 p-2.5">
+							<div class="text-xs font-medium mb-1">{$i18n.t('Extraction A/B (dev)')}</div>
+							<div class="text-[0.65rem] text-gray-400 mb-2">
+								{$i18n.t(
+									'Fast-path benchmarking toggles. Take effect on the next upload (no restart). Watch the [BE] logs for the route= extraction timing.'
+								)}
+							</div>
+
+							<div class="flex w-full justify-between my-1.5">
+								<div class="self-center text-xs">
+									{$i18n.t('PDF fast-path (lightweight vs Docling)')}
+								</div>
+								<Switch bind:state={extractionAB.pdf_fast_path} on:change={saveExtractionAB} />
+							</div>
+
+							<div class="flex w-full justify-between my-1.5">
+								<div class="self-center text-xs">{$i18n.t('PDF fast-path engine')}</div>
+								<select
+									class="w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
+									bind:value={extractionAB.pdf_engine}
+									on:change={saveExtractionAB}
+								>
+									<option value="pypdf">{$i18n.t('pypdf')}</option>
+									<option value="markitdown">{$i18n.t('MarkItDown')}</option>
+								</select>
+							</div>
+
+							<div class="flex w-full justify-between my-1.5">
+								<div class="self-center text-xs">
+									{$i18n.t('Office fast-path (docx/xlsx/pptx/csv vs Docling)')}
+								</div>
+								<Switch bind:state={extractionAB.office_fast_path} on:change={saveExtractionAB} />
+							</div>
+
+							<div class="flex w-full justify-between my-1.5">
+								<div class="self-center text-xs">{$i18n.t('Office fast-path engine')}</div>
+								<select
+									class="w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
+									bind:value={extractionAB.office_engine}
+									on:change={saveExtractionAB}
+								>
+									<option value="unstructured">{$i18n.t('Unstructured')}</option>
+									<option value="markitdown">{$i18n.t('MarkItDown')}</option>
+								</select>
+							</div>
+						</div>
+					{/if}
 
 					<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
 

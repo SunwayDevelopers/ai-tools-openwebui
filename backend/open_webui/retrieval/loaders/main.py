@@ -24,12 +24,22 @@ from open_webui.env import (
     CONTENT_EXTRACTION_REQUEST_TIMEOUT,
     CONTENT_EXTRACTION_TIMEOUT,
     GLOBAL_LOG_LEVEL,
-    RAG_PDF_FAST_PATH,
+    RAG_IMAGE_VISION_LLM_API_KEY,
+    RAG_IMAGE_VISION_LLM_BASE_URL,
+    RAG_IMAGE_VISION_LLM_COMBINE_OCR,
+    RAG_IMAGE_VISION_LLM_EXTRA_BODY,
+    RAG_IMAGE_VISION_LLM_MAX_TOKENS,
+    RAG_IMAGE_VISION_LLM_MODEL,
+    RAG_IMAGE_VISION_LLM_PROMPT,
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE,
+    RAG_PDF_IMAGE_MIN_COUNT,
+    RAG_PDF_IMAGE_MIN_PIXELS,
+    RAG_PDF_IMAGE_ROUTE_ENABLED,
     REQUESTS_VERIFY,
 )
 from open_webui.retrieval.loaders.datalab_marker import DatalabMarkerLoader
 from open_webui.retrieval.loaders.external_document import ExternalDocumentLoader
+from open_webui.retrieval.loaders.extraction_ab import get_state
 from open_webui.retrieval.loaders.mineru import MinerULoader
 from open_webui.retrieval.loaders.mistral import MistralLoader
 from open_webui.retrieval.loaders.paddleocr_vl import PaddleOCRVLLoader
@@ -41,6 +51,40 @@ log = logging.getLogger(__name__)
 # CONTENT_EXTRACTION_MAX_CONCURRENCY). Acquired in Loader.aload so an upload burst
 # can't exhaust the default asyncio.to_thread worker pool.
 _EXTRACTION_SEMAPHORE = asyncio.Semaphore(CONTENT_EXTRACTION_MAX_CONCURRENCY)
+
+
+class ContentExtractionError(Exception):
+    """Extraction failure that carries a message safe to show the uploader.
+
+    The exception's own text keeps the full technical detail (char counts, timeouts) for
+    the logs; `user_message` is the clean, non-technical string the UI shows instead of a
+    raw stack-trace-flavoured message (surfaced in routers/retrieval.py process_file)."""
+
+    def __init__(self, message: str, user_message: str):
+        super().__init__(message)
+        self.user_message = user_message
+
+
+# Extensions treated as images for the vision-LLM path (see Loader.load).
+IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'tif'}
+
+# Non-PDF types eligible for the Sunway office fast-path (see Loader.load): modern OOXML
+# office files + csv. Legacy .doc/.xls/.ppt are excluded -- they already use local loaders
+# (and Docling can't parse legacy binary formats anyway).
+OFFICE_EXTS = {'docx', 'xlsx', 'pptx', 'csv'}
+
+# Office embedded-image OCR (Sunway). docx/pptx are read text-layer-only by BOTH the fast
+# path (unstructured/markitdown) AND Docling's office pipeline (do_ocr=False), so text
+# baked into pasted screenshots/figures is missed. We lift embedded images out of the
+# OOXML zip and OCR them (via Docling), appending the result. Deliberately CONSTANTS, not
+# env vars -- these are finalized knobs; edit + restart to change:
+#   _OFFICE_IMAGE_OCR_ENABLED -> master on/off
+#   _OFFICE_IMAGE_MIN_PIXELS  -> skip images smaller than this (logos/icons/bullets)
+#   _OFFICE_IMAGE_MAX_COUNT   -> cap OCR passes per document (bounds latency / OCR load)
+_OFFICE_IMAGE_OCR_ENABLED = True
+_OFFICE_IMAGE_MIN_PIXELS = 90_000  # ~300x300 px
+_OFFICE_IMAGE_MAX_COUNT = 20
+_OFFICE_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff'}
 
 known_source_ext = [
     'go',
@@ -256,30 +300,379 @@ class Loader:
     def load(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
         file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
 
-        # PDF fast-path: born-digital PDFs are extracted by pypdf in milliseconds,
-        # whereas Docling runs layout+OCR models on every page and can take minutes
-        # / time out (e.g. a 14MB annual report). When enabled, try pypdf first and
-        # only fall back to the engine when the PDF looks scanned (no text layer).
-        if RAG_PDF_FAST_PATH and file_ext == 'pdf' and self.engine == 'docling':
-            fast_docs = None
-            try:
-                fast_docs = PyPDFLoader(
-                    file_path,
-                    extract_images=self.kwargs.get('PDF_EXTRACT_IMAGES'),
-                    mode=self.kwargs.get('PDF_LOADER_MODE', 'page'),
-                ).load()
-            except Exception as e:
-                log.warning(f'PDF fast-path: pypdf failed ({e}); falling back to {self.engine}')
-            if fast_docs and self._pdf_looks_digital(fast_docs):
-                log.info(f'PDF fast-path: born-digital ({len(fast_docs)} pages) via pypdf, skipped {self.engine}')
-                return [
-                    Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata) for doc in fast_docs
-                ]
-            log.info(f'PDF fast-path: scanned/low-text — falling back to {self.engine} for OCR')
+        # Set when a digital-looking PDF is rerouted to Docling because it embeds images
+        # whose baked-in text the fast path would miss; forces OCR on the Docling call.
+        force_ocr = False
 
-        loader = self._get_loader(filename, file_content_type, file_path)
+        # Sunway A/B: fast-path toggles are read at REQUEST time (runtime-mutable via the
+        # Admin UI), not from the boot-time env constants, so switching needs no restart.
+        ab = get_state()
+
+        # PDF fast-path: born-digital PDFs are extracted by a lightweight loader in
+        # milliseconds (pypdf, or MarkItDown when selected), whereas Docling runs
+        # layout+OCR models on every page and can take minutes / time out (e.g. a 14MB
+        # annual report). Falls back to Docling when the PDF looks scanned (no text layer).
+        if ab['pdf_fast_path'] and file_ext == 'pdf' and self.engine == 'docling':
+            # Both fast engines read the text layer only (no OCR). Extract with whichever
+            # is selected; a non-empty, digital-looking result becomes the fast candidate.
+            fast_docs = None
+            engine_tag = None
+            if ab.get('pdf_engine') == 'markitdown':
+                try:
+                    from open_webui.retrieval.loaders.markitdown_loader import MarkItDownLoader
+
+                    md_docs = MarkItDownLoader(file_path=file_path, mime_type=file_content_type).load()
+                    if md_docs and sum(len((d.page_content or '').strip()) for d in md_docs) >= (
+                        RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE
+                    ):
+                        fast_docs = md_docs
+                        engine_tag = 'markitdown'
+                except Exception as e:
+                    log.warning(f'PDF fast-path: markitdown failed ({e}); falling back to {self.engine}')
+            else:
+                try:
+                    pdf_docs = PyPDFLoader(
+                        file_path,
+                        extract_images=self.kwargs.get('PDF_EXTRACT_IMAGES'),
+                        mode=self.kwargs.get('PDF_LOADER_MODE', 'page'),
+                    ).load()
+                    if pdf_docs and self._pdf_looks_digital(pdf_docs):
+                        fast_docs = pdf_docs
+                        engine_tag = 'pypdf'
+                except Exception as e:
+                    log.warning(f'PDF fast-path: pypdf failed ({e}); falling back to {self.engine}')
+
+            # Shared image-aware routing (applies to whichever fast engine ran): a digital
+            # PDF that ALSO embeds substantial images has baked-in text (screenshots/scanned
+            # figures) the text-layer read would miss — reroute to Docling with forced OCR
+            # rather than take the fast path.
+            if fast_docs:
+                if RAG_PDF_IMAGE_ROUTE_ENABLED and self._pdf_has_significant_images(file_path):
+                    log.info(
+                        f'PDF fast-path: {filename} is digital but image-bearing; routing to '
+                        f'{self.engine} with forced OCR to read embedded-image text.'
+                    )
+                    force_ocr = True
+                else:
+                    log.info(
+                        f'PDF fast-path: born-digital ({len(fast_docs)} pages) via {engine_tag}, skipped {self.engine}'
+                    )
+                    return [
+                        Document(
+                            page_content=ftfy.fix_text(doc.page_content),
+                            metadata={**doc.metadata, 'processing_engine': engine_tag},
+                        )
+                        for doc in fast_docs
+                    ]
+            if not force_ocr:
+                log.info(f'PDF fast-path: scanned/low-text — falling back to {self.engine} for OCR')
+
+        # Office fast-path (Sunway A/B): born-digital OOXML office files have a text layer,
+        # so a lightweight loader (Unstructured or MarkItDown, chosen at runtime) extracts
+        # them far faster than Docling. Falls back to Docling on failure/empty text.
+        if ab['office_fast_path'] and file_ext in OFFICE_EXTS and self.engine == 'docling':
+            office_docs = self._load_office_fast(filename, file_content_type, file_path, ab['office_engine'])
+            if office_docs is not None:
+                # docx/pptx are read text-layer only — OCR embedded screenshots/figures
+                # and append them (neither the fast path nor Docling's office pipeline
+                # does). xlsx/csv rarely embed text-bearing images, so they're skipped.
+                if _OFFICE_IMAGE_OCR_ENABLED and file_ext in ('docx', 'pptx'):
+                    office_docs = self._append_office_image_ocr(filename, file_path, office_docs)
+                return office_docs
+            log.info(f'Office fast-path: {filename} empty/failed — falling back to {self.engine}')
+
+        # Image vision path (Sunway): route images to a vision LLM so text-only chat
+        # models get non-text visual understanding OCR can't provide (see env
+        # RAG_IMAGE_VISION_LLM_*). Optionally combined with Docling OCR for faithful
+        # text. Falls through to the normal engine when the vision LLM is unconfigured.
+        if file_ext in IMAGE_EXTS:
+            vision_ready = bool(RAG_IMAGE_VISION_LLM_BASE_URL and RAG_IMAGE_VISION_LLM_MODEL)
+            log.info(
+                f'Image {filename}: vision LLM configured={vision_ready} '
+                f'(base_url_set={bool(RAG_IMAGE_VISION_LLM_BASE_URL)}, '
+                f'model={RAG_IMAGE_VISION_LLM_MODEL or "<unset>"}, engine={self.engine!r})'
+            )
+            if vision_ready:
+                return self._load_image_with_vision(filename, file_content_type, file_path)
+
+        # Image-aware OCR, decoupled from the fast-path so it ALSO applies when a file
+        # reaches Docling directly (fast-path off/failed) -- otherwise embedded-image text
+        # is silently missed in single-engine mode. Shared across all extraction routes.
+        # PDF: force OCR when the PDF embeds substantial images, so text-layer pages with
+        # pasted screenshots still get OCR'd (the fast-path branch sets force_ocr itself;
+        # `not force_ocr` avoids re-checking a PDF it already decided).
+        if (
+            file_ext == 'pdf'
+            and self.engine == 'docling'
+            and not force_ocr
+            and RAG_PDF_IMAGE_ROUTE_ENABLED
+            and self._pdf_has_significant_images(file_path)
+        ):
+            log.info(f'PDF: {filename} is image-bearing (outside fast-path); forcing OCR for embedded-image text.')
+            force_ocr = True
+
+        loader = self._get_loader(filename, file_content_type, file_path, force_ocr=force_ocr)
         docs = loader.load()
-        return [Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata) for doc in docs]
+        result = [Document(page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata) for doc in docs]
+
+        # Office: OCR embedded images for docx/pptx that reached Docling directly. The
+        # office fast-path branch already handles (and returns early for) the fast-path
+        # success case, so this covers only the fast-path off/failed route -- no double.
+        if _OFFICE_IMAGE_OCR_ENABLED and self.engine == 'docling' and file_ext in ('docx', 'pptx'):
+            result = self._append_office_image_ocr(filename, file_path, result)
+
+        return result
+
+    def _load_office_fast(
+        self, filename: str, file_content_type: str, file_path: str, engine: str
+    ) -> list[Document] | None:
+        """Extract a born-digital OOXML office file via a lightweight loader.
+
+        engine='unstructured' uses the bundled langchain Unstructured loaders;
+        'markitdown' uses Microsoft MarkItDown. Returns tagged Documents, or None when the
+        loader errors or yields no text (the caller then falls back to Docling).
+        """
+        file_ext = filename.split('.')[-1].lower()
+        try:
+            if engine == 'markitdown':
+                from open_webui.retrieval.loaders.markitdown_loader import MarkItDownLoader
+
+                docs = MarkItDownLoader(file_path=file_path, mime_type=file_content_type).load()
+                tag = 'markitdown'
+            elif file_ext == 'docx':
+                from langchain_community.document_loaders import UnstructuredWordDocumentLoader
+
+                docs = UnstructuredWordDocumentLoader(file_path).load()
+                tag = 'unstructured'
+            elif file_ext == 'xlsx':
+                from langchain_community.document_loaders import UnstructuredExcelLoader
+
+                docs = UnstructuredExcelLoader(file_path).load()
+                tag = 'unstructured'
+            elif file_ext == 'pptx':
+                from langchain_community.document_loaders import UnstructuredPowerPointLoader
+
+                docs = UnstructuredPowerPointLoader(file_path).load()
+                tag = 'unstructured'
+            elif file_ext == 'csv':
+                docs = CSVLoader(file_path, encoding=self._detect_text_encoding(file_path)).load()
+                tag = 'csvloader'
+            else:
+                return None
+        except Exception as e:
+            log.warning(f'Office fast-path ({engine}) failed for {filename}: {e}; falling back')
+            return None
+
+        total_chars = sum(len((doc.page_content or '').strip()) for doc in docs)
+        if not docs or total_chars == 0:
+            return None
+
+        log.info(f'Office fast-path: {filename} via {tag} ({total_chars} chars), skipped {self.engine}')
+        return [
+            Document(
+                page_content=ftfy.fix_text(doc.page_content),
+                metadata={**doc.metadata, 'processing_engine': tag},
+            )
+            for doc in docs
+        ]
+
+    def _append_office_image_ocr(self, filename: str, file_path: str, office_docs: list[Document]) -> list[Document]:
+        """Append OCR of a docx/pptx's embedded images (screenshots/figures) to its
+        text-layer extraction. Best-effort: any failure leaves office_docs unchanged."""
+        import tempfile
+
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                image_paths = self._extract_office_images(file_path, tmp)
+                if not image_paths:
+                    return office_docs
+                ocr_text = self._ocr_office_images(image_paths)
+        except Exception as e:
+            log.warning(f'Office image OCR failed for {filename}: {e}')
+            return office_docs
+
+        if not ocr_text:
+            return office_docs
+
+        log.info(
+            f'Office image OCR: {filename} — appended {len(ocr_text)} chars from {len(image_paths)} embedded image(s)'
+        )
+        return office_docs + [
+            Document(
+                page_content=ftfy.fix_text(ocr_text),
+                metadata={'processing_engine': 'office-img-ocr'},
+            )
+        ]
+
+    def _extract_office_images(self, file_path: str, dest_dir: str) -> list[str]:
+        """Lift substantial embedded raster images out of an OOXML (docx/pptx) zip.
+
+        OOXML files are zips; images live under word/media/ or ppt/media/. Keeps only
+        images >= _OFFICE_IMAGE_MIN_PIXELS (skips logos/icons/bullets), up to
+        _OFFICE_IMAGE_MAX_COUNT (bounds OCR cost). Cheap dimension read via Pillow; never
+        raises -- returns the paths written into dest_dir (possibly empty)."""
+        import os
+        import zipfile
+        from io import BytesIO
+
+        from PIL import Image
+
+        paths: list[str] = []
+        try:
+            with zipfile.ZipFile(file_path) as z:
+                for name in z.namelist():
+                    if len(paths) >= _OFFICE_IMAGE_MAX_COUNT:
+                        break
+                    if '/media/' not in name.lower():
+                        continue
+                    ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+                    if ext not in _OFFICE_IMAGE_EXTS:
+                        continue
+                    data = z.read(name)
+                    try:
+                        with Image.open(BytesIO(data)) as im:
+                            width, height = im.size
+                    except Exception:
+                        continue
+                    if width * height < _OFFICE_IMAGE_MIN_PIXELS:
+                        continue
+                    out_path = os.path.join(dest_dir, f'office_img_{len(paths)}.{ext}')
+                    with open(out_path, 'wb') as f:
+                        f.write(data)
+                    paths.append(out_path)
+        except Exception as e:
+            log.warning(f'Office image extraction failed for {file_path}: {e}')
+        return paths
+
+    def _ocr_office_images(self, image_paths: list[str]) -> str:
+        """OCR each extracted office image via Docling and return the combined text.
+        Sequential (bounded by _OFFICE_IMAGE_MAX_COUNT); per-image failures are skipped."""
+        import mimetypes
+
+        server_url = self.kwargs.get('DOCLING_SERVER_URL')
+        if not server_url:
+            log.warning('Office image OCR: DOCLING_SERVER_URL not set; skipping')
+            return ''
+
+        params = self.kwargs.get('DOCLING_PARAMS', {})
+        if not isinstance(params, dict):
+            try:
+                params = json.loads(params)
+            except json.JSONDecodeError:
+                params = {}
+        # These images ARE the content to read -- ensure OCR is on.
+        params = {**params, 'do_ocr': True}
+
+        sections: list[str] = []
+        for path in image_paths:
+            mime = mimetypes.guess_type(path)[0] or 'image/png'
+            try:
+                docs = DoclingLoader(
+                    url=server_url,
+                    api_key=self.kwargs.get('DOCLING_API_KEY', None),
+                    file_path=path,
+                    mime_type=mime,
+                    params=params,
+                ).load()
+                text = '\n'.join((d.page_content or '').strip() for d in docs).strip()
+                if text:
+                    sections.append(text)
+            except Exception as e:
+                log.warning(f'Office image OCR: failed on {path}: {e}')
+        return '\n\n'.join(sections)
+
+    def _load_image_with_vision(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
+        """Extract an image via the vision LLM, optionally prepending Docling OCR.
+
+        Gives a text-only chat model both faithful transcribed text (Docling, when
+        COMBINE_OCR is on and the engine is Docling) and a description of non-text
+        visuals (the vision LLM) that OCR alone cannot produce. Returns a single
+        combined Document.
+        """
+        from open_webui.retrieval.loaders.vision_llm import (
+            DEFAULT_VISION_DESCRIBE_PROMPT,
+            DEFAULT_VISION_PROMPT,
+            VisionLLMLoader,
+        )
+
+        extra_body = {}
+        if RAG_IMAGE_VISION_LLM_EXTRA_BODY:
+            try:
+                extra_body = json.loads(RAG_IMAGE_VISION_LLM_EXTRA_BODY)
+            except json.JSONDecodeError:
+                log.error('Invalid RAG_IMAGE_VISION_LLM_EXTRA_BODY (expected a JSON object); ignoring')
+
+        sections = []
+
+        # Faithful OCR first (best for text-dense images; a VLM can misread exact text).
+        # Best-effort: on failure, fall back to the vision LLM alone.
+        ocr_text = ''
+        combine_ocr = (
+            RAG_IMAGE_VISION_LLM_COMBINE_OCR and self.engine == 'docling' and self.kwargs.get('DOCLING_SERVER_URL')
+        )
+        if combine_ocr:
+            try:
+                params = self.kwargs.get('DOCLING_PARAMS', {})
+                if not isinstance(params, dict):
+                    try:
+                        params = json.loads(params)
+                    except json.JSONDecodeError:
+                        params = {}
+                docling_docs = DoclingLoader(
+                    url=self.kwargs.get('DOCLING_SERVER_URL'),
+                    api_key=self.kwargs.get('DOCLING_API_KEY', None),
+                    file_path=file_path,
+                    mime_type=file_content_type,
+                    params=params,
+                ).load()
+                ocr_text = '\n'.join(doc.page_content for doc in docling_docs).strip()
+            except Exception as e:
+                log.warning(f'Vision image path: Docling OCR step failed ({e}); using vision LLM only')
+
+        if ocr_text:
+            sections.append(f'## Extracted text\n\n{ocr_text}')
+
+        # Vision LLM prompt: describe-only whenever the OCR step RAN -- OCR is authoritative
+        # for text even when it found NONE. Keying this off `ocr_text` instead would flip a
+        # no-text image (e.g. a portrait photo) back to the transcribe-everything prompt,
+        # which is exactly when a small VLM invents text ("paz" on a photo of a face) --
+        # garbage that then pollutes the vector DB, wastes context, and can drag the chat
+        # reply into the hallucinated token's language. Full extract only when no OCR step
+        # ran at all (the vision LLM is then the sole reader and must transcribe).
+        if RAG_IMAGE_VISION_LLM_PROMPT:
+            prompt = RAG_IMAGE_VISION_LLM_PROMPT
+        else:
+            prompt = DEFAULT_VISION_DESCRIBE_PROMPT if combine_ocr else DEFAULT_VISION_PROMPT
+
+        vision_docs = VisionLLMLoader(
+            base_url=RAG_IMAGE_VISION_LLM_BASE_URL,
+            model=RAG_IMAGE_VISION_LLM_MODEL,
+            file_path=file_path,
+            api_key=RAG_IMAGE_VISION_LLM_API_KEY,
+            mime_type=file_content_type,
+            prompt=prompt,
+            max_tokens=RAG_IMAGE_VISION_LLM_MAX_TOKENS,
+            extra_body=extra_body,
+        ).load()
+        vision_text = '\n'.join(doc.page_content for doc in vision_docs).strip()
+
+        # Drop the describe-only sentinel so pure-text images don't get an empty section.
+        if vision_text.lower().strip('.() ') == 'no additional visual content':
+            vision_text = ''
+
+        if vision_text:
+            sections.append(f'## Visual description\n\n{vision_text}' if ocr_text else vision_text)
+
+        combined = '\n\n'.join(sections).strip()
+        if not combined:
+            combined = 'No content could be extracted from the image.'
+
+        return [
+            Document(
+                page_content=ftfy.fix_text(combined),
+                metadata={'Content-Type': file_content_type, 'processing_engine': 'vision-llm'},
+            )
+        ]
 
     def _pdf_looks_digital(self, docs: list[Document]) -> bool:
         """True if pypdf extracted enough text per page to treat the PDF as
@@ -289,6 +682,50 @@ class Loader:
             return False
         total_chars = sum(len((doc.page_content or '').strip()) for doc in docs)
         return (total_chars / len(docs)) >= RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE
+
+    def _pdf_has_significant_images(self, file_path: str) -> bool:
+        """True if the PDF embeds enough large raster images that its text layer alone
+        likely misses baked-in text (pasted screenshots, scanned figures) — the signal to
+        reroute a 'digital' PDF to Docling with forced OCR.
+
+        Cheap: reads each image XObject's /Width and /Height from the page resources
+        WITHOUT decoding pixels, and short-circuits once the count threshold is met. Tuned
+        by RAG_PDF_IMAGE_MIN_PIXELS (skip small logos/icons) and RAG_PDF_IMAGE_MIN_COUNT.
+        Detection can only see image SIZE, not whether an image contains text, so it errs
+        toward rerouting. Never raises — on any error it declines to reroute (fast path)."""
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(file_path)
+            substantial = 0
+            for page in reader.pages:
+                resources = page.get('/Resources')
+                if not resources:
+                    continue
+                xobjects = resources.get('/XObject')
+                if not xobjects:
+                    continue
+                try:
+                    xobjects = xobjects.get_object()
+                except Exception:
+                    continue
+                for name in xobjects:
+                    try:
+                        xobj = xobjects[name].get_object()
+                    except Exception:
+                        continue
+                    if xobj.get('/Subtype') != '/Image':
+                        continue
+                    width = int(xobj.get('/Width', 0) or 0)
+                    height = int(xobj.get('/Height', 0) or 0)
+                    if width * height >= RAG_PDF_IMAGE_MIN_PIXELS:
+                        substantial += 1
+                        if substantial >= RAG_PDF_IMAGE_MIN_COUNT:
+                            return True
+            return False
+        except Exception as e:
+            log.warning(f'PDF image-detection failed for {file_path}: {e}; skipping image reroute')
+            return False
 
     async def aload(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
         """
@@ -311,9 +748,10 @@ class Loader:
                     timeout=CONTENT_EXTRACTION_TIMEOUT,
                 )
             except asyncio.TimeoutError:
-                raise Exception(
+                raise ContentExtractionError(
                     f'Content extraction for {filename} exceeded the '
-                    f'{CONTENT_EXTRACTION_TIMEOUT}s limit and was aborted.'
+                    f'{CONTENT_EXTRACTION_TIMEOUT}s limit and was aborted.',
+                    'This file took too long to process and was stopped. Try a smaller or simpler file.',
                 )
 
             # (B) Decompression-bomb guard. A small archive-based file (docx/xlsx/pptx
@@ -322,9 +760,11 @@ class Loader:
             if CONTENT_EXTRACTION_MAX_OUTPUT_CHARS:
                 total_chars = sum(len(doc.page_content or '') for doc in docs)
                 if total_chars > CONTENT_EXTRACTION_MAX_OUTPUT_CHARS:
-                    raise Exception(
+                    raise ContentExtractionError(
                         f'Extracted content from {filename} ({total_chars} chars) exceeds the '
-                        f'{CONTENT_EXTRACTION_MAX_OUTPUT_CHARS}-char limit and was rejected.'
+                        f'{CONTENT_EXTRACTION_MAX_OUTPUT_CHARS}-char limit and was rejected.',
+                        'This file is too large to process. Try a smaller or compressed file, '
+                        'or upload only the content you need.',
                     )
 
             return docs
@@ -471,7 +911,7 @@ class Loader:
 
         return (cjk_count / total) >= threshold
 
-    def _get_loader(self, filename: str, file_content_type: str, file_path: str):
+    def _get_loader(self, filename: str, file_content_type: str, file_path: str, force_ocr: bool = False):
         file_ext = filename.split('.')[-1].lower()
 
         if (
@@ -560,6 +1000,11 @@ class Loader:
                     except json.JSONDecodeError:
                         log.error('Invalid DOCLING_PARAMS format, expected JSON object')
                         params = {}
+                if force_ocr:
+                    # This PDF was rerouted here for its embedded images; OCR every page so
+                    # their baked-in text is read (the selective default skips pages that
+                    # already have a text layer, missing text inside pasted screenshots).
+                    params = {**params, 'force_ocr': True}
 
                 loader = DoclingLoader(
                     url=self.kwargs.get('DOCLING_SERVER_URL'),

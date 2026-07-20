@@ -30,6 +30,7 @@
 		socket,
 		audioQueue,
 		showControls,
+		chatControlsSavedAt,
 		showCallOverlay,
 		currentChatPage,
 		temporaryChatEnabled,
@@ -2877,11 +2878,18 @@
 	const saveControls = async () => {
 		if (!$chatId || $temporaryChatEnabled) return;
 		const loaded = chat?.chat ?? {};
-		if (equal(params, loaded.params ?? {}) && equal(chatFiles, loaded.files ?? [])) return;
+		const paramsChanged = !equal(params, loaded.params ?? {});
+		if (!paramsChanged && equal(chatFiles, loaded.files ?? [])) return;
 
-		await updateChatById(localStorage.token, $chatId, { params, files: chatFiles }).catch((err) =>
-			console.error('[controls autosave]', err)
-		);
+		try {
+			await updateChatById(localStorage.token, $chatId, { params, files: chatFiles });
+			// Sunway: signal the "Saved" pill next to the System Prompt in Controls — only when
+			// params (the system prompt) actually changed, and only on a real persisted save
+			// (temporary chats / no chatId return early above, so the pill stays honest).
+			if (paramsChanged) chatControlsSavedAt.set(Date.now());
+		} catch (err) {
+			console.error('[controls autosave]', err);
+		}
 	};
 
 	const MAX_DRAFT_LENGTH = 5000;

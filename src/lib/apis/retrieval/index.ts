@@ -90,6 +90,70 @@ export const updateRAGConfig = async (token: string, payload: RAGConfigForm) => 
 	return res;
 };
 
+// Sunway extraction A/B: runtime-mutable fast-path toggles (no app restart).
+export const getExtractionAB = async (token: string) => {
+	let error = null;
+
+	const res = await fetch(`${RETRIEVAL_API_BASE_URL}/ab/extraction`, {
+		method: 'GET',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const updateExtractionAB = async (
+	token: string,
+	payload: {
+		pdf_fast_path?: boolean;
+		pdf_engine?: string;
+		office_fast_path?: boolean;
+		office_engine?: string;
+	}
+) => {
+	let error = null;
+
+	const res = await fetch(`${RETRIEVAL_API_BASE_URL}/ab/extraction`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({ ...payload })
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
 export const getQuerySettings = async (token: string) => {
 	let error = null;
 

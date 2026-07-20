@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { createEventDispatcher, getContext } from 'svelte';
+	import { createEventDispatcher, getContext, onDestroy } from 'svelte';
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
+
+	import { fade } from 'svelte/transition';
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AdvancedParams from '../Settings/Advanced/AdvancedParams.svelte';
@@ -9,7 +11,7 @@
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 
-	import { user, settings } from '$lib/stores';
+	import { user, settings, chatControlsSavedAt } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
@@ -28,6 +30,20 @@
 	let showValves = getOpen('valves', false);
 	let showSystemPrompt = getOpen('systemPrompt');
 	let showAdvancedParams = getOpen('advancedParams');
+
+	// Sunway: autosave "Saved" pill for the per-chat System Prompt. Chat.saveControls bumps
+	// chatControlsSavedAt after a real persisted save (temporary chats stay silent), so this is
+	// honest reassurance. Initialised to the current value so it never flashes on mount.
+	let lastSavedAt = $chatControlsSavedAt;
+	let savedVisible = false;
+	let savedTimer;
+	$: if ($chatControlsSavedAt && $chatControlsSavedAt !== lastSavedAt) {
+		lastSavedAt = $chatControlsSavedAt;
+		savedVisible = true;
+		clearTimeout(savedTimer);
+		savedTimer = setTimeout(() => (savedVisible = false), 1500);
+	}
+	onDestroy(() => clearTimeout(savedTimer));
 </script>
 
 <div class=" dark:text-white">
@@ -48,7 +64,8 @@
 
 	{#if $user?.role === 'admin' || ($user?.permissions.chat?.controls ?? true)}
 		<div class=" dark:text-gray-200 text-sm py-0.5 px-0.5">
-			{#if chatFiles.length > 0}
+			<!-- Sunway: chat-file list hidden — per-chat Controls re-enabled for System Prompt only (see CLAUDE.md). -->
+			{#if false && chatFiles.length > 0}
 				<Collapsible
 					title={$i18n.t('Files')}
 					bind:open={showFiles}
@@ -84,7 +101,8 @@
 				<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
 			{/if}
 
-			{#if $user?.role === 'admin' || ($user?.permissions.chat?.valves ?? true)}
+			<!-- Sunway: Valves hidden — per-chat Controls re-enabled for System Prompt only (see CLAUDE.md). -->
+			{#if false && ($user?.role === 'admin' || ($user?.permissions.chat?.valves ?? true))}
 				<Collapsible
 					bind:open={showValves}
 					onChange={setOpen('valves')}
@@ -100,12 +118,36 @@
 			{/if}
 
 			{#if $user?.role === 'admin' || ($user?.permissions.chat?.system_prompt ?? true)}
+				<!-- Sunway: slot-mode header so the autosave "Saved" pill can sit beside the title. -->
 				<Collapsible
-					title={$i18n.t('System Prompt')}
 					bind:open={showSystemPrompt}
 					onChange={setOpen('systemPrompt')}
 					buttonClassName="w-full"
+					chevron={true}
 				>
+					<div class="flex items-center gap-2">
+						<span>{$i18n.t('System Prompt')}</span>
+						{#if savedVisible}
+							<span
+								transition:fade={{ duration: 150 }}
+								class="inline-flex items-center gap-0.5 text-xs font-medium text-green-600 dark:text-green-400"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 20 20"
+									fill="currentColor"
+									class="size-3.5"
+								>
+									<path
+										fill-rule="evenodd"
+										d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+										clip-rule="evenodd"
+									/>
+								</svg>
+								{$i18n.t('Saved')}
+							</span>
+						{/if}
+					</div>
 					<div class="" slot="content">
 						<textarea
 							bind:value={params.system}
@@ -118,10 +160,11 @@
 					</div>
 				</Collapsible>
 
-				<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
+				<!-- Sunway: divider removed — System Prompt is the last visible Controls section now. -->
 			{/if}
 
-			{#if $user?.role === 'admin' || ($user?.permissions.chat?.params ?? true)}
+			<!-- Sunway: Advanced Params hidden — per-chat Controls re-enabled for System Prompt only (see CLAUDE.md). -->
+			{#if false && ($user?.role === 'admin' || ($user?.permissions.chat?.params ?? true))}
 				<Collapsible
 					title={$i18n.t('Advanced Params')}
 					bind:open={showAdvancedParams}
