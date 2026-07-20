@@ -6,7 +6,7 @@
 
 	import { formatFileSize, getLineCount } from '$lib/utils';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
-	import { settings } from '$lib/stores';
+	import { config, settings } from '$lib/stores';
 	import { getKnowledgeById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
 
@@ -135,6 +135,19 @@
 		item?.meta?.content_type ===
 			'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
 		(item?.name && item.name.toLowerCase().endsWith('.pptx'));
+
+	// Full-context ("use entire document") is capped by the backend
+	// (RAG_FULL_CONTEXT_MAX_CHARS) so it can't overflow the model window. Disable the
+	// toggle past that budget so a user doesn't think a too-large file is fully injected
+	// when the backend would downgrade it to focused retrieval.
+	$: fullContextMaxChars = $config?.file?.full_context_max_chars ?? 0;
+	$: fullContextContentLength = item?.file?.data?.content?.length ?? 0;
+	$: tooLargeForFullContext =
+		fullContextMaxChars > 0 && fullContextContentLength > fullContextMaxChars;
+	$: if (tooLargeForFullContext && item?.context === 'full') {
+		item.context = undefined;
+		enableFullContent = false;
+	}
 
 	const loadExcelContent = async () => {
 		try {
@@ -348,29 +361,41 @@
 
 					{#if edit}
 						<div class=" self-end">
-							<Tooltip
-								content={enableFullContent
-									? $i18n.t(
-											'Inject the entire content as context for comprehensive processing, this is recommended for complex queries.'
-										)
-									: $i18n.t(
-											'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
-										)}
-							>
-								<div class="flex items-center gap-1.5 text-xs">
-									{#if enableFullContent}
-										{$i18n.t('Using Entire Document')}
-									{:else}
+							{#if tooLargeForFullContext}
+								<Tooltip
+									content={$i18n.t(
+										'This file is too large for full-context mode, so focused retrieval is used instead.'
+									)}
+								>
+									<div class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
 										{$i18n.t('Using Focused Retrieval')}
-									{/if}
-									<Switch
-										bind:state={enableFullContent}
-										on:change={(e) => {
-											item.context = e.detail ? 'full' : undefined;
-										}}
-									/>
-								</div>
-							</Tooltip>
+									</div>
+								</Tooltip>
+							{:else}
+								<Tooltip
+									content={enableFullContent
+										? $i18n.t(
+												'Inject the entire content as context for comprehensive processing, this is recommended for complex queries.'
+											)
+										: $i18n.t(
+												'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
+											)}
+								>
+									<div class="flex items-center gap-1.5 text-xs">
+										{#if enableFullContent}
+											{$i18n.t('Using Entire Document')}
+										{:else}
+											{$i18n.t('Using Focused Retrieval')}
+										{/if}
+										<Switch
+											bind:state={enableFullContent}
+											on:change={(e) => {
+												item.context = e.detail ? 'full' : undefined;
+											}}
+										/>
+									</div>
+								</Tooltip>
+							{/if}
 						</div>
 					{/if}
 				</div>

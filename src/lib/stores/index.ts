@@ -98,6 +98,9 @@ export const showArchivedChats = writable(false);
 export const showChangelog = writable(false);
 
 export const showControls = writable(false);
+// Sunway: bumped by Chat.saveControls after a successful per-chat controls autosave
+// (system prompt). Drives the "Saved" pill in Controls.svelte; 0 = no save yet.
+export const chatControlsSavedAt = writable(0);
 export const showEmbeds = writable(false);
 export const showOverview = writable(false);
 export const showArtifacts = writable(false);

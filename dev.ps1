@@ -150,10 +150,12 @@ $env:DOCLING_SERVER_URL            = 'http://localhost:5001'
 #   table_mode   -> 'fast' (TableFormer ACCURATE is dramatically slower)
 # force_ocr is intentionally omitted (defaults false) so the selective path stays.
 # Re-add '"force_ocr": true' ONLY if your PDFs have unreliable text layers -- it
-# OCRs every page incl. digital = much slower. Add "ocr_lang": "en,ch" etc. for
-# non-English docs (restricting langs is faster + more accurate). All tunable live
+# OCRs every page incl. digital = much slower. ocr_lang is set to "ch_sim,en" below
+# (Sunway EN/ZH/MS: Malay is Latin script so the English recognizer reads it; EasyOCR
+# cannot add a 3rd non-Latin lang to Chinese in one reader). Restricting langs is faster
+# + more accurate and stops OCR emitting stray non-target scripts. All tunable live
 # in Admin Settings -> Documents.
-$env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", "images_scale": 2, "table_mode": "fast"}'
+$env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", "ocr_lang": "ch_sim,en", "images_scale": 2, "table_mode": "fast"}'
 # Web search via the searxng container (docker-compose.dev.yml). These only
 # seed the DB on first boot; after that, Admin Settings -> Web Search wins.
 $env:ENABLE_WEB_SEARCH             = 'true'
@@ -210,6 +212,39 @@ $env:MAX_CHATS_PER_USER            = '30'
 $env:CHAT_RETENTION_DAYS           = '30'
 $env:ENABLE_CHAT_ARCHIVE           = 'false'
 $env:RAG_PDF_FAST_PATH             = 'true'
+# PDF fast-path engine (Sunway A/B): 'pypdf' (default) or 'markitdown' for born-digital PDFs.
+$env:RAG_PDF_FAST_PATH_ENGINE      = 'pypdf'
+# Office fast-path (Sunway A/B): lightweight loaders for born-digital docx/xlsx/pptx vs
+# Docling. ENGINE = 'unstructured' (bundled) or 'markitdown' (needs the markitdown dep ->
+# run .\dev.ps1 -Rebuild after adding it). These SEED the runtime toggle store; flip them
+# live in Admin Settings -> Documents -> "Extraction A/B (dev)" WITHOUT restarting. Watch
+# [BE] logs for the "[TIMING] extraction ... route=pypdf|unstructured|markitdown|docling" line.
+$env:RAG_OFFICE_FAST_PATH          = 'true'
+$env:RAG_OFFICE_FAST_PATH_ENGINE   = 'unstructured'
+# File-upload allow-list (Sunway SECURITY): which extensions may be uploaded. EMPTY
+# (upstream default) = ALLOW-ALL -> .exe/.bat/.tiff/.svg etc. are accepted. This curated
+# list = document + safe-image types the app can actually extract. Enforced server-side
+# for the UI AND direct API/MCP callers (no ?process=false bypass); frontend accept= is
+# cosmetic only. PersistentConfig -> seeds a FRESH DB only; on an existing DB set it in
+# Admin Settings -> Documents -> Allowed File Extensions. Add code exts (py,js,ts,...) if
+# you want code upload; do NOT add exe/bat/ps1/cmd/sh/env (scripts/secrets).
+$env:RAG_ALLOWED_FILE_EXTENSIONS   = 'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg,webp'
+# Image vision LLM (Sunway): route uploaded IMAGES to a small vision model (Gemma via
+# vLLM/LiteLLM) so text-only models (DeepSeek) get non-text visual understanding OCR
+# can't provide. COMBINE_OCR keeps Docling authoritative for text in text-embedded
+# images; the vision LLM then only describes visuals. Only images are affected --
+# PDFs/documents still go to Docling. Active only when BASE_URL + MODEL are set.
+# Plain env reads -> take effect on restart.
+# BASE_URL + API_KEY come from .env (ISO 27001 -- no committed creds), loaded by the
+# Import-DotEnv call above. Do NOT assign them here: this block runs AFTER Import-DotEnv,
+# so an assignment here would silently overwrite the .env values (that's the bug that made
+# setting them in .env "not work" before). Set them in .env; see .env.example.
+$env:RAG_IMAGE_VISION_LLM_MODEL    = 'google/gemma-4-E4B-it'   # e.g. 'gemma-4-e2b-it'
+$env:RAG_IMAGE_VISION_LLM_COMBINE_OCR = 'false'   # Sunway: Gemma-alone for rollout (fast on limited GPU, no OCR noise). Flip to 'true' (keeps ocr_lang set) only if IR shows text-dense images need OCR fidelity.
+# Disable reasoning at request time so chain-of-thought never lands in extracted text
+# (the loader also strips leaked reasoning as a fallback). Exact kwarg depends on the
+# model's chat template; confirm by curling the vLLM endpoint directly.
+# $env:RAG_IMAGE_VISION_LLM_EXTRA_BODY = '{"chat_template_kwargs": {"enable_thinking": false}}'
 # Voice (STT/TTS/Call) deferred for internal rollout — hide UI for everyone incl.
 # admins. Plain env flag (not PersistentConfig), so this takes effect on restart.
 $env:ENABLE_VOICE                  = 'false'

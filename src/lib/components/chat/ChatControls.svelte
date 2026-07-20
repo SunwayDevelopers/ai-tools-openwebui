@@ -70,11 +70,10 @@
 
 	$: hasMessages = history?.messages && Object.keys(history.messages).length > 0;
 
-	// Sunway: per-chat Controls tab (valves / system prompt / advanced params) deferred —
-	// hidden for everyone incl. admins (see CLAUDE.md). The pane's other tabs (files/overview)
-	// and its artifact/citation hosting are unaffected; auto-fallback below handles the rest.
-	// Original: $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true)
-	$: showControlsTab = false;
+	// Sunway: per-chat Controls tab re-enabled for System Prompt ONLY (Valves + Advanced
+	// Params stay `false &&`-gated inside Controls/Controls.svelte; see CLAUDE.md). Restores the
+	// upstream permission gate — visible to users with chat.controls (default true) and all admins.
+	$: showControlsTab = $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true);
 	$: showFilesTab =
 		($selectedTerminalId &&
 			(($terminalServers ?? []).some((t) => t.id && t.id === $selectedTerminalId) ||
