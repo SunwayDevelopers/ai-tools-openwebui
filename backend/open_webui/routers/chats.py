@@ -573,8 +573,10 @@ async def create_new_chat(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    # Enforce the per-user chat cap (hard block; 0 disables it, admins exempt).
-    if MAX_CHATS_PER_USER and user.role != 'admin':
+    # Enforce the per-user chat cap (hard block; 0 disables it). Applies to every
+    # role incl. admins — retention must hold for everyone (schat scope decision,
+    # 2026-07-08; previously admins were exempt).
+    if MAX_CHATS_PER_USER:
         chat_count = await Chats.count_chats_by_user_id(user.id, db=db)
         if chat_count >= MAX_CHATS_PER_USER:
             raise HTTPException(

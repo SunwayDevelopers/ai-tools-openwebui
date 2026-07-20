@@ -1152,11 +1152,21 @@
 
 	const initNewChat = async () => {
 		console.log('initNewChat');
-		if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
+		// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
+		// force-off and skip the enforced/by-default auto-enable paths. See CLAUDE.md.
+		if (!($config?.enable_temporary_chat ?? true)) {
+			await temporaryChatEnabled.set(false);
+		}
+
+		if (
+			($config?.enable_temporary_chat ?? true) &&
+			$user?.role !== 'admin' &&
+			$user?.permissions?.chat?.temporary_enforced
+		) {
 			await temporaryChatEnabled.set(true);
 		}
 
-		if ($settings?.temporaryChatByDefault ?? false) {
+		if (($config?.enable_temporary_chat ?? true) && ($settings?.temporaryChatByDefault ?? false)) {
 			if ($temporaryChatEnabled === false) {
 				await temporaryChatEnabled.set(true);
 			} else if ($temporaryChatEnabled === null) {

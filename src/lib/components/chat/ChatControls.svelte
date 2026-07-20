@@ -70,7 +70,11 @@
 
 	$: hasMessages = history?.messages && Object.keys(history.messages).length > 0;
 
-	$: showControlsTab = $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true);
+	// Sunway: per-chat Controls tab (valves / system prompt / advanced params) deferred —
+	// hidden for everyone incl. admins (see CLAUDE.md). The pane's other tabs (files/overview)
+	// and its artifact/citation hosting are unaffected; auto-fallback below handles the rest.
+	// Original: $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true)
+	$: showControlsTab = false;
 	$: showFilesTab =
 		($selectedTerminalId &&
 			(($terminalServers ?? []).some((t) => t.id && t.id === $selectedTerminalId) ||

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getVersionUpdates } from '$lib/apis';
 	import { getOllamaVersion } from '$lib/apis/ollama';
-	import { WEBUI_BUILD_HASH, WEBUI_VERSION } from '$lib/constants';
+	import { WEBUI_BUILD_HASH, WEBUI_VERSION, SCHAT_VERSION } from '$lib/constants';
 	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
@@ -57,7 +57,7 @@
 				<div class="flex flex-col text-xs text-gray-700 dark:text-gray-200">
 					<div class="flex gap-1">
 						<Tooltip content={WEBUI_BUILD_HASH}>
-							v{WEBUI_VERSION}
+							v{SCHAT_VERSION}
 						</Tooltip>
 
 						{#if $config?.features?.enable_version_update_check}
@@ -72,6 +72,15 @@
 										: $i18n.t('(latest)')}
 							</a>
 						{/if}
+					</div>
+
+					<!-- Sunway: Open WebUI attribution retained per licence (AUDIT-032); doubles as
+					     our upstream-sync baseline (WEBUI_VERSION = the forked Open WebUI version). -->
+					<div class="mt-0.5 text-gray-500 dark:text-gray-500">
+						Powered by <a href="https://openwebui.com" target="_blank" class="underline"
+							>Open WebUI</a
+						>
+						v{WEBUI_VERSION}
 					</div>
 
 					<button
