@@ -71,6 +71,9 @@ pypdf==6.7.5
 fpdf2==2.8.7
 pymdown-extensions==10.21
 docx2txt==0.9
+python-docx==1.2.0  # Sunway: required by unstructured's DOCX partitioner (UnstructuredWordDocumentLoader).
+                    # Without it the office fast-path silently fails for .docx ("No module named 'docx'")
+                    # and every .docx falls back to Docling -- which invalidated the A/B until 2026-07-20.
 python-pptx==1.0.2
 msoffcrypto-tool==6.0.0
 unstructured==0.18.31

@@ -1234,6 +1234,8 @@
 						type="file"
 						hidden
 						multiple
+						accept={($config?.file?.allowed_extensions ?? []).map((ext) => `.${ext}`).join(',') ||
+							undefined}
 						on:change={async () => {
 							if (inputFiles && inputFiles.length > 0) {
 								const _inputFiles = Array.from(inputFiles);
