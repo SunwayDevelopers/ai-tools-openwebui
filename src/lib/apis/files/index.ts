@@ -6,7 +6,11 @@ export const uploadFile = async (
 	file: File,
 	metadata?: object | null,
 	process?: boolean | null,
-	stream: boolean = true
+	stream: boolean = true,
+	// Sunway: called with each backend processing status ('pending' during extraction,
+	// 'embedding' during vector indexing, then 'completed'/'failed') so the caller can show
+	// the current phase on the file chip instead of one opaque spinner over the whole wait.
+	onStatus?: ((status: string) => void) | null
 ) => {
 	const data = new FormData();
 	data.append('file', file);
@@ -73,6 +77,10 @@ export const uploadFile = async (
 								if (data?.error) {
 									console.error(data.error);
 									res.error = data.error;
+								}
+
+								if (data?.status && onStatus) {
+									onStatus(data.status);
 								}
 
 								if (res?.data) {
