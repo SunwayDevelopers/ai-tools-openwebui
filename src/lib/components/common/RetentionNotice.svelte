@@ -63,9 +63,7 @@
 {:else if variant === 'badge'}
 	{#if daysLeft !== null && daysLeft <= badgeThresholdDays}
 		<span
-			class="text-[10px] px-1 py-0.5 rounded {daysLeft <= 2
-				? 'text-red-500'
-				: 'text-gray-400'}"
+			class="text-[10px] px-1 py-0.5 rounded {daysLeft <= 2 ? 'text-red-500' : 'text-gray-400'}"
 			title={$i18n.t('This chat will be removed by the retention policy')}
 		>
 			{$i18n.t('Expires in {{n}}d', { n: Math.max(daysLeft, 0) })}

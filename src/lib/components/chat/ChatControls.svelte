@@ -45,6 +45,10 @@
 	export let chatFiles = [];
 	export let params = {};
 
+	// Sunway: lets the Controls Save button persist the System Prompt immediately
+	// (and retry a failed write).
+	export let onSave: () => void = () => {};
+
 	export let eventTarget: EventTarget;
 	export let submitPrompt: Function;
 	export let stopResponse: Function;
@@ -381,7 +385,7 @@
 							{:else if activeTab === 'files' && codeInterpreterEnabled}
 								<PyodideFileNav />
 							{:else}
-								<Controls embed={true} {models} bind:chatFiles bind:params />
+								<Controls embed={true} {models} bind:chatFiles bind:params {onSave} />
 							{/if}
 						</div>
 					</div>
@@ -532,7 +536,7 @@
 								{:else if activeTab === 'files' && codeInterpreterEnabled}
 									<PyodideFileNav overlay={dragged} />
 								{:else}
-									<Controls embed={true} {models} bind:chatFiles bind:params />
+									<Controls embed={true} {models} bind:chatFiles bind:params {onSave} />
 								{/if}
 							</div>
 						</div>

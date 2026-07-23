@@ -98,9 +98,21 @@ export const showArchivedChats = writable(false);
 export const showChangelog = writable(false);
 
 export const showControls = writable(false);
-// Sunway: bumped by Chat.saveControls after a successful per-chat controls autosave
-// (system prompt). Drives the "Saved" pill in Controls.svelte; 0 = no save yet.
-export const chatControlsSavedAt = writable(0);
+// Sunway: lifecycle of the per-chat Controls autosave (the System Prompt). There is no
+// Save button by design — `params` is the live request payload, so the text already
+// applies to the next message — but the write still needs to be visible. Chat.svelte
+// drives this; Controls.svelte renders it beside the System Prompt header.
+//   idle    — nothing to report (in sync with the server)
+//   unsaved — new/unpersisted chat: there's no chat row to save into yet, so the prompt
+//             can't be "Saved". It still applies to the first message and is persisted on
+//             send. Rendered as a neutral hint, NOT a "Saved ✓" (which read as done-when-
+//             -nothing-was and left the disabled button looking broken to anxious users).
+//   dirty   — edited, debounce pending
+//   saving  — request in flight
+//   saved   — persisted (Controls fades this back to idle)
+//   error   — write failed; Controls offers a retry
+export type ChatControlsSaveState = 'idle' | 'unsaved' | 'dirty' | 'saving' | 'saved' | 'error';
+export const chatControlsSaveState = writable<ChatControlsSaveState>('idle');
 export const showEmbeds = writable(false);
 export const showOverview = writable(false);
 export const showArtifacts = writable(false);

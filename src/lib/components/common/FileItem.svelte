@@ -22,6 +22,10 @@
 	export let dismissible = false;
 	export let modal = false;
 	export let loading = false;
+	// Sunway: optional phase label shown in place of the size while loading (e.g.
+	// "Extracting…" then "Indexing…"), so a slow upload reads as honest progress
+	// rather than one opaque spinner.
+	export let statusLabel: string | null = null;
 
 	export let item = null;
 	export let edit = false;
@@ -166,7 +170,9 @@
 			<div class="flex flex-col justify-center -space-y-0.5 px-1 w-full">
 				<div class=" dark:text-gray-100 text-sm flex justify-between items-center">
 					<div class="font-medium line-clamp-1 flex-1 pr-1">{decodeString(name)}</div>
-					{#if size}
+					{#if loading && statusLabel}
+						<div class="text-gray-500 text-xs shrink-0">{statusLabel}</div>
+					{:else if size}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
 					{:else}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{type}</div>

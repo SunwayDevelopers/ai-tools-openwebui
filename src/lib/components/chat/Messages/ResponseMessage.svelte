@@ -708,7 +708,9 @@
 								{#each message.files.filter((f) => ['image', 'file'].includes(f.type)) as file}
 									<div>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
-											<Image src={file.url} alt={message.content} />
+											<!-- Sunway: copyable — the response Copy button carries text only, so
+										generated images need their own copy affordance. -->
+											<Image src={file.url} alt={message.content} copyable={true} />
 										{:else}
 											<FileItem
 												item={file}

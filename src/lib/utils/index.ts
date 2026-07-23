@@ -626,6 +626,66 @@ export const copyToClipboard = async (text, html = null, formatted = false) => {
 	}
 };
 
+// Sunway: copy a single image to the clipboard as a bitmap. The response "Copy"
+// button only carries message.content, and generated images live in message.files
+// (rendered separately) — so they can never ride along with the text copy. This
+// gives users the per-image copy every other app has.
+//
+// PNG is the only bitmap type browsers reliably accept on the clipboard, so
+// anything else is re-encoded via canvas (lossless, drops EXIF).
+const transcodeToPng = async (blob: Blob): Promise<Blob> => {
+	const bitmap = await createImageBitmap(blob);
+
+	try {
+		const canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			throw new Error('Could not acquire a 2d canvas context');
+		}
+		ctx.drawImage(bitmap, 0, 0);
+
+		return await new Promise<Blob>((resolve, reject) => {
+			canvas.toBlob(
+				(b) => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))),
+				'image/png'
+			);
+		});
+	} finally {
+		bitmap.close();
+	}
+};
+
+export const copyImageToClipboard = async (src: string): Promise<boolean> => {
+	// Requires a secure context (https / localhost); older browsers lack write() entirely.
+	if (!navigator?.clipboard?.write || typeof ClipboardItem === 'undefined') {
+		console.error('copyImageToClipboard: clipboard image writes unsupported here');
+		return false;
+	}
+
+	try {
+		// Safari only honours clipboard writes started inside the user gesture, so hand
+		// ClipboardItem a pending promise rather than awaiting the blob first.
+		const png = (async () => {
+			const res = await fetch(src, { credentials: 'include' });
+			if (!res.ok) {
+				throw new Error(`Could not fetch image (${res.status})`);
+			}
+
+			const blob = await res.blob();
+			return blob.type === 'image/png' ? blob : await transcodeToPng(blob);
+		})();
+
+		await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+		return true;
+	} catch (err) {
+		console.error('copyImageToClipboard', err);
+		return false;
+	}
+};
+
 export const compareVersion = (latest, current) => {
 	return current === '0.0.0'
 		? false
