@@ -1,21 +1,24 @@
 <script lang="ts">
-	import { createEventDispatcher, getContext, onDestroy } from 'svelte';
+	import { createEventDispatcher, getContext } from 'svelte';
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
-
-	import { fade } from 'svelte/transition';
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AdvancedParams from '../Settings/Advanced/AdvancedParams.svelte';
 	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
+	import Check from '$lib/components/icons/Check.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	import { user, settings, chatControlsSavedAt } from '$lib/stores';
+	import { user, settings, chatControlsSaveState } from '$lib/stores';
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
 	export let embed = false;
+
+	// Sunway: persist the System Prompt immediately / retry a failed save (wired from Chat.svelte).
+	export let onSave: () => void = () => {};
 
 	// Persist collapsible section open/close state
 	const getOpen = (key: string, fallback = true): boolean => {
@@ -31,19 +34,10 @@
 	let showSystemPrompt = getOpen('systemPrompt');
 	let showAdvancedParams = getOpen('advancedParams');
 
-	// Sunway: autosave "Saved" pill for the per-chat System Prompt. Chat.saveControls bumps
-	// chatControlsSavedAt after a real persisted save (temporary chats stay silent), so this is
-	// honest reassurance. Initialised to the current value so it never flashes on mount.
-	let lastSavedAt = $chatControlsSavedAt;
-	let savedVisible = false;
-	let savedTimer;
-	$: if ($chatControlsSavedAt && $chatControlsSavedAt !== lastSavedAt) {
-		lastSavedAt = $chatControlsSavedAt;
-		savedVisible = true;
-		clearTimeout(savedTimer);
-		savedTimer = setTimeout(() => (savedVisible = false), 1500);
-	}
-	onDestroy(() => clearTimeout(savedTimer));
+	// Sunway: the per-chat System Prompt Save button reads chatControlsSaveState (owned by
+	// Chat.svelte): idle/saved → "Saved ✓" (disabled), dirty → clickable "Save", saving →
+	// spinner, error → clickable "Couldn't save — Retry". Autosave still runs underneath;
+	// the button just flushes it on demand and gives constant, visible confirmation.
 </script>
 
 <div class=" dark:text-white">
@@ -125,28 +119,54 @@
 					buttonClassName="w-full"
 					chevron={true}
 				>
+					<!-- Sunway: always-visible Save button for the per-chat System Prompt. There's
+					no commit boundary (the text is the live request payload, so it applies to the
+					next message regardless) — the button gives impatient users a tangible action +
+					confirmation, and clicking flushes the debounced autosave immediately. Clickable
+					only when there's something to do (dirty / error). -->
 					<div class="flex items-center gap-2">
 						<span>{$i18n.t('System Prompt')}</span>
-						{#if savedVisible}
-							<span
-								transition:fade={{ duration: 150 }}
-								class="inline-flex items-center gap-0.5 text-xs font-medium text-green-600 dark:text-green-400"
-							>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									viewBox="0 0 20 20"
-									fill="currentColor"
-									class="size-3.5"
-								>
-									<path
-										fill-rule="evenodd"
-										d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-										clip-rule="evenodd"
-									/>
-								</svg>
+
+						<button
+							type="button"
+							disabled={$chatControlsSaveState === 'saving' ||
+								$chatControlsSaveState === 'idle' ||
+								$chatControlsSaveState === 'unsaved' ||
+								$chatControlsSaveState === 'saved'}
+							aria-live="polite"
+							on:pointerup|stopPropagation={() => {
+								if ($chatControlsSaveState === 'dirty' || $chatControlsSaveState === 'error') {
+									onSave();
+								}
+							}}
+							class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition {$chatControlsSaveState ===
+							'error'
+								? 'text-red-600 dark:text-red-400 hover:bg-red-500/10 cursor-pointer'
+								: $chatControlsSaveState === 'dirty'
+									? 'text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer'
+									: $chatControlsSaveState === 'saved'
+										? 'text-green-600 dark:text-green-400'
+										: 'text-gray-400 dark:text-gray-500'}"
+						>
+							{#if $chatControlsSaveState === 'saving'}
+								<Spinner className="size-3" />
+								{$i18n.t('Saving...')}
+							{:else if $chatControlsSaveState === 'dirty'}
+								{$i18n.t('Save')}
+							{:else if $chatControlsSaveState === 'error'}
+								{$i18n.t("Couldn't save — Retry")}
+							{:else if $chatControlsSaveState === 'unsaved'}
+								<!-- Sunway: new/unpersisted chat. No "Saved ✓" — the prompt isn't saved
+								yet, it just applies to (and persists with) the next message. Only shown
+								once there's actually a prompt to reassure about. -->
+								{#if params.system?.trim()}
+									{$i18n.t('Applies to your next message')}
+								{/if}
+							{:else}
+								<Check className="size-3.5" strokeWidth="2.5" />
 								{$i18n.t('Saved')}
-							</span>
-						{/if}
+							{/if}
+						</button>
 					</div>
 					<div class="" slot="content">
 						<textarea

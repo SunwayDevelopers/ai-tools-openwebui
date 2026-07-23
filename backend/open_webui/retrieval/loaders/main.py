@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 
 import ftfy
 import requests
@@ -23,6 +24,8 @@ from open_webui.env import (
     CONTENT_EXTRACTION_MAX_OUTPUT_CHARS,
     CONTENT_EXTRACTION_REQUEST_TIMEOUT,
     CONTENT_EXTRACTION_TIMEOUT,
+    DOCLING_ASYNC,
+    DOCLING_ASYNC_POLL_INTERVAL,
     GLOBAL_LOG_LEVEL,
     RAG_IMAGE_VISION_LLM_API_KEY,
     RAG_IMAGE_VISION_LLM_BASE_URL,
@@ -35,6 +38,7 @@ from open_webui.env import (
     RAG_PDF_IMAGE_MIN_COUNT,
     RAG_PDF_IMAGE_MIN_PIXELS,
     RAG_PDF_IMAGE_ROUTE_ENABLED,
+    RAG_PDF_MAX_PAGES,
     REQUESTS_VERIFY,
 )
 from open_webui.retrieval.loaders.datalab_marker import DatalabMarkerLoader
@@ -85,6 +89,16 @@ _OFFICE_IMAGE_OCR_ENABLED = True
 _OFFICE_IMAGE_MIN_PIXELS = 90_000  # ~300x300 px
 _OFFICE_IMAGE_MAX_COUNT = 20
 _OFFICE_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff'}
+# Sunway: office (docx/pptx) embedded images are read by the vision LLM (gemma) when it's
+# configured -- a VLM reads slide screenshots/diagrams/charts far better than EasyOCR, which
+# tested poorly on decks. Calls are parallelised (each is a blocking HTTP request) so a
+# multi-image deck doesn't serialise into a long extraction wait.
+_OFFICE_IMAGE_VLM_CONCURRENCY = 4
+# gemma-alone by default (no OCR anchor). When RAG_IMAGE_VISION_LLM_COMBINE_OCR is on, only
+# TEXT-DENSE images (>= this many VLM-read chars) also get deterministic Docling OCR merged in
+# -- OCR can't invent text, so it's the fidelity/anti-hallucination hedge exactly where it
+# matters, without doubling calls on small/diagram images.
+_OFFICE_IMAGE_OCR_COMBINE_MIN_CHARS = 200
 
 known_source_ext = [
     'go',
@@ -238,6 +252,17 @@ class TikaLoader:
             raise Exception(f'Error calling Tika: {r.reason}')
 
 
+class _DoclingAsyncUnsupported(Exception):
+    """Raised when docling-serve doesn't offer the async API (404/405 or no task_id),
+    signalling DoclingLoader.load to fall back to the sync /v1/convert/file endpoint."""
+
+
+class _DoclingConversionFailed(Exception):
+    """Raised when docling-serve reports a task_status of 'failure' — a definitive
+    conversion verdict (corrupt/unsupported doc). NOT retried synchronously: sync runs the
+    same conversion and would fail the same way, so this surfaces instead of falling back."""
+
+
 class DoclingLoader:
     def __init__(self, url, api_key=None, file_path=None, mime_type=None, params=None):
         self.url = url.rstrip('/')
@@ -247,12 +272,52 @@ class DoclingLoader:
 
         self.params = params or {}
 
-    def load(self) -> list[Document]:
-        with open(self.file_path, 'rb') as f:
-            headers = {}
-            if self.api_key:
-                headers['X-Api-Key'] = f'{self.api_key}'
+    def _headers(self) -> dict:
+        return {'X-Api-Key': f'{self.api_key}'} if self.api_key else {}
 
+    def _parse_result(self, result: dict) -> list[Document]:
+        document_data = result.get('document', {})
+        text = document_data.get('md_content', '<No text content found>')
+        metadata = {'Content-Type': self.mime_type} if self.mime_type else {}
+        log.debug('Docling extracted text: %s', text)
+        return [Document(page_content=text, metadata=metadata)]
+
+    @staticmethod
+    def _error_from_response(r) -> str:
+        error_msg = f'Error calling Docling API: {r.reason}'
+        if r.text:
+            try:
+                error_data = r.json()
+                if 'detail' in error_data:
+                    error_msg += f' - {error_data["detail"]}'
+            except Exception:
+                error_msg += f' - {r.text}'
+        return error_msg
+
+    def load(self) -> list[Document]:
+        # Sunway: prefer the async submit->poll->result flow (ON by default), so a long
+        # conversion isn't bounded by docling-serve's sync cap (DOCLING_SERVE_MAX_SYNC_WAIT,
+        # default 120s) that 504s large/OCR-heavy PDFs mid-convert, and a long conversion
+        # doesn't pin an HTTP connection under concurrency. Fallback policy is by VERDICT:
+        #   - definitive outcome (genuine slow-job timeout, or a 'failure' conversion verdict)
+        #     -> surface it; the sync path would hit the same wall / fail the same way.
+        #   - async never gave a verdict (no async endpoint, connection error, unexpected
+        #     status/shape, poll/result HTTP error) -> retry synchronously so the single
+        #     upload still succeeds. This is what makes async-by-default safe against a
+        #     docling-serve version whose async API differs from the assumed contract.
+        if DOCLING_ASYNC:
+            try:
+                return self._load_async()
+            except (ContentExtractionError, _DoclingConversionFailed):
+                raise
+            except _DoclingAsyncUnsupported as e:
+                log.warning(f'Docling async not available ({e}); falling back to sync /v1/convert/file')
+            except Exception as e:
+                log.warning(f'Docling async path errored ({e}); falling back to sync /v1/convert/file')
+        return self._load_sync()
+
+    def _load_sync(self) -> list[Document]:
+        with open(self.file_path, 'rb') as f:
             r = requests.post(
                 f'{self.url}/v1/convert/file',
                 files={
@@ -266,29 +331,84 @@ class DoclingLoader:
                     'image_export_mode': 'placeholder',
                     **self.params,
                 },
-                headers=headers,
+                headers=self._headers(),
                 verify=AIOHTTP_CLIENT_SESSION_SSL,
                 timeout=(10, CONTENT_EXTRACTION_REQUEST_TIMEOUT),
             )
         if r.ok:
-            result = r.json()
-            document_data = result.get('document', {})
-            text = document_data.get('md_content', '<No text content found>')
+            return self._parse_result(r.json())
+        raise Exception(f'Error calling Docling: {self._error_from_response(r)}')
 
-            metadata = {'Content-Type': self.mime_type} if self.mime_type else {}
+    def _load_async(self) -> list[Document]:
+        """docling-serve async flow: POST /v1/convert/file/async -> {task_id}; long-poll
+        GET /v1/status/poll/{task_id}?wait=N until task_status is success/failure; then
+        GET /v1/result/{task_id}. Task states are pending|started|success|failure."""
+        # 1) Submit. A 404/405 here means this server has no async API -> signal fallback.
+        with open(self.file_path, 'rb') as f:
+            submit = requests.post(
+                f'{self.url}/v1/convert/file/async',
+                files={
+                    'files': (
+                        self.file_path,
+                        f,
+                        self.mime_type or 'application/octet-stream',
+                    )
+                },
+                data={
+                    'image_export_mode': 'placeholder',
+                    **self.params,
+                },
+                headers=self._headers(),
+                verify=AIOHTTP_CLIENT_SESSION_SSL,
+                timeout=(10, 60),
+            )
+        if submit.status_code in (404, 405):
+            raise _DoclingAsyncUnsupported(f'HTTP {submit.status_code} on /v1/convert/file/async')
+        if not submit.ok:
+            raise Exception(f'Error calling Docling (async submit): {self._error_from_response(submit)}')
 
-            log.debug('Docling extracted text: %s', text)
-            return [Document(page_content=text, metadata=metadata)]
-        else:
-            error_msg = f'Error calling Docling API: {r.reason}'
-            if r.text:
-                try:
-                    error_data = r.json()
-                    if 'detail' in error_data:
-                        error_msg += f' - {error_data["detail"]}'
-                except Exception:
-                    error_msg += f' - {r.text}'
-            raise Exception(f'Error calling Docling: {error_msg}')
+        task_id = (submit.json() or {}).get('task_id')
+        if not task_id:
+            # Server accepted async but returned no task id -> can't poll; use sync instead.
+            raise _DoclingAsyncUnsupported('async submit returned no task_id')
+
+        # 2) Long-poll status until terminal or the overall extraction budget is spent.
+        deadline = time.monotonic() + CONTENT_EXTRACTION_REQUEST_TIMEOUT
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ContentExtractionError(
+                    f'Docling async conversion for {self.file_path} exceeded '
+                    f'{CONTENT_EXTRACTION_REQUEST_TIMEOUT}s (task {task_id}) and was abandoned.',
+                    'This file took too long to process and was stopped. Try a smaller or simpler file.',
+                )
+            wait = max(1, min(DOCLING_ASYNC_POLL_INTERVAL, int(remaining)))
+            poll = requests.get(
+                f'{self.url}/v1/status/poll/{task_id}',
+                params={'wait': wait},
+                headers=self._headers(),
+                verify=AIOHTTP_CLIENT_SESSION_SSL,
+                timeout=(10, wait + 15),
+            )
+            if not poll.ok:
+                raise Exception(f'Error calling Docling (async poll): {self._error_from_response(poll)}')
+            status = str((poll.json() or {}).get('task_status', '')).lower()
+            if status == 'success':
+                break
+            if status == 'failure':
+                raise _DoclingConversionFailed(f'Docling async conversion failed for {self.file_path} (task {task_id})')
+            # pending/started (or any non-terminal) -> keep polling.
+
+        # 3) Fetch the result document.
+        result = requests.get(
+            f'{self.url}/v1/result/{task_id}',
+            headers=self._headers(),
+            verify=AIOHTTP_CLIENT_SESSION_SSL,
+            timeout=(10, CONTENT_EXTRACTION_REQUEST_TIMEOUT),
+        )
+        if not result.ok:
+            raise Exception(f'Error calling Docling (async result): {self._error_from_response(result)}')
+        return self._parse_result(result.json())
 
 
 class Loader:
@@ -300,9 +420,28 @@ class Loader:
     def load(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
         file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
 
-        # Set when a digital-looking PDF is rerouted to Docling because it embeds images
-        # whose baked-in text the fast path would miss; forces OCR on the Docling call.
+        # Sunway: page cap FIRST -- before any engine is chosen or a single page is parsed.
+        # Deliberately outside the fast-path branch (same lesson as the image routing below):
+        # a cap that only applied to one route would let the slowest route, Docling OCR,
+        # through unguarded -- exactly the case it exists to stop.
+        if file_ext == 'pdf' and RAG_PDF_MAX_PAGES:
+            pages = self._pdf_page_count(file_path)
+            if pages and pages > RAG_PDF_MAX_PAGES:
+                raise ContentExtractionError(
+                    f'{filename} has {pages} pages, exceeding the {RAG_PDF_MAX_PAGES}-page limit; rejected '
+                    f'before extraction.',
+                    f'This PDF has {pages} pages, over the {RAG_PDF_MAX_PAGES}-page limit. '
+                    f'Please split it or upload only the sections you need.',
+                )
+
+        # Sunway: image-bearing born-digital PDFs are routed to Docling (for its SELECTIVE
+        # OCR) instead of the text-layer-only fast engine, so baked-in image text isn't lost.
+        # force_ocr is deliberately NOT auto-set: testing (2026-07-21) showed forcing full-page
+        # OCR captured NO more image text AND degraded the native text layer (colons for
+        # full-stops, misplaced words, fewer chars). Docling's selective do_ocr is used
+        # instead. The force_ocr plumbing in _get_loader is kept as a manual-only lever.
         force_ocr = False
+        image_reroute = False
 
         # Sunway A/B: fast-path toggles are read at REQUEST time (runtime-mutable via the
         # Admin UI), not from the boot-time env constants, so switching needs no restart.
@@ -344,15 +483,15 @@ class Loader:
 
             # Shared image-aware routing (applies to whichever fast engine ran): a digital
             # PDF that ALSO embeds substantial images has baked-in text (screenshots/scanned
-            # figures) the text-layer read would miss — reroute to Docling with forced OCR
-            # rather than take the fast path.
+            # figures) the text-layer read would miss — reroute to Docling (SELECTIVE OCR)
+            # rather than take the fast path. NOT force_ocr (see the note at force_ocr init).
             if fast_docs:
                 if RAG_PDF_IMAGE_ROUTE_ENABLED and self._pdf_has_significant_images(file_path):
                     log.info(
                         f'PDF fast-path: {filename} is digital but image-bearing; routing to '
-                        f'{self.engine} with forced OCR to read embedded-image text.'
+                        f'{self.engine} (selective OCR) to read embedded-image text.'
                     )
-                    force_ocr = True
+                    image_reroute = True
                 else:
                     log.info(
                         f'PDF fast-path: born-digital ({len(fast_docs)} pages) via {engine_tag}, skipped {self.engine}'
@@ -364,12 +503,35 @@ class Loader:
                         )
                         for doc in fast_docs
                     ]
-            if not force_ocr:
+            if not image_reroute:
                 log.info(f'PDF fast-path: scanned/low-text — falling back to {self.engine} for OCR')
+
+        # MarkItDown-pinned tabular office types (Sunway) — DECIDED routes, not A/B
+        # experiments, so they run independent of the office fast-path toggle:
+        #   • csv  (decided 2026-07-21): already tabular, Docling's layout AI adds nothing and
+        #     extracted the FEWEST chars in testing (mild data-loss flag); MarkItDown emits a
+        #     clean markdown table with every row.
+        #   • xlsx (decided 2026-07-22): live-tested on large/complex workbooks — MarkItDown's
+        #     markdown-table output beat Docling on content formatting / LLM legibility. Note
+        #     MarkItDown reads xlsx via pandas+openpyxl under the hood, then serialises to a
+        #     markdown table, so this ALSO subsumes the "try openpyxl/pandas" idea (they are
+        #     its engine, minus the LLM-friendly formatting).
+        # Both fall through to the normal loader (Docling) only if MarkItDown fails/empties.
+        # Embedded-image OCR is deliberately NOT run here: csv can't embed images and xlsx
+        # almost never carries text-bearing ones (docx/pptx, which do, stay on Docling +
+        # _append_office_image_ocr). To A/B either type again (e.g. a post-GPU Docling
+        # re-test), gate this on ab[...] as the office fast-path block does.
+        if file_ext in ('csv', 'xlsx') and self.engine == 'docling':
+            md_docs = self._load_office_fast(filename, file_content_type, file_path, 'markitdown')
+            if md_docs is not None:
+                return md_docs
+            log.info(f'{file_ext.upper()}: {filename} markitdown empty/failed — falling back to {self.engine}')
 
         # Office fast-path (Sunway A/B): born-digital OOXML office files have a text layer,
         # so a lightweight loader (Unstructured or MarkItDown, chosen at runtime) extracts
-        # them far faster than Docling. Falls back to Docling on failure/empty text.
+        # them far faster than Docling. DEFAULT IS OFF (docx/xlsx/pptx -> Docling: its
+        # TableFormer beats text-layer loaders on complex tables, and embedded-image OCR is
+        # Docling regardless of engine). Kept as a runtime toggle for the post-GPU re-test.
         if ab['office_fast_path'] and file_ext in OFFICE_EXTS and self.engine == 'docling':
             office_docs = self._load_office_fast(filename, file_content_type, file_path, ab['office_engine'])
             if office_docs is not None:
@@ -395,21 +557,12 @@ class Loader:
             if vision_ready:
                 return self._load_image_with_vision(filename, file_content_type, file_path)
 
-        # Image-aware OCR, decoupled from the fast-path so it ALSO applies when a file
-        # reaches Docling directly (fast-path off/failed) -- otherwise embedded-image text
-        # is silently missed in single-engine mode. Shared across all extraction routes.
-        # PDF: force OCR when the PDF embeds substantial images, so text-layer pages with
-        # pasted screenshots still get OCR'd (the fast-path branch sets force_ocr itself;
-        # `not force_ocr` avoids re-checking a PDF it already decided).
-        if (
-            file_ext == 'pdf'
-            and self.engine == 'docling'
-            and not force_ocr
-            and RAG_PDF_IMAGE_ROUTE_ENABLED
-            and self._pdf_has_significant_images(file_path)
-        ):
-            log.info(f'PDF: {filename} is image-bearing (outside fast-path); forcing OCR for embedded-image text.')
-            force_ocr = True
+        # Sunway: image-bearing PDFs reaching Docling directly (fast-path off/failed) already
+        # get Docling's SELECTIVE OCR from the base DOCLING_PARAMS, which in testing read
+        # embedded-image text as well as force_ocr did — without degrading the native text
+        # layer. So there is nothing to force here: the old force_ocr reroute was removed
+        # 2026-07-21 after the A/B (see the note at force_ocr init). Residual baked-image-text
+        # gaps are an OCR-capability limit — tune images_scale / OCR engine, not force_ocr.
 
         loader = self._get_loader(filename, file_content_type, file_path, force_ocr=force_ocr)
         docs = loader.load()
@@ -545,15 +698,85 @@ class Loader:
         return paths
 
     def _ocr_office_images(self, image_paths: list[str]) -> str:
-        """OCR each extracted office image via Docling and return the combined text.
-        Sequential (bounded by _OFFICE_IMAGE_MAX_COUNT); per-image failures are skipped."""
+        """Read each extracted office image and return the combined text.
+
+        Prefers the vision LLM (gemma) when configured -- it reads slide screenshots,
+        diagrams and charts far better than EasyOCR, and covers pure visuals OCR can't.
+        Falls back to Docling OCR when no vision LLM is set. Per-image failures are skipped."""
+        vision_ready = bool(RAG_IMAGE_VISION_LLM_BASE_URL and RAG_IMAGE_VISION_LLM_MODEL)
+        if vision_ready:
+            return self._vlm_office_images(image_paths)
+        return self._docling_ocr_office_images(image_paths)
+
+    def _vlm_office_images(self, image_paths: list[str]) -> str:
+        """Read office images via the vision LLM (gemma), one call per image, run in
+        PARALLEL (bounded) so a multi-image deck doesn't serialise. gemma-alone by default;
+        text-dense reads additionally get deterministic Docling OCR merged when COMBINE_OCR
+        is on (see _OFFICE_IMAGE_OCR_COMBINE_MIN_CHARS)."""
+        import mimetypes
+        from concurrent.futures import ThreadPoolExecutor
+
+        from open_webui.retrieval.loaders.vision_llm import DEFAULT_VISION_PROMPT, VisionLLMLoader
+
+        extra_body = {}
+        if RAG_IMAGE_VISION_LLM_EXTRA_BODY:
+            try:
+                extra_body = json.loads(RAG_IMAGE_VISION_LLM_EXTRA_BODY)
+            except json.JSONDecodeError:
+                log.error('Invalid RAG_IMAGE_VISION_LLM_EXTRA_BODY (expected a JSON object); ignoring')
+        # Transcribe-and-describe: gemma is the sole reader here, so it must both read
+        # baked-in text and describe visuals. The prompt already forbids inventing text.
+        prompt = RAG_IMAGE_VISION_LLM_PROMPT or DEFAULT_VISION_PROMPT
+
+        def _read_one(path: str) -> str:
+            try:
+                mime = mimetypes.guess_type(path)[0] or 'image/png'
+                docs = VisionLLMLoader(
+                    base_url=RAG_IMAGE_VISION_LLM_BASE_URL,
+                    model=RAG_IMAGE_VISION_LLM_MODEL,
+                    file_path=path,
+                    api_key=RAG_IMAGE_VISION_LLM_API_KEY,
+                    mime_type=mime,
+                    prompt=prompt,
+                    max_tokens=RAG_IMAGE_VISION_LLM_MAX_TOKENS,
+                    extra_body=extra_body,
+                ).load()
+                text = '\n'.join((d.page_content or '').strip() for d in docs).strip()
+                # Drop the describe-only sentinel so a pure-decoration image adds nothing.
+                if text.lower().strip('.() ') == 'no additional visual content':
+                    text = ''
+                # Fidelity hedge: for text-dense reads, merge deterministic OCR (can't
+                # hallucinate) ahead of the VLM text. Only when COMBINE_OCR is enabled.
+                if text and RAG_IMAGE_VISION_LLM_COMBINE_OCR and len(text) >= _OFFICE_IMAGE_OCR_COMBINE_MIN_CHARS:
+                    ocr = self._docling_ocr_one(path)
+                    if ocr:
+                        text = f'{ocr}\n\n{text}'
+                return text
+            except Exception as e:
+                log.warning(f'Office image VLM read failed on {path}: {e}')
+                return ''
+
+        max_workers = max(1, min(len(image_paths), _OFFICE_IMAGE_VLM_CONCURRENCY))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            sections = [t for t in ex.map(_read_one, image_paths) if t]
+        return '\n\n'.join(sections)
+
+    def _docling_ocr_office_images(self, image_paths: list[str]) -> str:
+        """Docling-OCR fallback (used when no vision LLM is configured). Sequential;
+        per-image failures are skipped."""
+        if not self.kwargs.get('DOCLING_SERVER_URL'):
+            log.warning('Office image OCR: DOCLING_SERVER_URL not set; skipping')
+            return ''
+        sections = [t for t in (self._docling_ocr_one(p) for p in image_paths) if t]
+        return '\n\n'.join(sections)
+
+    def _docling_ocr_one(self, path: str) -> str:
+        """OCR a single image via Docling; returns its text or '' on failure/empty."""
         import mimetypes
 
         server_url = self.kwargs.get('DOCLING_SERVER_URL')
         if not server_url:
-            log.warning('Office image OCR: DOCLING_SERVER_URL not set; skipping')
             return ''
-
         params = self.kwargs.get('DOCLING_PARAMS', {})
         if not isinstance(params, dict):
             try:
@@ -562,24 +785,18 @@ class Loader:
                 params = {}
         # These images ARE the content to read -- ensure OCR is on.
         params = {**params, 'do_ocr': True}
-
-        sections: list[str] = []
-        for path in image_paths:
-            mime = mimetypes.guess_type(path)[0] or 'image/png'
-            try:
-                docs = DoclingLoader(
-                    url=server_url,
-                    api_key=self.kwargs.get('DOCLING_API_KEY', None),
-                    file_path=path,
-                    mime_type=mime,
-                    params=params,
-                ).load()
-                text = '\n'.join((d.page_content or '').strip() for d in docs).strip()
-                if text:
-                    sections.append(text)
-            except Exception as e:
-                log.warning(f'Office image OCR: failed on {path}: {e}')
-        return '\n\n'.join(sections)
+        try:
+            docs = DoclingLoader(
+                url=server_url,
+                api_key=self.kwargs.get('DOCLING_API_KEY', None),
+                file_path=path,
+                mime_type=mimetypes.guess_type(path)[0] or 'image/png',
+                params=params,
+            ).load()
+            return '\n'.join((d.page_content or '').strip() for d in docs).strip()
+        except Exception as e:
+            log.warning(f'Office image OCR: failed on {path}: {e}')
+            return ''
 
     def _load_image_with_vision(self, filename: str, file_content_type: str, file_path: str) -> list[Document]:
         """Extract an image via the vision LLM, optionally prepending Docling OCR.
@@ -682,6 +899,21 @@ class Loader:
             return False
         total_chars = sum(len((doc.page_content or '').strip()) for doc in docs)
         return (total_chars / len(docs)) >= RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE
+
+    def _pdf_page_count(self, file_path: str) -> int:
+        """Page count for the PDF, or 0 if it can't be determined.
+
+        Cheap: pypdf parses only the xref/page tree, not page content, so this is
+        milliseconds even on a 6000-page file. Returns 0 (= don't block) on any error --
+        a malformed or encrypted PDF is the extractor's problem to report, not this
+        guard's, and failing open keeps a broken page count from rejecting a valid file."""
+        try:
+            from pypdf import PdfReader
+
+            return len(PdfReader(file_path, strict=False).pages)
+        except Exception as e:
+            log.warning(f'PDF page-count check failed for {file_path} ({e}); skipping the page cap.')
+            return 0
 
     def _pdf_has_significant_images(self, file_path: str) -> bool:
         """True if the PDF embeds enough large raster images that its text layer alone
@@ -1001,9 +1233,10 @@ class Loader:
                         log.error('Invalid DOCLING_PARAMS format, expected JSON object')
                         params = {}
                 if force_ocr:
-                    # This PDF was rerouted here for its embedded images; OCR every page so
-                    # their baked-in text is read (the selective default skips pages that
-                    # already have a text layer, missing text inside pasted screenshots).
+                    # Manual-only lever (nothing auto-sets force_ocr since 2026-07-21): OCR
+                    # every page, ignoring the text layer. The A/B showed this captures no more
+                    # embedded-image text than selective do_ocr and degrades the native text, so
+                    # the image-aware reroute no longer forces it. Left here for deliberate use.
                     params = {**params, 'force_ocr': True}
 
                 loader = DoclingLoader(

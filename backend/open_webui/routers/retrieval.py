@@ -49,7 +49,10 @@ from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import (
     DEVICE_TYPE,
     DOCKER,
+    EMBEDDING_MAX_CONCURRENCY,
+    RAG_CHAT_ATTACHMENT_FULL_CONTEXT,
     RAG_EMBEDDING_TIMEOUT,
+    RAG_FULL_CONTEXT_MAX_CHARS,
     SENTENCE_TRANSFORMERS_BACKEND,
     SENTENCE_TRANSFORMERS_CROSS_ENCODER_BACKEND,
     SENTENCE_TRANSFORMERS_CROSS_ENCODER_MODEL_KWARGS,
@@ -1390,6 +1393,12 @@ def merge_docs_to_target_size(
     return result
 
 
+# Sunway: bounds concurrent embedding jobs (see EMBEDDING_MAX_CONCURRENCY). Extraction has
+# its own semaphore in the loader; embedding (below, run in a worker thread) had none, so
+# stacked uploads could thrash CPU/RAM. Acquired at the async call sites that embed.
+_EMBEDDING_SEMAPHORE = asyncio.Semaphore(EMBEDDING_MAX_CONCURRENCY)
+
+
 def save_docs_to_vector_db(
     request: Request,
     docs,
@@ -1749,8 +1758,33 @@ async def process_file(
             )
             hash = calculate_sha256_string(text_content)
 
-            if request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
-                await Files.update_file_data_by_id(file.id, {'status': 'completed'}, db=db)
+            # Sunway: skip embedding for a SMALL chat attachment and serve it full-context
+            # (see RAG_CHAT_ATTACHMENT_FULL_CONTEXT). Embedding is the slow half of an upload;
+            # a doc that fits the full-context budget doesn't need it — the whole extracted
+            # text is injected at query time (marked via data['full_context']; middleware
+            # get_sources_from_items honours it). ONLY fresh chat attachments qualify:
+            # `collection_name` is a per-file collection (form_data.collection_name is None =
+            # not a KB add) and this isn't the content-update path. KB adds and larger files
+            # fall through to normal embed + RAG so retrieval still works for the corpus.
+            fits_full_context = (
+                RAG_CHAT_ATTACHMENT_FULL_CONTEXT
+                and form_data.collection_name is None
+                and not form_data.content
+                and RAG_FULL_CONTEXT_MAX_CHARS > 0
+                and len(text_content) <= RAG_FULL_CONTEXT_MAX_CHARS
+            )
+
+            if request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL or fits_full_context:
+                status_update = {'status': 'completed'}
+                if fits_full_context and not request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
+                    # Marker read by retrieval to inject this file whole instead of doing an
+                    # (empty, since we never embedded it) chunked retrieval.
+                    status_update['full_context'] = True
+                    log.info(
+                        f'[full-context] {file.filename!r} ({len(text_content)} chars) fits budget; '
+                        f'skipping embedding, will inject whole at query time.'
+                    )
+                await Files.update_file_data_by_id(file.id, status_update, db=db)
                 await Files.update_file_hash_by_id(file.id, hash, db=db)
                 return {
                     'status': True,
@@ -1764,6 +1798,19 @@ async def process_file(
                     # Note: file is already a Pydantic model (not ORM), so no expunge needed.
                     await db.commit()
 
+                    # Sunway: extraction is done and its text is already persisted above; the
+                    # remaining wait is embed+store. Flip the file to an intermediate
+                    # 'embedding' status so the upload status stream (files.py process/status)
+                    # can show "Indexing…" instead of leaving one opaque spinner over both
+                    # phases — the #1 thing that makes impatient users think extraction hung.
+                    # Best-effort + own session: a failed status write must never abort the
+                    # actual embedding. Does NOT change when the file becomes queryable (still
+                    # 'completed' only after the vectors land).
+                    try:
+                        await Files.update_file_data_by_id(file.id, {'status': 'embedding'})
+                    except Exception:
+                        log.debug('could not set intermediate embedding status', exc_info=True)
+
                     # External embedding API takes time (5-60s+).
                     # Subsequent updates use fresh async sessions.
                     # NOTE: save_docs_to_vector_db is a sync function that
@@ -1774,19 +1821,22 @@ async def process_file(
                     # routes (depends on char count, not extractor), so it's the
                     # constant to subtract from the upload spinner when comparing routes.
                     _embed_t0 = time.perf_counter()
-                    result = await run_in_threadpool(
-                        save_docs_to_vector_db,
-                        request,
-                        docs=docs,
-                        collection_name=collection_name,
-                        metadata={
-                            'file_id': file.id,
-                            'name': file.filename,
-                            'hash': hash,
-                        },
-                        add=(True if form_data.collection_name else False),
-                        user=user,
-                    )
+                    # Sunway: bound concurrent embeds so stacked/large uploads can't thrash
+                    # CPU/RAM (the extraction semaphore doesn't cover this stage).
+                    async with _EMBEDDING_SEMAPHORE:
+                        result = await run_in_threadpool(
+                            save_docs_to_vector_db,
+                            request,
+                            docs=docs,
+                            collection_name=collection_name,
+                            metadata={
+                                'file_id': file.id,
+                                'name': file.filename,
+                                'hash': hash,
+                            },
+                            add=(True if form_data.collection_name else False),
+                            user=user,
+                        )
                     _embed_secs = time.perf_counter() - _embed_t0
                     log.info(f'added {len(docs)} items to collection {collection_name}')
                     log.info(f'[TIMING] embed+store {file.filename!r}: {_embed_secs:.3f}s ({len(docs)} docs)')
@@ -2772,14 +2822,17 @@ async def process_files_batch(
     # Save all documents in one batch
     if all_docs:
         try:
-            await run_in_threadpool(
-                save_docs_to_vector_db,
-                request,
-                all_docs,
-                collection_name,
-                add=True,
-                user=user,
-            )
+            # Sunway: same embedding concurrency bound as process_file — a KB batch add
+            # embeds too and must not stack with concurrent uploads.
+            async with _EMBEDDING_SEMAPHORE:
+                await run_in_threadpool(
+                    save_docs_to_vector_db,
+                    request,
+                    all_docs,
+                    collection_name,
+                    add=True,
+                    user=user,
+                )
 
             # Update all files with collection name
             for file_update, file_result in zip(file_updates, file_results):

@@ -21,6 +21,7 @@
 		currentChatPage
 	} from '$lib/stores';
 	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
+	import { deriveFirstName, getTimeOfDay } from '$lib/utils/greeting';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import Suggestions from './Suggestions.svelte';
@@ -64,6 +65,27 @@
 	export let toolServers = [];
 
 	export let dragged = false;
+
+	// Sunway: time-aware greeting for the new-chat heading (shown as the fallback when no
+	// model name resolves). Frozen at component init — a `const`, never reactive — so the
+	// heading doesn't re-roll / flicker while the user types. Name derivation is conservative
+	// (see utils/greeting.ts); an unsafe value falls back to a calm, name-less variant.
+	const greetingFirstName = deriveFirstName($user?.name);
+	const greetingTimeOfDay = getTimeOfDay();
+
+	// Maps the frozen pick onto static `$i18n.t('literal')` calls so the i18n parser extracts
+	// the keys. Only reactive on language ($i18n), which never causes a name flicker.
+	$: greetingText = greetingFirstName
+		? {
+				morning: $i18n.t('Good morning, {{name}}', { name: greetingFirstName }),
+				afternoon: $i18n.t('Good afternoon, {{name}}', { name: greetingFirstName }),
+				evening: $i18n.t('Good evening, {{name}}', { name: greetingFirstName })
+			}[greetingTimeOfDay]
+		: {
+				morning: $i18n.t('Good morning'),
+				afternoon: $i18n.t('Good afternoon'),
+				evening: $i18n.t('Good evening')
+			}[greetingTimeOfDay];
 
 	let models = [];
 	let selectedModelIdx = 0;
@@ -145,19 +167,13 @@
 						class=" text-3xl @sm:text-3xl line-clamp-1 flex items-center"
 						in:fade={{ duration: 100 }}
 					>
-						{#if models[selectedModelIdx]?.name}
-							<Tooltip
-								content={models[selectedModelIdx]?.name}
-								placement="top"
-								className=" flex items-center "
-							>
-								<span class="line-clamp-1">
-									{models[selectedModelIdx]?.name}
-								</span>
-							</Tooltip>
-						{:else}
-							{$i18n.t('Hello, {{name}}', { name: $user?.name })}
-						{/if}
+						<!-- Sunway: greeting is the hero heading, unconditionally. The model name
+						is redundant here — it's already in the navbar model selector and the avatar
+						row above — and putting it here hid the greeting whenever a model was selected
+						(i.e. always). Hover an avatar or open the navbar dropdown to see the model. -->
+						<span class="line-clamp-1">
+							{greetingText}
+						</span>
 					</div>
 				</div>
 

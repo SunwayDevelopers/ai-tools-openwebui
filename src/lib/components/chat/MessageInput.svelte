@@ -643,7 +643,25 @@
 				}
 
 				// During the file upload, file content is automatically extracted.
-				const uploadedFile = await uploadFile(localStorage.token, file, metadata, process);
+				// Sunway: surface the backend processing phase on the chip ('pending' =
+				// extracting, 'embedding' = indexing) so a slow upload reads as honest,
+				// two-step progress instead of one opaque spinner.
+				const uploadedFile = await uploadFile(
+					localStorage.token,
+					file,
+					metadata,
+					process,
+					true,
+					(processStatus) => {
+						fileItem.statusLabel =
+							processStatus === 'embedding'
+								? $i18n.t('Indexing...')
+								: processStatus === 'pending'
+									? $i18n.t('Extracting...')
+									: '';
+						files = files;
+					}
+				);
 
 				if (uploadedFile) {
 					console.log('File upload completed:', {
@@ -1426,6 +1444,7 @@
 												type={file.type}
 												size={file?.size}
 												loading={file.status === 'uploading'}
+												statusLabel={file.statusLabel}
 												dismissible={true}
 												edit={true}
 												small={true}
