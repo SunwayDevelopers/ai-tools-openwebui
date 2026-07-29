@@ -21,7 +21,7 @@
 		currentChatPage
 	} from '$lib/stores';
 	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
-	import { deriveFirstName, getTimeOfDay } from '$lib/utils/greeting';
+	import { deriveFirstName, getTimeOfDay, pickNextGreetingVariant } from '$lib/utils/greeting';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import Suggestions from './Suggestions.svelte';
@@ -66,26 +66,44 @@
 
 	export let dragged = false;
 
-	// Sunway: time-aware greeting for the new-chat heading (shown as the fallback when no
-	// model name resolves). Frozen at component init — a `const`, never reactive — so the
-	// heading doesn't re-roll / flicker while the user types. Name derivation is conservative
-	// (see utils/greeting.ts); an unsafe value falls back to a calm, name-less variant.
+	// Sunway: rotating, time-aware greeting for the new-chat heading. Both the variant and the
+	// time of day are frozen at component init — `const`, never reactive — so the heading
+	// doesn't re-roll / flicker while the user types. Name derivation is conservative (see
+	// utils/greeting.ts); an unsafe value falls back to a calm, name-less variant, and several
+	// variants are name-less by design so the heading doesn't feel like a mail merge.
 	const greetingFirstName = deriveFirstName($user?.name);
 	const greetingTimeOfDay = getTimeOfDay();
+	// Re-rolls on every mount. This component is inside an {#if}/{:else} that unmounts as soon
+	// as the chat has messages, so "mount" == "a new empty chat was opened" — which is exactly
+	// when a fresh greeting is wanted. The pick excludes whatever was shown last (sessionStorage)
+	// so consecutive new chats never repeat the same line.
+	const greetingVariant = pickNextGreetingVariant();
 
 	// Maps the frozen pick onto static `$i18n.t('literal')` calls so the i18n parser extracts
 	// the keys. Only reactive on language ($i18n), which never causes a name flicker.
-	$: greetingText = greetingFirstName
-		? {
-				morning: $i18n.t('Good morning, {{name}}', { name: greetingFirstName }),
-				afternoon: $i18n.t('Good afternoon, {{name}}', { name: greetingFirstName }),
-				evening: $i18n.t('Good evening, {{name}}', { name: greetingFirstName })
-			}[greetingTimeOfDay]
-		: {
-				morning: $i18n.t('Good morning'),
-				afternoon: $i18n.t('Good afternoon'),
-				evening: $i18n.t('Good evening')
-			}[greetingTimeOfDay];
+	$: greetingText = {
+		timeOfDay: greetingFirstName
+			? {
+					morning: $i18n.t('Good morning, {{name}}', { name: greetingFirstName }),
+					afternoon: $i18n.t('Good afternoon, {{name}}', { name: greetingFirstName }),
+					evening: $i18n.t('Good evening, {{name}}', { name: greetingFirstName })
+				}[greetingTimeOfDay]
+			: {
+					morning: $i18n.t('Good morning'),
+					afternoon: $i18n.t('Good afternoon'),
+					evening: $i18n.t('Good evening')
+				}[greetingTimeOfDay],
+		welcomeBack: greetingFirstName
+			? $i18n.t('Welcome back, {{name}}', { name: greetingFirstName })
+			: $i18n.t('Welcome back'),
+		readyWhenYouAre: greetingFirstName
+			? $i18n.t('Ready when you are, {{name}}', { name: greetingFirstName })
+			: $i18n.t('Ready when you are'),
+		whatCanIHelpWith: $i18n.t('What can I help with?'),
+		whatAreWeWorkingOn: $i18n.t('What are we working on?'),
+		whereShouldWeStart: $i18n.t('Where should we start?'),
+		whatsOnYourMind: $i18n.t("What's on your mind?")
+	}[greetingVariant];
 
 	let models = [];
 	let selectedModelIdx = 0;

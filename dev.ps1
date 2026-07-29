@@ -3,7 +3,9 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / docling / searxng / minio / valkey -> Docker (detached, volumes persist)
+#   postgres / qdrant / searxng / minio / valkey -> Docker (detached, volumes persist)
+#   (docling is NOT started -- dev uses the team's GPU docling-serve on the AI server;
+#    see the CONTENT_EXTRACTION_ENGINE block below to run it locally again)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -40,7 +42,8 @@ function Import-DotEnv([string]$path) {
 # -- stop ----------------------------------------------------------------------
 
 if ($Stop) {
-    Write-Host "Stopping Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
+    Write-Host "Stopping Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+    # docling is still named here so a locally-started container gets stopped too.
     docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant docling searxng minio valkey
     exit $LASTEXITCODE
 }
@@ -116,8 +119,12 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant docling searxng minio valkey createbuckets
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+# 'docling' is deliberately absent: dev extracts via the team's GPU docling-serve on the
+# AI server, so the local CPU container (7GB image) was idle waste. To run it locally
+# again: docker compose -f docker-compose.dev.yml up -d docling  AND point
+# Admin Settings -> Documents -> Docling URL back at http://localhost:5001.
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant searxng minio valkey createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -132,12 +139,16 @@ Write-Host "      Postgres is healthy." -ForegroundColor Green
 
 # -- backend env vars (consumed by uvicorn child below) ------------------------
 
-# Document extraction via the docling container (docker-compose.dev.yml). Docling
-# does layout-aware extraction + OCR (scanned PDFs, embedded text in PNG/JPEG),
-# unlike Tika which has no OCR. NOTE: CONTENT_EXTRACTION_ENGINE is PersistentConfig
-# -- this env only SEEDS the DB on first boot. To switch an existing DB, set it in
-# Admin Settings -> Documents (Engine=Docling, URL, Params). Tika is left running
-# as a fallback you can flip back to in the UI.
+# Document extraction via Docling: layout-aware extraction + OCR (scanned PDFs,
+# embedded text in PNG/JPEG), unlike Tika which has no OCR.
+#
+# NOTE: both CONTENT_EXTRACTION_ENGINE and DOCLING_SERVER_URL are PersistentConfig --
+# these envs only SEEDED the DB on first boot and are IGNORED now. The live values are
+# in Admin Settings -> Documents, which points at the team's GPU docling-serve on the
+# AI server (https://docling.mymswgl-ai-application.sunway.com). That is why the local
+# CPU docling container is no longer started (see the compose block above).
+# The localhost URL below is kept only as the seed value for a fresh DB; if you wipe
+# the DB and want the GPU server, set it in Admin Settings after first boot.
 $env:CONTENT_EXTRACTION_ENGINE     = 'docling'
 $env:TIKA_SERVER_URL               = 'http://localhost:9998'
 $env:DOCLING_SERVER_URL            = 'http://localhost:5001'

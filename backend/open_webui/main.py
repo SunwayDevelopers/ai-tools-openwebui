@@ -429,6 +429,7 @@ from open_webui.env import (
     BYPASS_MODEL_ACCESS_CONTROL,
     CHANGELOG,
     CHAT_RETENTION_DAYS,
+    CHAT_SYSTEM_PROMPT_MAX_CHARS,
     ENABLE_CHAT_ARCHIVE,
     ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_TEMPORARY_CHAT,
@@ -2523,6 +2524,10 @@ async def get_app_config(request: Request):
                     'max_chats_per_user': MAX_CHATS_PER_USER,
                     'chat_retention_days': CHAT_RETENTION_DAYS,
                 },
+                # Sunway: char budget for the per-chat System Prompt, so the Controls
+                # textarea can show a live counter and stop the user at the same limit the
+                # backend truncates at (rather than silently trimming after the fact).
+                'chat_system_prompt_max_chars': CHAT_SYSTEM_PROMPT_MAX_CHARS,
                 'enable_chat_archive': ENABLE_CHAT_ARCHIVE,
                 'enable_temporary_chat': ENABLE_TEMPORARY_CHAT,
                 'enable_voice': ENABLE_VOICE,

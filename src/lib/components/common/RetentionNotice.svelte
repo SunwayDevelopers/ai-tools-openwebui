@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { config } from '$lib/stores';
+	import { getDaysUntilExpiry } from '$lib/utils/retention';
 
 	const i18n = getContext('i18n');
 
@@ -9,20 +10,44 @@
 	// 'badge'   -> "Expires in Nd" chip on a chat row (C); pass updatedAt (epoch seconds)
 	export let variant: 'banner' | 'counter' | 'badge' = 'banner';
 	export let chatCount = 0;
-	export let updatedAt = 0;
+	export let updatedAt: number | null = 0;
 	export let dismissible = true;
 	/** badge only shows within this many days of expiry */
 	export let badgeThresholdDays = 7;
 
-	let dismissed = false;
-
 	$: retentionDays = $config?.retention?.chat_retention_days ?? 0;
 	$: maxChats = $config?.retention?.max_chats_per_user ?? 0;
 
-	$: daysLeft =
-		retentionDays > 0 && updatedAt
-			? Math.ceil((updatedAt + retentionDays * 86400 - Date.now() / 1000) / 86400)
-			: null;
+	// Sunway: the dismissal has to persist. Previously this was plain component state, so the ✕
+	// only held until the next remount — users dismissed it, reloaded, and saw it again forever,
+	// which reads as "this control is broken" rather than "this notice is important".
+	//
+	// The key embeds the policy values, so changing CHAT_RETENTION_DAYS or MAX_CHATS_PER_USER
+	// re-surfaces the banner for everyone. That's intentional: a policy change is exactly when
+	// people need to be re-told, and a permanently dismissed banner would hide it. Dismissing
+	// costs nothing in awareness terms — the counter pill and the per-row expiry badge remain.
+	$: dismissKey = `schat:retention-notice-dismissed:${retentionDays}:${maxChats}`;
+
+	let dismissed = false;
+	$: {
+		try {
+			dismissed = localStorage.getItem(dismissKey) === 'true';
+		} catch {
+			// Storage unavailable (private mode) — banner simply stays dismissible per-session.
+			dismissed = false;
+		}
+	}
+
+	const dismiss = () => {
+		dismissed = true;
+		try {
+			localStorage.setItem(dismissKey, 'true');
+		} catch {
+			// Non-fatal: we lose persistence, not the dismissal itself.
+		}
+	};
+
+	$: daysLeft = getDaysUntilExpiry(updatedAt, retentionDays);
 </script>
 
 {#if variant === 'banner'}
@@ -41,7 +66,7 @@
 			{#if dismissible}
 				<button
 					class="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-					on:click={() => (dismissed = true)}
+					on:click={dismiss}
 					aria-label={$i18n.t('Dismiss')}
 				>
 					✕
