@@ -732,6 +732,31 @@ except (ValueError, TypeError):
 RAG_IMAGE_VISION_LLM_EXTRA_BODY = os.getenv('RAG_IMAGE_VISION_LLM_EXTRA_BODY', '')
 
 
+# Per-chat System Prompt hardening (Sunway). The text a user types into Chat Controls
+# arrives as a role=system message and is merged into the SAME system message as the
+# admin/model prompt, joined by a newline — so the two become indistinguishable strings
+# in the same role, with the user's text last. Position is not precedence: "disregard the
+# above" in that box frequently wins.
+#
+# With isolation on, the user's text is instead fenced in a labelled <user_preferences>
+# block that states it is user input rather than policy, and a short precedence reminder
+# is appended AFTER it so the last word in the system message belongs to the operator.
+# This does not make prompt injection impossible — nothing does — it removes the specific
+# ambiguity that makes it trivial. Personalization still works: tone, format, persona and
+# detail level all live happily inside the block.
+#
+# The char cap bounds a field that is re-sent on EVERY turn (a 4k blob is ~1k tokens per
+# request, ~20k over a 20-turn chat, times 10K users). 4000 is far wider than any real
+# persona needs; anything longer is a document, which is what file upload is for.
+# 0 disables either guard. Plain env reads — take effect on restart.
+ENABLE_CHAT_SYSTEM_PROMPT_ISOLATION = os.getenv('ENABLE_CHAT_SYSTEM_PROMPT_ISOLATION', 'True').lower() == 'true'
+
+try:
+    CHAT_SYSTEM_PROMPT_MAX_CHARS = int(os.getenv('CHAT_SYSTEM_PROMPT_MAX_CHARS', '4000'))
+except (ValueError, TypeError):
+    CHAT_SYSTEM_PROMPT_MAX_CHARS = 4000
+
+
 # Retention: max chats a user may keep (ALL roles incl. admins), enforced as a
 # hard cap on chat creation ("delete one to create a new one"). 0 disables the
 # cap. The 1-month rolling expiry sweep is a separate mechanism.

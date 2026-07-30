@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveFirstName, getTimeOfDay } from './greeting';
+import { deriveFirstName, getTimeOfDay, pickGreetingVariant } from './greeting';
 
 describe('deriveFirstName', () => {
 	it('title-cases an ALL-CAPS directory name', () => {
@@ -58,5 +58,65 @@ describe('getTimeOfDay', () => {
 		expect(getTimeOfDay(at(17))).toBe('afternoon');
 		expect(getTimeOfDay(at(18))).toBe('evening');
 		expect(getTimeOfDay(at(23))).toBe('evening');
+	});
+});
+
+describe('pickGreetingVariant', () => {
+	// `random` is called at most twice: once for the time-of-day share, once to index the pool.
+	const stub = (...values: number[]) => {
+		let i = 0;
+		return () => values[Math.min(i++, values.length - 1)];
+	};
+
+	it('shows the time-of-day line for the lower half of the range', () => {
+		expect(pickGreetingVariant(stub(0))).toBe('timeOfDay');
+		expect(pickGreetingVariant(stub(0.49))).toBe('timeOfDay');
+	});
+
+	it('falls through to the neutral pool for the upper half', () => {
+		expect(pickGreetingVariant(stub(0.5, 0))).toBe('welcomeBack');
+		expect(pickGreetingVariant(stub(0.99, 0.5))).toBe('whatAreWeWorkingOn');
+	});
+
+	it('clamps a random() that returns exactly 1 instead of running off the pool', () => {
+		expect(pickGreetingVariant(stub(1))).toBe('whatsOnYourMind');
+	});
+
+	it('reaches every variant over many rolls', () => {
+		const seen = new Set(Array.from({ length: 2000 }, () => pickGreetingVariant()));
+		expect(seen.size).toBe(7);
+	});
+
+	it('never repeats the previous variant', () => {
+		const variants = [
+			'timeOfDay',
+			'welcomeBack',
+			'readyWhenYouAre',
+			'whatCanIHelpWith',
+			'whatAreWeWorkingOn',
+			'whereShouldWeStart',
+			'whatsOnYourMind'
+		] as const;
+
+		for (const previous of variants) {
+			for (let i = 0; i < 500; i++) {
+				expect(pickGreetingVariant(Math.random, previous)).not.toBe(previous);
+			}
+		}
+	});
+
+	it('still reaches every other variant when one is excluded', () => {
+		const seen = new Set(
+			Array.from({ length: 2000 }, () => pickGreetingVariant(Math.random, 'timeOfDay'))
+		);
+		expect(seen.size).toBe(6);
+		expect(seen.has('timeOfDay')).toBe(false);
+	});
+
+	it('consumes one random() for the time-of-day roll regardless of the exclusion', () => {
+		// previous='timeOfDay' skips the time-of-day branch but must still burn the first draw,
+		// so the pool index comes from the *second* value in both cases.
+		expect(pickGreetingVariant(stub(0.9, 0), 'timeOfDay')).toBe('welcomeBack');
+		expect(pickGreetingVariant(stub(0.9, 0), 'welcomeBack')).toBe('readyWhenYouAre');
 	});
 });

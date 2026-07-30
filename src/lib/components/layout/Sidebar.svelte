@@ -29,7 +29,9 @@
 		selectedFolder,
 		WEBUI_NAME,
 		sidebarWidth,
-		activeChatIds
+		activeChatIds,
+		chatCount,
+		showChatLimitModal
 	} from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
@@ -94,7 +96,6 @@
 	let allChatsLoaded = false;
 
 	let showCreateFolderModal = false;
-	let showChatLimitModal = false;
 
 	let pinnedModels = [];
 
@@ -102,12 +103,12 @@
 	let showPinnedNotes = false;
 
 	// Live per-user chat count for the retention cap display. Refreshes whenever
-	// the chat list store changes (create / delete / load).
-	let chatCount = 0;
+	// the chat list store changes (create / delete / load). Published to the `chatCount`
+	// store so the cap can also be pre-flighted from the chat view (see Chat.svelte).
 	$: if (typeof localStorage !== 'undefined' && localStorage.token && $chats) {
 		getChatCount(localStorage.token)
 			.then((c) => {
-				if (typeof c === 'number') chatCount = c;
+				if (typeof c === 'number') chatCount.set(c);
 			})
 			.catch(() => {});
 	}
@@ -666,9 +667,9 @@
 		// chat-management modal instead of routing to a fresh chat. The backend
 		// enforces the cap independently — this is the UX layer. Applies to all roles.
 		const maxChats = $config?.retention?.max_chats_per_user ?? 0;
-		if (maxChats > 0 && chatCount >= maxChats) {
+		if (maxChats > 0 && $chatCount >= maxChats) {
 			e?.preventDefault?.();
-			showChatLimitModal = true;
+			showChatLimitModal.set(true);
 			return;
 		}
 
@@ -708,14 +709,14 @@
 </script>
 
 <ChatLimitModal
-	bind:show={showChatLimitModal}
+	bind:show={$showChatLimitModal}
 	maxChats={$config?.retention?.max_chats_per_user ?? 0}
 	onUpdate={async () => {
 		await initChatList();
 		if (localStorage.token) {
 			getChatCount(localStorage.token)
 				.then((c) => {
-					if (typeof c === 'number') chatCount = c;
+					if (typeof c === 'number') chatCount.set(c);
 				})
 				.catch(() => {});
 		}
@@ -1409,7 +1410,7 @@
 						<RetentionNotice variant="banner" />
 						{#if ($config?.retention?.max_chats_per_user ?? 0) > 0}
 							<div class="flex justify-end pr-1">
-								<RetentionNotice variant="counter" {chatCount} />
+								<RetentionNotice variant="counter" chatCount={$chatCount} />
 							</div>
 						{/if}
 					</div>

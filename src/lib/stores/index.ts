@@ -97,6 +97,14 @@ export const showShortcuts = writable(false);
 export const showArchivedChats = writable(false);
 export const showChangelog = writable(false);
 
+// Sunway retention cap. These are stores rather than Sidebar-local state because the cap has to
+// be enforceable from anywhere a chat can be started, not just the sidebar's "New Chat" button —
+// landing on `/` from a bookmark, the mobile navbar button, and post-delete redirects all reach
+// a fresh chat without passing through it. `chatCount` is kept fresh by the sidebar (it already
+// refetches on every chat-list change); `showChatLimitModal` opens the chat-management modal.
+export const chatCount = writable(0);
+export const showChatLimitModal = writable(false);
+
 export const showControls = writable(false);
 // Sunway: lifecycle of the per-chat Controls autosave (the System Prompt). There is no
 // Save button by design — `params` is the live request payload, so the text already
@@ -329,6 +337,14 @@ type Config = {
 		pending_user_overlay_content?: string;
 		iframe_csp?: string;
 	};
+	// Sunway retention policy, surfaced to the client by /api/config so the UI can warn about
+	// the cap and upcoming expiry. Both 0 = that half of the policy is off.
+	retention?: {
+		chat_retention_days?: number;
+		max_chats_per_user?: number;
+	};
+	// Sunway: char budget for the user-authored per-chat System Prompt. 0 = uncapped.
+	chat_system_prompt_max_chars?: number;
 };
 
 type PromptSuggestion = {
