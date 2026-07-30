@@ -51,7 +51,9 @@
 		showFileNavPath,
 		showFileNavDir,
 		chatRequestQueues,
-		desktopEvent
+		desktopEvent,
+		chatCount,
+		showChatLimitModal
 	} from '$lib/stores';
 
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
@@ -2093,6 +2095,28 @@
 					maxCount: $config?.file?.max_count
 				})
 			);
+			return;
+		}
+
+		// Sunway retention cap: pre-flight the limit BEFORE the input is cleared below.
+		//
+		// The sidebar's "New Chat" button guards the cap, but it isn't the only door to an empty
+		// chat — landing on `/` from a bookmark, the mobile navbar button, and post-delete
+		// redirects all get here without passing it. On those paths the old behaviour was: type a
+		// long prompt, attach files, hit send, and only THEN have /chats/new return 403 — by
+		// which point the input had already been wiped, so the message was gone and all the user
+		// got was a toast. Checking here means the cap is enforced on every door, and it fails
+		// before anything is discarded.
+		//
+		// Only for the first message of a persisted chat: that's the only point a chat row is
+		// created. The backend enforces the cap independently — this is the UX layer.
+		if (
+			!$temporaryChatEnabled &&
+			createMessagesList(history, history.currentId).length === 0 &&
+			($config?.retention?.max_chats_per_user ?? 0) > 0 &&
+			$chatCount >= $config.retention.max_chats_per_user
+		) {
+			showChatLimitModal.set(true);
 			return;
 		}
 

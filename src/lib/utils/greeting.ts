@@ -89,3 +89,84 @@ export const deriveFirstName = (rawName?: string | null): string | null => {
 
 	return titleCaseToken(candidate);
 };
+
+// Greeting variants. `timeOfDay` resolves to the morning/afternoon/evening line; the rest are
+// time-neutral openers. Kept deliberately warm-but-plain — no slang, no exclamation marks, and
+// nothing that reads as chummy when a 10K-employee directory sees it every new chat.
+export type GreetingVariant =
+	| 'timeOfDay'
+	| 'welcomeBack'
+	| 'readyWhenYouAre'
+	| 'whatCanIHelpWith'
+	| 'whatAreWeWorkingOn'
+	| 'whereShouldWeStart'
+	| 'whatsOnYourMind';
+
+const NEUTRAL_VARIANTS: GreetingVariant[] = [
+	'welcomeBack',
+	'readyWhenYouAre',
+	'whatCanIHelpWith',
+	'whatAreWeWorkingOn',
+	'whereShouldWeStart',
+	'whatsOnYourMind'
+];
+
+// Half the time we still show the time-of-day line — it's the variant that carries the most
+// signal (it proves the app knows *when* you are), so it shouldn't get diluted to 1/7th by the
+// neutral pool. The other half spreads evenly across the neutral openers.
+const TIME_OF_DAY_SHARE = 0.5;
+
+/**
+ * Pick which greeting to show. Call once and freeze the result (see the note at the top of this
+ * file) — re-rolling on a reactive statement makes the heading flicker as the user types.
+ *
+ * `previous` excludes the last variant shown, so the same line never appears twice in a row.
+ * Independent uniform sampling *feels* broken to users — back-to-back repeats are common at
+ * this pool size, and people read a repeat as "it isn't actually random" rather than as chance.
+ * Excluding the previous pick costs nothing and removes the only artifact anyone notices.
+ *
+ * `random` is injectable so the choice is testable.
+ */
+export const pickGreetingVariant = (
+	random: () => number = Math.random,
+	previous?: GreetingVariant | null
+): GreetingVariant => {
+	// Always drawn, even when the time-of-day branch is excluded, so the number of random()
+	// calls doesn't depend on `previous` — that keeps stubbed sequences predictable in tests.
+	const roll = random();
+	if (previous !== 'timeOfDay' && roll < TIME_OF_DAY_SHARE) return 'timeOfDay';
+
+	const pool = NEUTRAL_VARIANTS.filter((variant) => variant !== previous);
+
+	// Clamp: Math.random() is [0,1) but an injected stub may return exactly 1.
+	const idx = Math.min(Math.floor(random() * pool.length), pool.length - 1);
+	return pool[idx];
+};
+
+const LAST_GREETING_KEY = 'schat:last-greeting-variant';
+
+/**
+ * Browser-side wrapper around `pickGreetingVariant` that remembers the last pick for the tab,
+ * so "no immediate repeat" holds across new chats and not just within one mount. sessionStorage
+ * (not localStorage) on purpose: this is throwaway presentation state, and it should reset when
+ * the user starts a fresh session rather than persist on a shared/kiosk machine.
+ */
+export const pickNextGreetingVariant = (): GreetingVariant => {
+	let previous: GreetingVariant | null = null;
+
+	try {
+		previous = sessionStorage.getItem(LAST_GREETING_KEY) as GreetingVariant | null;
+	} catch {
+		// Private mode / storage disabled — fall back to an unconstrained pick.
+	}
+
+	const variant = pickGreetingVariant(Math.random, previous);
+
+	try {
+		sessionStorage.setItem(LAST_GREETING_KEY, variant);
+	} catch {
+		// Non-fatal: we just lose repeat-avoidance for this tab.
+	}
+
+	return variant;
+};

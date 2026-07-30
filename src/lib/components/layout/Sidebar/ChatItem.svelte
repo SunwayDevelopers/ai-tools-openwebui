@@ -39,6 +39,9 @@
 		activeChatIds
 	} from '$lib/stores';
 
+	import { isNearExpiry } from '$lib/utils/retention';
+	import RetentionNotice from '$lib/components/common/RetentionNotice.svelte';
+
 	import ChatMenu from './ChatMenu.svelte';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShareChatModal from '$lib/components/chat/ShareChatModal.svelte';
@@ -64,6 +67,11 @@
 
 	export let selected = false;
 	export let shiftKey = false;
+
+	// Sunway: does this row get the "Expires in Nd" chip instead of its time-ago label?
+	// Computed here (not just inside RetentionNotice) because the decision is mutually
+	// exclusive with the time-ago label, so the parent has to know the answer up front.
+	$: nearExpiry = isNearExpiry(updatedAt, $config?.retention?.chat_retention_days ?? 0);
 
 	export let onDragEnd = () => {};
 
@@ -548,11 +556,22 @@
 				</div>
 			</div>
 
-			<!-- Time ago indicator -->
-			{#if createdAt && !mouseOver}
-				<div class="shrink-0 self-center text-[10px] text-gray-400 dark:text-gray-500 pl-2">
-					{formatTimeAgo(createdAt)}
-				</div>
+			<!-- Time ago indicator, or the retention warning once the chat is close to being swept.
+			     Sunway: they share one slot rather than stacking — the sidebar is 240px and the
+			     title is already truncating. The expiry warning wins because it's actionable
+			     ("open this or lose it") while the time-ago is only informational. Note it keys
+			     off updatedAt: retention measures inactivity, but the label above shows createdAt,
+			     so an old-but-recently-used chat correctly shows no warning. -->
+			{#if !mouseOver}
+				{#if nearExpiry}
+					<div class="shrink-0 self-center pl-2">
+						<RetentionNotice variant="badge" {updatedAt} />
+					</div>
+				{:else if createdAt}
+					<div class="shrink-0 self-center text-[10px] text-gray-400 dark:text-gray-500 pl-2">
+						{formatTimeAgo(createdAt)}
+					</div>
+				{/if}
 			{/if}
 		</a>
 	{/if}

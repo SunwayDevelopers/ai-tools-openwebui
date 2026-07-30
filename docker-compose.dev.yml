@@ -94,7 +94,11 @@ services:
   docling:
     image: quay.io/docling-project/docling-serve-cpu:latest
     container_name: open-webui-docling
-    restart: unless-stopped
+    # NOT started by dev.ps1 -- dev extracts via the team's GPU docling-serve on the AI
+    # server. Kept defined so it can be brought back on demand:
+    #   docker compose -f docker-compose.dev.yml up -d docling
+    # 'no' (not unless-stopped) so Docker Desktop does not resurrect it on every launch.
+    restart: 'no'
     ports:
       - '5001:5001'
     environment:

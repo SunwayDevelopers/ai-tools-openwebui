@@ -11,7 +11,11 @@
 	import Check from '$lib/components/icons/Check.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	import { user, settings, chatControlsSaveState } from '$lib/stores';
+	import { user, settings, config, chatControlsSaveState } from '$lib/stores';
+
+	// Sunway: char budget for the per-chat System Prompt, served by /api/config so the UI
+	// and the backend truncation agree on one number. 0 = uncapped.
+	$: systemPromptMaxChars = $config?.chat_system_prompt_max_chars ?? 0;
 	export let models = [];
 	export let chatFiles = [];
 	export let params = {};
@@ -124,59 +128,86 @@
 					next message regardless) — the button gives impatient users a tangible action +
 					confirmation, and clicking flushes the debounced autosave immediately. Clickable
 					only when there's something to do (dirty / error). -->
+					<!-- Sunway a11y: the save affordance is two different things depending on state,
+					so it's rendered as two different elements rather than one button that is
+					disabled most of the time. "Save" / "Retry" are actionable -> <button>. "Saving",
+					"Saved" and "Applies to your next message" are status -> role="status", which
+					screen readers announce as a live update instead of "dimmed button, Saved". -->
 					<div class="flex items-center gap-2">
 						<span>{$i18n.t('System Prompt')}</span>
 
-						<button
-							type="button"
-							disabled={$chatControlsSaveState === 'saving' ||
-								$chatControlsSaveState === 'idle' ||
-								$chatControlsSaveState === 'unsaved' ||
-								$chatControlsSaveState === 'saved'}
-							aria-live="polite"
-							on:pointerup|stopPropagation={() => {
-								if ($chatControlsSaveState === 'dirty' || $chatControlsSaveState === 'error') {
+						{#if $chatControlsSaveState === 'dirty' || $chatControlsSaveState === 'error'}
+							<button
+								type="button"
+								on:pointerup|stopPropagation={() => {
 									onSave();
-								}
-							}}
-							class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition {$chatControlsSaveState ===
-							'error'
-								? 'text-red-600 dark:text-red-400 hover:bg-red-500/10 cursor-pointer'
-								: $chatControlsSaveState === 'dirty'
-									? 'text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 cursor-pointer'
-									: $chatControlsSaveState === 'saved'
-										? 'text-green-600 dark:text-green-400'
-										: 'text-gray-400 dark:text-gray-500'}"
-						>
-							{#if $chatControlsSaveState === 'saving'}
-								<Spinner className="size-3" />
-								{$i18n.t('Saving...')}
-							{:else if $chatControlsSaveState === 'dirty'}
-								{$i18n.t('Save')}
-							{:else if $chatControlsSaveState === 'error'}
-								{$i18n.t("Couldn't save — Retry")}
-							{:else if $chatControlsSaveState === 'unsaved'}
-								<!-- Sunway: new/unpersisted chat. No "Saved ✓" — the prompt isn't saved
-								yet, it just applies to (and persists with) the next message. Only shown
-								once there's actually a prompt to reassure about. -->
-								{#if params.system?.trim()}
-									{$i18n.t('Applies to your next message')}
+								}}
+								class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition cursor-pointer {$chatControlsSaveState ===
+								'error'
+									? 'text-red-600 dark:text-red-400 hover:bg-red-500/10'
+									: 'text-blue-600 dark:text-blue-400 hover:bg-blue-500/10'}"
+							>
+								{#if $chatControlsSaveState === 'error'}
+									{$i18n.t("Couldn't save — Retry")}
+								{:else}
+									{$i18n.t('Save')}
 								{/if}
-							{:else}
-								<Check className="size-3.5" strokeWidth="2.5" />
-								{$i18n.t('Saved')}
-							{/if}
-						</button>
+							</button>
+						{:else}
+							<span
+								role="status"
+								aria-live="polite"
+								class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium {$chatControlsSaveState ===
+								'saved'
+									? 'text-green-600 dark:text-green-400'
+									: 'text-gray-400 dark:text-gray-500'}"
+							>
+								{#if $chatControlsSaveState === 'saving'}
+									<Spinner className="size-3" />
+									{$i18n.t('Saving...')}
+								{:else if $chatControlsSaveState === 'unsaved'}
+									<!-- Sunway: new/unpersisted chat. No "Saved ✓" — the prompt isn't saved
+									yet, it just applies to (and persists with) the next message. Only shown
+									once there's actually a prompt to reassure about. -->
+									{#if params.system?.trim()}
+										{$i18n.t('Applies to your next message')}
+									{/if}
+								{:else}
+									<!-- 'saved' and 'idle' both land here, matching the previous behaviour;
+									only the colour distinguishes a just-completed save from a quiet chat. -->
+									<Check className="size-3.5" strokeWidth="2.5" />
+									{$i18n.t('Saved')}
+								{/if}
+							</span>
+						{/if}
 					</div>
 					<div class="" slot="content">
 						<textarea
 							bind:value={params.system}
+							maxlength={systemPromptMaxChars > 0 ? systemPromptMaxChars : null}
 							class="w-full text-xs outline-hidden resize-vertical {$settings.highContrastMode
 								? 'border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-2.5'
 								: 'py-1.5 bg-transparent'}"
 							rows="4"
 							placeholder={$i18n.t('Enter system prompt')}
 						/>
+
+						<!-- Sunway: the field is re-sent on every turn of the chat, so it's budgeted
+						rather than unbounded. The counter only appears once the user is near the
+						limit — showing "0 / 4000" under an empty box just makes a preferences field
+						look like a form with a quota. The backend truncates at the same number, so
+						this stops them at the limit instead of silently trimming afterwards. -->
+						{#if systemPromptMaxChars > 0 && (params.system?.length ?? 0) > systemPromptMaxChars * 0.8}
+							<div class="flex justify-end">
+								<span
+									class="text-[10px] {(params.system?.length ?? 0) >= systemPromptMaxChars
+										? 'text-red-500'
+										: 'text-gray-400 dark:text-gray-500'}"
+								>
+									{params.system?.length ?? 0} / {systemPromptMaxChars}
+								</span>
+							</div>
+						{/if}
 					</div>
 				</Collapsible>
 

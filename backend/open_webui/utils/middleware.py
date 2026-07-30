@@ -113,6 +113,7 @@ from open_webui.utils.misc import (
     strip_internal_image_embeds,
 )
 from open_webui.utils.payload import apply_system_prompt_to_body
+from open_webui.utils.system_prompt import isolate_user_system_prompt
 from open_webui.utils.plugin import load_function_module_by_id
 from open_webui.utils.response import normalize_usage
 from open_webui.utils.sanitize import sanitize_code
@@ -2511,8 +2512,17 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     system_message = get_system_message(form_data.get('messages', []))
     if system_message:  # Chat Controls/User Settings
         try:
+            # Sunway: this system message is USER-authored (the per-chat System Prompt). The
+            # provider router will prepend the admin/model prompt into the same message, so
+            # without isolation the two are indistinguishable strings in one role with the
+            # user's text last. Cap it, fence it as <user_preferences>, and append a
+            # precedence reminder so the operator holds both ends. See utils/system_prompt.py.
             form_data = await apply_system_prompt_to_body(
-                system_message.get('content'), form_data, metadata, user, replace=True
+                isolate_user_system_prompt(system_message.get('content') or ''),
+                form_data,
+                metadata,
+                user,
+                replace=True,
             )  # Required to handle system prompt variables
         except Exception:
             pass
