@@ -24,7 +24,9 @@ from open_webui.env import (
     DATABASE_SQLITE_PRAGMA_TEMP_STORE,
     DATABASE_URL,
     ENABLE_DB_MIGRATIONS,
+    ENABLE_MULTI_TENANCY,
     OPEN_WEBUI_DIR,
+    TENANT_ENGINE_CACHE_SIZE,
 )
 from sqlalchemy import Dialect, MetaData, create_engine, event, types
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -354,9 +356,126 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+# ============================================================
+# PER-TENANT ASYNC ENGINE REGISTRY  (multi-tenancy)
+# ============================================================
+#
+# When ENABLE_MULTI_TENANCY is off (the default), the three async entrypoints
+# below use the singleton ``AsyncSessionLocal`` above and behave EXACTLY as the
+# single-tenant fork does — zero behaviour change, no registry, no gate.
+#
+# When it is on, each request's tenant is resolved by TenantResolutionMiddleware
+# into a ContextVar (see utils/tenant.py). Here we lazily build one async engine
+# per tenant from the brokered ``DatabaseConnection`` and bind the request's
+# session to it. This is THE isolation chokepoint: because every one of the ~40
+# model files funnels through get_async_db_context()/get_async_db() and every
+# router through get_async_session(), making session creation tenant-aware here
+# makes the whole data plane tenant-aware without touching model or router code.
+#
+# Fail closed: a tenant-scoped request with no resolved tenant raises before any
+# session is created. Startup/config/background code that legitimately needs the
+# system DB must run inside ``open_webui.utils.tenant.system_context()``.
+
+import threading
+from collections import OrderedDict
+
+# tenant_id -> (AsyncEngine, async_sessionmaker); LRU-ordered.
+_tenant_sessionmakers: 'OrderedDict[str, tuple]' = OrderedDict()
+_tenant_registry_lock = threading.Lock()
+
+# Per-tenant pools are deliberately small: with pooled infrastructure, the sum
+# of all tenant pools must stay under Postgres ``max_connections``.
+_TENANT_POOL_SIZE = 5
+_TENANT_MAX_OVERFLOW = 5
+
+
+def _build_tenant_async_url(database) -> str:
+    """Build an async DSN from a brokered ``DatabaseConnection`` (tenant DBs are
+    Postgres per the IAM contract). Credentials are URL-encoded; never logged."""
+    from urllib.parse import quote
+
+    user = quote(str(database.username), safe='')
+    pwd = quote(str(database.password), safe='')
+    return f'postgresql+psycopg://{user}:{pwd}@{database.host}:{database.port}/{database.db_name}'
+
+
+def _build_tenant_sessionmaker(tenant_ctx):
+    url = _build_tenant_async_url(tenant_ctx.connection.database)
+    engine = create_async_engine(
+        url,
+        pool_size=_TENANT_POOL_SIZE,
+        max_overflow=_TENANT_MAX_OVERFLOW,
+        pool_timeout=DATABASE_POOL_TIMEOUT,
+        pool_recycle=DATABASE_POOL_RECYCLE,
+        pool_pre_ping=True,
+    )
+    sessionmaker_ = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    return engine, sessionmaker_
+
+
+def _dispose_engine(engine, tenant_id: str) -> None:
+    """Dispose an evicted tenant engine's pool. Prefer async dispose when a loop
+    is running; fall back to the sync engine's dispose otherwise."""
+    try:
+        import asyncio
+
+        asyncio.get_running_loop().create_task(engine.dispose())
+    except RuntimeError:
+        try:
+            engine.sync_engine.dispose()
+        except Exception:
+            log.warning('Failed to dispose evicted tenant engine for %s', tenant_id)
+
+
+def _get_tenant_sessionmaker(tenant_ctx):
+    tenant_id = tenant_ctx.tenant_id
+    with _tenant_registry_lock:
+        entry = _tenant_sessionmakers.get(tenant_id)
+        if entry is not None:
+            _tenant_sessionmakers.move_to_end(tenant_id)
+            return entry[1]
+        engine, sessionmaker_ = _build_tenant_sessionmaker(tenant_ctx)
+        _tenant_sessionmakers[tenant_id] = (engine, sessionmaker_)
+        _tenant_sessionmakers.move_to_end(tenant_id)
+        while len(_tenant_sessionmakers) > TENANT_ENGINE_CACHE_SIZE:
+            old_id, (old_engine, _) = _tenant_sessionmakers.popitem(last=False)
+            _dispose_engine(old_engine, old_id)
+        return sessionmaker_
+
+
+def _resolve_async_sessionmaker():
+    """Return the async_sessionmaker for the current request's tenant.
+
+    * multi-tenancy disabled → the singleton system sessionmaker (no change);
+    * system context (startup/migrations/background) → system sessionmaker;
+    * tenant context set → the per-tenant sessionmaker;
+    * tenant-scoped but no context → **fail closed**.
+    """
+    if not ENABLE_MULTI_TENANCY:
+        return AsyncSessionLocal
+    from open_webui.utils.tenant import (
+        TenantContextError,
+        get_tenant_context,
+        is_system_context,
+    )
+
+    if is_system_context():
+        return AsyncSessionLocal
+    ctx = get_tenant_context()
+    if ctx is None:
+        raise TenantContextError('No tenant context for a tenant-scoped DB session (fail-closed).')
+    return _get_tenant_sessionmaker(ctx)
+
+
 async def get_async_session():
     """Async session generator for FastAPI Depends()."""
-    async with AsyncSessionLocal() as db:
+    async with _resolve_async_sessionmaker()() as db:
         try:
             yield db
         finally:
@@ -366,7 +485,7 @@ async def get_async_session():
 @asynccontextmanager
 async def get_async_db():
     """Async context manager for use outside of FastAPI dependency injection."""
-    async with AsyncSessionLocal() as db:
+    async with _resolve_async_sessionmaker()() as db:
         try:
             yield db
         finally:

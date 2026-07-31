@@ -18,6 +18,12 @@ export const WEBUI_DEPLOYMENT_ID = writable(null);
 export const config: Writable<Config | undefined> = writable(undefined);
 export const user: Writable<SessionUser | undefined> = writable(undefined);
 
+// Multi-tenancy: the user's business units and the currently-active slug,
+// populated by the layout gate. Drives the workspace switcher.
+export type TenantSummary = { slug: string; role: string; name?: string | null };
+export const tenants: Writable<TenantSummary[]> = writable([]);
+export const activeTenant: Writable<string | null> = writable(null);
+
 // Electron App
 export const isApp = writable(false);
 export const appInfo = writable(null);
@@ -312,6 +318,7 @@ type Config = {
 		enable_api_keys: boolean;
 		enable_signup: boolean;
 		enable_login_form: boolean;
+		enable_multi_tenancy?: boolean;
 		enable_web_search?: boolean;
 		enable_google_drive_integration: boolean;
 		enable_onedrive_integration: boolean;

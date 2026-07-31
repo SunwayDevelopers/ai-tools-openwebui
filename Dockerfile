@@ -28,7 +28,7 @@ FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 ARG BUILD_HASH
 
 # Set Node.js options (heap limit Allocation failed - JavaScript heap out of memory)
-# ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 WORKDIR /app
 
@@ -36,10 +36,29 @@ WORKDIR /app
 RUN apk add --no-cache git
 
 COPY package.json package-lock.json ./
-RUN npm ci --force
+# Cache mount for npm's download cache: a lockfile change then re-links from cache
+# instead of re-fetching every tarball from the registry.
+RUN --mount=type=cache,target=/root/.npm npm ci --force
 
-COPY . .
+# Copy ONLY what `npm run build` actually reads, rather than `COPY . .`.
+#
+# This is the layer that hurt: with the whole build context, editing any backend/*.py
+# file — or even just committing, since .git is part of the context — invalidated this
+# COPY and forced a full `npm run pyodide:fetch && vite build`. Now a backend-only change
+# leaves the entire frontend stage cached.
+#
+# Keep this list in sync when adding a root-level config file the build reads.
+COPY svelte.config.js vite.config.ts tsconfig.json postcss.config.js tailwind.config.js ./
+COPY scripts ./scripts
+COPY src ./src
+COPY static ./static
+COPY CHANGELOG.md ./CHANGELOG.md
+
 ENV APP_BUILD_HASH=${BUILD_HASH}
+# `build` = prepare-pyodide.js (downloads pyodide + PyPI wheels into static/pyodide) then
+# vite build. Not cache-mounted: the script writes its downloads straight into
+# static/pyodide, which has to end up in the build output, so there is no separate cache
+# directory to reuse. It is skipped entirely whenever this layer stays cached.
 RUN npm run build
 
 ######## WebUI backend ########
@@ -138,39 +157,61 @@ COPY --chown=$UID:$GID ./backend/requirements.txt ./requirements.txt
 # Set UV_LINK_MODE to copy to prevent 0-byte file corruption in QEMU arm64 cross-builds
 ENV UV_LINK_MODE=copy
 
-RUN set -e; \
-    pip3 install --no-cache-dir uv; \
+# --- Python dependencies -----------------------------------------------------------
+# Split from the model downloads below so the two are separately readable, and both use
+# BuildKit cache mounts. Note the deliberate absence of `--no-cache-dir`: the pip/uv
+# caches now live in a cache mount, which is NOT part of any image layer, so keeping them
+# populated costs nothing in image size and saves re-downloading ~2-3GB of torch wheels
+# every time requirements.txt is touched.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    set -e; \
+    pip3 install uv; \
     if [ "$USE_CUDA" = "true" ]; then \
-    # If you use CUDA the whisper and embedding model will be downloaded on first use
     # fix: pin torch<=2.9.1 - torch 2.10.0 aarch64 wheels cause SIGILL on ARM devices (RPi 4 Cortex-A72) #21349
-    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER --no-cache-dir; \
-    uv pip install --system -r requirements.txt --no-cache-dir; \
-    python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')"; \
-    python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ.get('AUXILIARY_EMBEDDING_MODEL', 'TaylorAI/bge-micro-v2'), device='cpu')"; \
-    python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
-    python -c "import os; import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
-    python -c "import nltk; nltk.download('punkt_tab')"; \
+    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/$USE_CUDA_DOCKER_VER; \
     else \
-    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir; \
-    uv pip install --system -r requirements.txt --no-cache-dir; \
-    if [ "$USE_SLIM" != "true" ]; then \
+    pip3 install 'torch<=2.9.1' torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu; \
+    fi; \
+    uv pip install --system -r requirements.txt
+
+# --- Pre-baked models --------------------------------------------------------------
+# Runs when USE_CUDA=true, or when USE_SLIM is not set — exactly the original condition.
+# (The original's "downloaded on first use" comment in the CUDA branch was stale: that
+# branch pre-downloaded all five just like the CPU one. Behaviour preserved as-is.)
+#
+# The downloads are staged into a cache mount and then copied into the image, because a
+# cache mount's contents never become part of a layer: writing straight into
+# /app/backend/data/cache would leave the models missing at runtime. Staging + copy means
+# a requirements.txt change no longer re-downloads ~1GB of weights over the network.
+#
+# nltk is deliberately NOT staged — it resolves its data path at runtime from a set of
+# default locations, and relocating it risks a runtime lookup failure for ~10MB of savings.
+RUN --mount=type=cache,target=/opt/model-stage,sharing=locked \
+    set -e; \
+    if [ "$USE_CUDA" = "true" ] || [ "$USE_SLIM" != "true" ]; then \
+    export SENTENCE_TRANSFORMERS_HOME=/opt/model-stage/embedding/models \
+    HF_HOME=/opt/model-stage/embedding/models \
+    WHISPER_MODEL_DIR=/opt/model-stage/whisper/models \
+    TIKTOKEN_CACHE_DIR=/opt/model-stage/tiktoken; \
     python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ['RAG_EMBEDDING_MODEL'], device='cpu')"; \
     python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ.get('AUXILIARY_EMBEDDING_MODEL', 'TaylorAI/bge-micro-v2'), device='cpu')"; \
     python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"; \
     python -c "import os; import tiktoken; tiktoken.get_encoding(os.environ['TIKTOKEN_ENCODING_NAME'])"; \
     python -c "import nltk; nltk.download('punkt_tab')"; \
-    fi; \
+    mkdir -p /app/backend/data/cache; \
+    cp -a /opt/model-stage/. /app/backend/data/cache/; \
     fi; \
     mkdir -p /app/backend/data; chown -R $UID:$GID /app/backend/data/; \
     rm -rf /var/lib/apt/lists/*;
 
 # Install Ollama if requested
-RUN if [ "$USE_OLLAMA" = "true" ]; then \
-    date +%s > /tmp/ollama_build_hash && \
-    echo "Cache broken at timestamp: `cat /tmp/ollama_build_hash`" && \
-    curl -fsSL https://ollama.com/install.sh | sh && \
-    rm -rf /var/lib/apt/lists/*; \
-    fi
+# RUN if [ "$USE_OLLAMA" = "true" ]; then \
+#     date +%s > /tmp/ollama_build_hash && \
+#     echo "Cache broken at timestamp: `cat /tmp/ollama_build_hash`" && \
+#     curl -fsSL https://ollama.com/install.sh | sh && \
+#     rm -rf /var/lib/apt/lists/*; \
+#     fi
 
 # copy embedding weight from build
 # RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2

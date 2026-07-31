@@ -3623,10 +3623,20 @@ OAUTH_TIMEOUT = ConfigVar(
     os.getenv('OAUTH_TIMEOUT', ''),
 )
 
+# schat default: WorkOS's token endpoint reads client_id/client_secret from the POST
+# body. Upstream leaves this unset, which makes authlib fall back to
+# `client_secret_basic` and send them in the Authorization header instead — WorkOS then
+# rejects the code exchange with "Missing required parameter: client_id" *after* a
+# successful IdP login, so the user gets bounced at the very last step.
+#
+# Hardcoded rather than set in the chart so the two settings WorkOS requires
+# (this and OAUTH_AUTHORIZE_PARAMS) travel with the code. Already the default for this
+# codebase's dynamic client registration path (utils/oauth.py:94). Still overridable by
+# env for a provider that wants basic auth. Upstream ships `None`.
 OAUTH_TOKEN_ENDPOINT_AUTH_METHOD = ConfigVar(
     'OAUTH_TOKEN_ENDPOINT_AUTH_METHOD',
     'oauth.oidc.token_endpoint_auth_method',
-    os.getenv('OAUTH_TOKEN_ENDPOINT_AUTH_METHOD', None),
+    os.getenv('OAUTH_TOKEN_ENDPOINT_AUTH_METHOD', '').strip() or 'client_secret_post',
 )
 
 OAUTH_CODE_CHALLENGE_METHOD = ConfigVar(
@@ -3789,17 +3799,50 @@ OAUTH_AUDIENCE = ConfigVar(
     os.getenv('OAUTH_AUDIENCE', ''),
 )
 
-OAUTH_AUTHORIZE_PARAMS = {}
-_oauth_authorize_params = os.getenv('OAUTH_AUTHORIZE_PARAMS', '')
-if _oauth_authorize_params:
+# schat default: WorkOS AuthKit needs `provider=authkit` on the authorize request
+# so it renders the hosted sign-in flow (which is what hands off to Microsoft).
+# Without it WorkOS has no instruction about which connection to use and fails with
+# a generic "Couldn't sign in" page — the user never reaches the IdP and no callback
+# is ever made, so the app logs a clean 302 and nothing else.
+#
+# Hardcoded as the default rather than set in the Helm chart because the value is a
+# JSON *string*: passing it through values.yaml → ConfigMap → env requires quoting
+# that survives YAML flow-mapping parsing, and a silent mis-quote degrades to
+# "is not valid JSON, ignoring" below plus that same unexplained WorkOS error.
+#
+# Still overridable by env for a non-WorkOS OIDC provider. Upstream ships `{}` here,
+# so expect a conflict on this line when merging.
+_OAUTH_AUTHORIZE_PARAMS_DEFAULT = '{"provider": "authkit"}'
+
+
+def _parse_oauth_authorize_params(raw: str) -> dict | None:
+    """JSON object → dict, anything else → None."""
     try:
-        _parsed = json.loads(_oauth_authorize_params)
-        if isinstance(_parsed, dict):
-            OAUTH_AUTHORIZE_PARAMS = _parsed
-        else:
-            log.warning('OAUTH_AUTHORIZE_PARAMS must be a JSON object, ignoring')
+        parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        log.warning('OAUTH_AUTHORIZE_PARAMS is not valid JSON, ignoring')
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+# An env override must EARN its way in. Upstream degraded a malformed value to `{}`,
+# which under WorkOS means no connection selector and a sign-in that dies on WorkOS's
+# side with a generic error and no callback — indistinguishable from the variable not
+# being set at all. Since a mis-quoted value is the likely failure when this travels
+# through YAML → ConfigMap → env, fall back to the working default instead and say so
+# loudly.
+OAUTH_AUTHORIZE_PARAMS = _parse_oauth_authorize_params(_OAUTH_AUTHORIZE_PARAMS_DEFAULT) or {}
+_oauth_authorize_params = os.getenv('OAUTH_AUTHORIZE_PARAMS', '').strip()
+if _oauth_authorize_params:
+    _parsed = _parse_oauth_authorize_params(_oauth_authorize_params)
+    if _parsed is None:
+        log.warning(
+            'OAUTH_AUTHORIZE_PARAMS is not a valid JSON object (got %r) — check the quoting in your'
+            ' deployment config. Falling back to the built-in default %s.',
+            _oauth_authorize_params,
+            _OAUTH_AUTHORIZE_PARAMS_DEFAULT,
+        )
+    else:
+        OAUTH_AUTHORIZE_PARAMS = _parsed
 
 
 def load_oauth_providers():

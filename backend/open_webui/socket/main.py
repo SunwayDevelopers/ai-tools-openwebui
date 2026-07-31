@@ -5,6 +5,7 @@ import logging
 import random
 import sys
 import time
+from functools import wraps
 from typing import Dict
 
 import pycrdt as Y
@@ -13,6 +14,7 @@ from open_webui.config import (
     CORS_ALLOW_ORIGIN,
 )
 from open_webui.env import (
+    ENABLE_MULTI_TENANCY,
     ENABLE_WEBSOCKET_SUPPORT,
     GLOBAL_LOG_LEVEL,
     REDIS_KEY_PREFIX,
@@ -38,7 +40,7 @@ from open_webui.models.users import UserNameResponse, Users
 from open_webui.socket.utils import RedisDict, RedisLock, YdocManager
 from open_webui.tasks import create_task, stop_item_tasks
 from open_webui.utils.access_control import has_permission
-from open_webui.utils.auth import decode_token
+from open_webui.utils.auth import decode_token, get_or_provision_tenant_user
 from open_webui.utils.redis import (
     build_sentinel_url,
     get_redis_connection,
@@ -338,42 +340,159 @@ async def usage(sid, data):
         }
 
 
+# ── Multi-tenancy: per-socket tenant context ─────────────────────────
+#
+# Socket.IO handlers run as their own asyncio tasks and do NOT inherit the
+# tenant ContextVar set by the HTTP TenantResolutionMiddleware. So we resolve
+# the tenant once at connect() — from the httpOnly iam_token cookie on the
+# handshake + the active tenant slug sent in the socket auth — stash the
+# resolved TenantContext per sid, and re-apply it around every DB-touching
+# handler via @tenant_scoped. Inert unless ENABLE_MULTI_TENANCY is on.
+
+SOCKET_TENANT: Dict[str, object] = {}
+
+
+def _socket_cookie(environ, name):
+    from http.cookies import SimpleCookie
+
+    raw = environ.get('HTTP_COOKIE', '') if environ else ''
+    if not raw:
+        return None
+    try:
+        jar = SimpleCookie()
+        jar.load(raw)
+        morsel = jar.get(name)
+        return morsel.value if morsel else None
+    except Exception:
+        return None
+
+
+async def _resolve_socket_tenant(environ, auth):
+    """Resolve a TenantContext for a socket from the handshake iam_token cookie +
+    the active tenant slug in the socket auth. Raises if either is missing so the
+    connection is rejected (fail-closed). Returns None only when MT is off."""
+    if not ENABLE_MULTI_TENANCY:
+        return None
+    from open_webui.utils.tenant import get_tenant_resolver
+
+    iam_token = _socket_cookie(environ, 'iam_token')
+    slug = (auth or {}).get('tenant')
+    if not iam_token or not slug:
+        raise RuntimeError('socket handshake missing iam_token cookie or tenant slug')
+    return await get_tenant_resolver().resolve_context(iam_token, slug)
+
+
+def tenant_scoped(handler):
+    """Wrap a socket handler so it runs with the sid's resolved tenant context.
+    No-op when MT is off or connect() resolved no context for this sid."""
+
+    @wraps(handler)
+    async def wrapper(sid, *args, **kwargs):
+        if not ENABLE_MULTI_TENANCY:
+            return await handler(sid, *args, **kwargs)
+        from open_webui.utils.tenant import reset_tenant_context, set_tenant_context
+
+        ctx = SOCKET_TENANT.get(sid)
+        token = set_tenant_context(ctx) if ctx is not None else None
+        try:
+            return await handler(sid, *args, **kwargs)
+        finally:
+            if token is not None:
+                reset_tenant_context(token)
+
+    return wrapper
+
+
+async def _resolve_socket_user(sid, auth):
+    """Resolve the acting user for a socket event, or None to ignore it.
+
+    Under multi-tenancy the IAM-resolved context pinned onto this sid by
+    ``connect()`` is the authoritative identity — the same source
+    ``get_current_user`` uses for HTTP requests (utils/auth.py:359-368).
+
+    The schat JWT in ``auth['token']`` is deliberately NOT trusted for identity
+    here. It is minted by code paths that perform no IAM membership check (e.g.
+    password signin, auths.py:576), so honouring its ``id`` claim let any holder
+    of any valid schat token act as an arbitrary user in the resolved tenant's
+    database — including one with ``role == 'admin'``, which grants channel
+    access at ``join-channels`` and bypasses the note ACL at ``join-note``. The
+    tenant was already verified, so this was cross-user impersonation within a
+    tenant rather than cross-tenant access.
+
+    The single-tenant branch below is upstream Open WebUI's behaviour, kept for
+    merge tractability. It is unreachable from the Helm chart, which pins
+    ENABLE_MULTI_TENANCY=true.
+    """
+    if ENABLE_MULTI_TENANCY:
+        ctx = SOCKET_TENANT.get(sid)
+        if ctx is None:
+            # connect() fails closed, so a missing context means the socket was
+            # never authenticated (or has been cleaned up). Ignore the event.
+            log.warning('Socket %s has no tenant context; ignoring event', sid)
+            return None
+        try:
+            return await get_or_provision_tenant_user(ctx)
+        except Exception as e:
+            log.warning('Socket %s user resolution failed: %s', sid, type(e).__name__)
+            return None
+
+    if not auth or 'token' not in auth:
+        return None
+    data = decode_token(auth['token'])
+    if data is None or 'id' not in data:
+        return None
+    return await Users.get_user_by_id(data['id'])
+
+
 @sio.event
 async def connect(sid, environ, auth):
     user = None
-    if auth and 'token' in auth:
-        data = decode_token(auth['token'])
+    # Multi-tenancy: resolve + pin this socket's tenant before any DB access.
+    tenant_token = None
+    if ENABLE_MULTI_TENANCY:
+        from open_webui.utils.tenant import reset_tenant_context, set_tenant_context
 
-        if data is not None and 'id' in data:
-            user = await Users.get_user_by_id(data['id'])
+        try:
+            ctx = await _resolve_socket_tenant(environ, auth)
+        except Exception as e:
+            log.warning('Socket tenant resolution failed, rejecting connection: %s', type(e).__name__)
+            return False  # fail closed — reject the socket rather than run untenanted
+        SOCKET_TENANT[sid] = ctx
+        tenant_token = set_tenant_context(ctx)
 
-        if user:
-            SESSION_POOL[sid] = {
-                **user.model_dump(
-                    exclude=[
-                        'profile_image_url',
-                        'profile_banner_image_url',
-                        'date_of_birth',
-                        'bio',
-                        'gender',
-                    ]
-                ),
-                'last_seen_at': int(time.time()),
-            }
-            await sio.enter_room(sid, f'user:{user.id}')
+    try:
+        # Under MT this ignores auth['token'] and uses the IAM context resolved
+        # above; see _resolve_socket_user.
+        if ENABLE_MULTI_TENANCY or (auth and 'token' in auth):
+            user = await _resolve_socket_user(sid, auth)
+
+            if user:
+                SESSION_POOL[sid] = {
+                    **user.model_dump(
+                        exclude=[
+                            'profile_image_url',
+                            'profile_banner_image_url',
+                            'date_of_birth',
+                            'bio',
+                            'gender',
+                        ]
+                    ),
+                    'last_seen_at': int(time.time()),
+                }
+                await sio.enter_room(sid, f'user:{user.id}')
+    finally:
+        if tenant_token is not None:
+            reset_tenant_context(tenant_token)
 
 
 @sio.on('user-join')
+@tenant_scoped
 async def user_join(sid, data):
     auth = data.get('auth')
-    if not auth or 'token' not in auth:
+    if not ENABLE_MULTI_TENANCY and (not auth or 'token' not in auth):
         return
 
-    token_data = decode_token(auth['token'])
-    if token_data is None or 'id' not in token_data:
-        return
-
-    user = await Users.get_user_by_id(token_data['id'])
+    user = await _resolve_socket_user(sid, auth)
     if not user:
         return
 
@@ -403,6 +522,7 @@ async def user_join(sid, data):
 
 
 @sio.on('heartbeat')
+@tenant_scoped
 async def heartbeat(sid, data):
     user = SESSION_POOL.get(sid)
     if user:
@@ -411,16 +531,13 @@ async def heartbeat(sid, data):
 
 
 @sio.on('join-channels')
+@tenant_scoped
 async def join_channel(sid, data):
     auth = data['auth'] if 'auth' in data else None
-    if not auth or 'token' not in auth:
+    if not ENABLE_MULTI_TENANCY and (not auth or 'token' not in auth):
         return
 
-    data = decode_token(auth['token'])
-    if data is None or 'id' not in data:
-        return
-
-    user = await Users.get_user_by_id(data['id'])
+    user = await _resolve_socket_user(sid, auth)
     if not user:
         return
 
@@ -433,16 +550,13 @@ async def join_channel(sid, data):
 
 
 @sio.on('join-note')
+@tenant_scoped
 async def join_note(sid, data):
     auth = data['auth'] if 'auth' in data else None
-    if not auth or 'token' not in auth:
+    if not ENABLE_MULTI_TENANCY and (not auth or 'token' not in auth):
         return
 
-    token_data = decode_token(auth['token'])
-    if token_data is None or 'id' not in token_data:
-        return
-
-    user = await Users.get_user_by_id(token_data['id'])
+    user = await _resolve_socket_user(sid, auth)
     if not user:
         return
 
@@ -469,6 +583,7 @@ async def join_note(sid, data):
 
 
 @sio.on('events:channel')
+@tenant_scoped
 async def channel_events(sid, data):
     room = f'channel:{data["channel_id"]}'
     participants = sio.manager.get_participants(
@@ -504,6 +619,7 @@ async def channel_events(sid, data):
 
 
 @sio.on('events:chat')
+@tenant_scoped
 async def chat_events(sid, data):
     user = SESSION_POOL.get(sid)
     if not user:
@@ -806,6 +922,7 @@ async def yjs_awareness_update(sid, data):
 
 @sio.event
 async def disconnect(sid, reason=None):
+    SOCKET_TENANT.pop(sid, None)  # drop the per-socket tenant context
     if sid in SESSION_POOL:
         user = SESSION_POOL[sid]
         del SESSION_POOL[sid]

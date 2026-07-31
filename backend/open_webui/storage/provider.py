@@ -33,6 +33,7 @@ from open_webui.config import (
     UPLOAD_DIR,
 )
 from open_webui.constants import ERROR_MESSAGES
+from open_webui.env import ENABLE_MULTI_TENANCY
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +100,25 @@ class LocalStorageProvider(StorageProvider):
 
 
 class S3StorageProvider(StorageProvider):
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        bucket_name=None,
+        key_prefix=None,
+        endpoint_url=None,
+        access_key_id=None,
+        secret_access_key=None,
+        region_name=None,
+    ):
+        # Args override env so a per-tenant instance can be built from a brokered
+        # StorageConnection; with no args this reads env (single-tenant default).
+        bucket_name = bucket_name if bucket_name is not None else S3_BUCKET_NAME
+        key_prefix = key_prefix if key_prefix is not None else S3_KEY_PREFIX
+        endpoint_url = endpoint_url if endpoint_url is not None else S3_ENDPOINT_URL
+        access_key_id = access_key_id if access_key_id is not None else S3_ACCESS_KEY_ID
+        secret_access_key = secret_access_key if secret_access_key is not None else S3_SECRET_ACCESS_KEY
+        region_name = region_name if region_name is not None else S3_REGION_NAME
+
         config = Config(
             s3={
                 'use_accelerate_endpoint': S3_USE_ACCELERATE_ENDPOINT,
@@ -111,13 +130,13 @@ class S3StorageProvider(StorageProvider):
         )
 
         # If access key and secret are provided, use them for authentication
-        if S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY:
+        if access_key_id and secret_access_key:
             self.s3_client = boto3.client(
                 's3',
-                region_name=S3_REGION_NAME,
-                endpoint_url=S3_ENDPOINT_URL,
-                aws_access_key_id=S3_ACCESS_KEY_ID,
-                aws_secret_access_key=S3_SECRET_ACCESS_KEY,
+                region_name=region_name,
+                endpoint_url=endpoint_url,
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
                 config=config,
             )
         else:
@@ -125,13 +144,13 @@ class S3StorageProvider(StorageProvider):
             # This supports workload identity (IAM roles for EC2, EKS, etc.)
             self.s3_client = boto3.client(
                 's3',
-                region_name=S3_REGION_NAME,
-                endpoint_url=S3_ENDPOINT_URL,
+                region_name=region_name,
+                endpoint_url=endpoint_url,
                 config=config,
             )
 
-        self.bucket_name = S3_BUCKET_NAME
-        self.key_prefix = S3_KEY_PREFIX if S3_KEY_PREFIX else ''
+        self.bucket_name = bucket_name
+        self.key_prefix = key_prefix if key_prefix else ''
 
     @staticmethod
     def sanitize_tag_value(s: str) -> str:
@@ -270,10 +289,12 @@ class GCSStorageProvider(StorageProvider):
 
 
 class AzureStorageProvider(StorageProvider):
-    def __init__(self):
-        self.endpoint = AZURE_STORAGE_ENDPOINT
-        self.container_name = AZURE_STORAGE_CONTAINER_NAME
-        storage_key = AZURE_STORAGE_KEY
+    def __init__(self, *, endpoint=None, container_name=None, storage_key=None):
+        # Args override env so a per-tenant instance can be built from a brokered
+        # StorageConnection; with no args this reads env (single-tenant default).
+        self.endpoint = endpoint if endpoint is not None else AZURE_STORAGE_ENDPOINT
+        self.container_name = container_name if container_name is not None else AZURE_STORAGE_CONTAINER_NAME
+        storage_key = storage_key if storage_key is not None else AZURE_STORAGE_KEY
 
         if storage_key:
             # Configure using the Azure Storage Account Endpoint and Key
@@ -345,4 +366,85 @@ def get_storage_provider(storage_provider: str):
     return Storage
 
 
-Storage = get_storage_provider(STORAGE_PROVIDER)
+def build_provider_from_connection(sc) -> StorageProvider:
+    """Build a StorageProvider bound to a tenant's brokered ``StorageConnection``
+    (s3 or azure). Every field is nullable on the IAM side, so validate and FAIL
+    CLOSED — a missing provider/bucket is an error, never a default bucket."""
+    provider = (sc.provider or '').lower()
+    if provider == 's3':
+        if not sc.bucket:
+            raise RuntimeError('tenant storage bucket is not configured (fail-closed)')
+        return S3StorageProvider(
+            bucket_name=sc.bucket,
+            key_prefix=sc.prefix or '',
+            endpoint_url=sc.endpoint,
+            access_key_id=sc.access_key,
+            secret_access_key=sc.secret_key,
+        )
+    if provider in ('azure', 'azure_blob'):
+        if not sc.bucket:
+            raise RuntimeError('tenant storage container is not configured (fail-closed)')
+        return AzureStorageProvider(
+            endpoint=sc.endpoint,
+            container_name=sc.bucket,
+            storage_key=sc.secret_key,
+        )
+    raise RuntimeError(f'unsupported or missing tenant storage provider: {sc.provider!r} (fail-closed)')
+
+
+class _TenantStorageProxy(StorageProvider):
+    """Context-aware ``Storage``. Delegates each call to the provider for the
+    current scope: the shared default (single-tenant / system context) or a
+    per-tenant provider built from the request's brokered StorageConnection.
+
+    Keeping the module attribute named ``Storage`` means every existing import
+    and call site is unchanged — the tenanting happens entirely behind them."""
+
+    def __init__(self, default_provider):
+        self._default = default_provider
+        self._tenant_providers: dict = {}
+
+    def _get_default(self) -> StorageProvider:
+        if self._default is None:
+            self._default = get_storage_provider(STORAGE_PROVIDER)
+        return self._default
+
+    def _resolve(self) -> StorageProvider:
+        if not ENABLE_MULTI_TENANCY:
+            return self._get_default()
+        from open_webui.utils.tenant import is_system_context, require_tenant_context
+
+        if is_system_context():
+            return self._get_default()
+        ctx = require_tenant_context()  # fail closed if no tenant
+        provider = self._tenant_providers.get(ctx.tenant_id)
+        if provider is None:
+            provider = build_provider_from_connection(ctx.connection.storage)
+            self._tenant_providers[ctx.tenant_id] = provider
+        return provider
+
+    def get_file(self, file_path: str) -> str:
+        return self._resolve().get_file(file_path)
+
+    def upload_file(self, file: BinaryIO, filename: str, tags: Dict[str, str]) -> Tuple[bytes, str]:
+        return self._resolve().upload_file(file, filename, tags)
+
+    def delete_file(self, file_path: str) -> None:
+        return self._resolve().delete_file(file_path)
+
+    def delete_all_files(self) -> None:
+        return self._resolve().delete_all_files()
+
+
+# Build the default/system provider eagerly to preserve single-tenant behaviour
+# (including surfacing misconfig at import). Under multi-tenancy, defer to lazy
+# build so a missing system storage config doesn't block boot.
+_default_provider = None
+try:
+    _default_provider = get_storage_provider(STORAGE_PROVIDER)
+except Exception:
+    if not ENABLE_MULTI_TENANCY:
+        raise
+    log.warning('Default storage provider unavailable at import; will build lazily (multi-tenancy).')
+
+Storage = _TenantStorageProxy(_default_provider)

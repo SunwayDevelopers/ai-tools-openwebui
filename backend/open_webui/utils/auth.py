@@ -21,6 +21,7 @@ from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response, 
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import (
+    ENABLE_MULTI_TENANCY,
     ENABLE_OTEL,
     ENABLE_PASSWORD_VALIDATION,
     LICENSE_BLOB,
@@ -288,6 +289,59 @@ def get_http_authorization_cred(auth_header: str | None):
         return None
 
 
+async def get_or_provision_tenant_user(tenant_ctx):
+    """Resolve the local user row for a multi-tenant request from the IAM-resolved
+    identity, provisioning it on first login.
+
+    This is **membership-gated**, NOT open JIT: the tenant middleware only sets a
+    context after IAM ``/resolve`` confirms an active, admin-granted membership, so
+    this only ever runs for a user an admin has already invited. The local row is
+    the ownership-FK artifact; the role is taken from (and kept in sync with) the
+    IAM membership.
+
+    Per IAM_INTEGRATION_GUIDE.md §4.1 the entitlement key is the user's **email**
+    (the /resolve identity no longer carries a WorkOS user id). We therefore look
+    the local row up by email and derive a *deterministic* id from it, so
+    concurrent first requests collide on the primary key (the race-recovery path
+    below re-fetches) and provisioning stays idempotent.
+    """
+    ident = tenant_ctx.identity
+    email = (ident.email or '').strip().lower()
+    if not email:
+        # Email is the IAM entitlement key; a resolve without one is unusable.
+        raise HTTPException(status_code=500, detail='resolved identity has no email (fail-closed)')
+
+    user = await Users.get_user_by_email(email)
+    if user is not None:
+        if user.role != tenant_ctx.role:
+            updated = await Users.update_user_role_by_id(user.id, tenant_ctx.role)
+            user = updated or user
+        return user
+
+    # First login for this member in this tenant DB → provision the local row.
+    name = ident.name or email.split('@')[0]
+    uid = str(uuid.uuid5(uuid.NAMESPACE_URL, f'workos-email:{email}'))
+    try:
+        user = await Users.insert_new_user(
+            id=uid,
+            name=name,
+            email=email,
+            role=tenant_ctx.role,
+            oauth={'workos': {'email': email}},
+        )
+    except Exception:
+        # Concurrent first requests can race on the primary key; re-fetch by email.
+        user = await Users.get_user_by_email(email)
+        if user is None:
+            log.exception('Failed to provision tenant user %s in tenant %s', email, tenant_ctx.slug)
+            raise HTTPException(status_code=500, detail='Failed to provision tenant user')
+        return user
+    if user is None:
+        raise HTTPException(status_code=500, detail='Failed to provision tenant user')
+    log.info('Provisioned tenant user %s in tenant %s (role=%s)', email, tenant_ctx.slug, tenant_ctx.role)
+    return user
+
+
 async def get_current_user(
     request: Request,
     response: Response,
@@ -298,6 +352,21 @@ async def get_current_user(
     # This ensures connections are released immediately after auth queries,
     # not held for the entire request duration (e.g., during 30+ second LLM calls).
 ):
+    # Multi-tenancy: the tenant middleware has already verified the WorkOS token
+    # and resolved (identity, role) into the request context. Use that directly —
+    # the identity is authoritative and the DB engine is already bound to the
+    # correct tenant DB — rather than decoding a schat-native JWT.
+    if ENABLE_MULTI_TENANCY:
+        from open_webui.utils.tenant import get_tenant_context
+
+        tenant_ctx = get_tenant_context()
+        if tenant_ctx is not None:
+            user = await get_or_provision_tenant_user(tenant_ctx)
+            import asyncio
+
+            asyncio.create_task(Users.update_last_active_by_id(user.id))
+            return user
+
     token = None
 
     if auth_token is not None:

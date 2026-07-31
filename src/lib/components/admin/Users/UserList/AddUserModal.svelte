@@ -3,6 +3,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { onMount, getContext } from 'svelte';
 	import { addUser } from '$lib/apis/auths';
+	import { config } from '$lib/stores';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
@@ -227,21 +228,23 @@
 								</div>
 							</div>
 
-							<div class="flex flex-col w-full mt-1">
-								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Password')}</div>
+							{#if !$config?.features?.enable_multi_tenancy}
+								<div class="flex flex-col w-full mt-1">
+									<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Password')}</div>
 
-								<div class="flex-1">
-									<SensitiveInput
-										class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
-										type="password"
-										bind:value={_user.password}
-										aria-label={$i18n.t('Password')}
-										placeholder={$i18n.t('Enter Your Password')}
-										autocomplete="off"
-										required
-									/>
+									<div class="flex-1">
+										<SensitiveInput
+											class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
+											type="password"
+											bind:value={_user.password}
+											aria-label={$i18n.t('Password')}
+											placeholder={$i18n.t('Enter Your Password')}
+											autocomplete="off"
+											required
+										/>
+									</div>
 								</div>
-							</div>
+							{/if}
 						{:else if tab === 'import'}
 							<div>
 								<div class="mb-3 w-full">
