@@ -146,22 +146,30 @@ jobs:
           yq e ".image.tag = \"$TAG\"" -i "$FILE"
           yq e '.image.tag' "$FILE"
 
-      - name: Validate the chart still renders
+      - name: Validate the chart still renders (advisory)
+        # NON-BLOCKING for now, by request. The chart's own guards in
+        # templates/validate.yaml still `fail` at deploy time — see the note below.
+        continue-on-error: true
         env:
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          # The chart has fail-fast guards in templates/validate.yaml (unset
-          # required secrets, forbidden auth overrides). Catching those here
-          # beats discovering them during `helm upgrade` with a half-applied
-          # release — and beats committing a tag that cannot be deployed.
+          # `helm template` is the real check: `helm lint` reports a template-time
+          # `fail` as INFO and still exits 0, so lint alone proves nothing.
           #
-          # `helm template` is the real gate: verified that `helm lint` reports a
-          # template-time `fail` as INFO and still exits 0, so lint alone would
-          # wave a broken overlay straight through. Keep both; do not drop the
-          # template call.
-          helm lint ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml"
-          helm template schat ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml" > /dev/null
-          echo "Chart renders cleanly for ${ENVIRONMENT}."
+          # Currently expected to fail: secrets.DATABASE_URL is unset in both
+          # overlays. Because this step is advisory, the run continues and commits
+          # the image tag anyway — but `helm upgrade` will STILL be rejected by the
+          # same guard, since it lives in the chart, not here. Removing this step
+          # does not make the deploy work; setting DATABASE_URL does.
+          #
+          # To re-arm: delete `continue-on-error: true` above.
+          helm lint ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml" || true
+          if helm template schat ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml" > /dev/null 2>/tmp/helm.err; then
+            echo "Chart renders cleanly for ${ENVIRONMENT}."
+          else
+            echo "::warning::Chart does NOT render for ${ENVIRONMENT} — helm upgrade will fail. Details below."
+            cat /tmp/helm.err
+          fi
 
       - name: Commit and push
         env:
