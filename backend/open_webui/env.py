@@ -514,12 +514,32 @@ AIOHTTP_CLIENT_ALLOW_REDIRECTS = os.getenv('AIOHTTP_CLIENT_ALLOW_REDIRECTS', 'Fa
 
 # Content-extraction (Docling/Tika) HTTP request timeout in seconds. Bounds how long
 # a single extract call may block a worker thread, so a hung/slow extractor server
-# can't pin it forever. Kept above DOCLING_SERVE_MAX_SYNC_WAIT (600) so the docling
-# server's own cap fires first and returns a clean error.
+# can't pin it forever. Kept above DOCLING_SERVE_MAX_SYNC_WAIT (docling-serve's own sync
+# cap) so the docling server's own cap fires first and returns a clean error.
 try:
     CONTENT_EXTRACTION_REQUEST_TIMEOUT = int(os.getenv('CONTENT_EXTRACTION_REQUEST_TIMEOUT', '620'))
 except (ValueError, TypeError):
     CONTENT_EXTRACTION_REQUEST_TIMEOUT = 620
+
+# Sunway: use docling-serve's ASYNC API (submit -> poll -> fetch result) instead of the
+# blocking sync /v1/convert/file. The sync endpoint holds one HTTP request open for the
+# whole conversion and is bounded by docling-serve's DOCLING_SERVE_MAX_SYNC_WAIT (default
+# 120s) — so large/OCR-heavy PDFs 504 mid-convert regardless of our client timeout. The
+# async flow submits the job, long-polls task status, then fetches the result, so no single
+# request is held for minutes and the 504-mid-convert class of failure disappears (the
+# maintainers' recommended path for long jobs). Plain env -> takes effect on restart. ON by
+# default: DoclingLoader retries synchronously whenever the async path gives no verdict (no
+# async endpoint / connection / contract mismatch), so a docling-serve without (or with a
+# differing) async API degrades gracefully. Set 'false' as a kill-switch to force sync.
+DOCLING_ASYNC = os.getenv('DOCLING_ASYNC', 'True').lower() == 'true'
+# Seconds between async status polls (uses docling-serve's long-poll `wait` param, so each
+# poll blocks server-side up to this long). Total wait is bounded by the request timeout above.
+try:
+    DOCLING_ASYNC_POLL_INTERVAL = int(os.getenv('DOCLING_ASYNC_POLL_INTERVAL', '5'))
+except (ValueError, TypeError):
+    DOCLING_ASYNC_POLL_INTERVAL = 5
+if DOCLING_ASYNC_POLL_INTERVAL < 1:
+    DOCLING_ASYNC_POLL_INTERVAL = 1
 
 # Max concurrent document extractions per process. Bounds how many uploads can be
 # parsed/OCR'd at once so an upload burst can't exhaust the default thread pool.
@@ -527,6 +547,19 @@ try:
     CONTENT_EXTRACTION_MAX_CONCURRENCY = int(os.getenv('CONTENT_EXTRACTION_MAX_CONCURRENCY', '4'))
 except (ValueError, TypeError):
     CONTENT_EXTRACTION_MAX_CONCURRENCY = 4
+
+# Sunway: max concurrent EMBEDDING jobs per process. Extraction is bounded by
+# CONTENT_EXTRACTION_MAX_CONCURRENCY, but embedding (save_docs_to_vector_db, run in a worker
+# thread) had NO bound -- so a burst of large uploads (or cancelled-then-reuploaded files whose
+# background embedding keeps running) stacks many concurrent bge-m3 embed jobs and thrashes
+# CPU/RAM, risking a crash. This caps how many embed at once; the rest queue. Keep low on CPU
+# (embedding is CPU-bound in-process); raise once embedding is offloaded to the GPU endpoint.
+try:
+    EMBEDDING_MAX_CONCURRENCY = int(os.getenv('EMBEDDING_MAX_CONCURRENCY', '2'))
+except (ValueError, TypeError):
+    EMBEDDING_MAX_CONCURRENCY = 2
+if EMBEDDING_MAX_CONCURRENCY < 1:
+    EMBEDDING_MAX_CONCURRENCY = 1
 
 # Wall-clock cap (seconds) on a single in-process extraction. The HTTP engines have
 # CONTENT_EXTRACTION_REQUEST_TIMEOUT, but the in-process loaders (pypdf, unstructured,
@@ -540,14 +573,98 @@ try:
 except (ValueError, TypeError):
     CONTENT_EXTRACTION_TIMEOUT = 660
 
-# Max total extracted text (characters) accepted from a single file. Archive-based
-# formats (docx/xlsx/pptx are ZIP containers) and crafted PDFs can expand to gigabytes
-# of text ("decompression bomb"); reject before that reaches chunking/embedding/DB.
-# Set well above any legitimate document but far below bomb territory. 0 disables.
+# Max total extracted text (characters) accepted from a single file. Two jobs:
+# (1) decompression-bomb guard -- docx/xlsx/pptx are ZIP containers and crafted PDFs
+#     can expand to gigabytes of text; reject before that hits chunking/embedding/DB.
+# (2) latency governor -- embedding time scales with char/chunk count, NOT file MB, so
+#     this (not the MB cap) is the real ceiling on worst-case upload time.
+# Sunway (2026-07-21): lowered 10M -> 3M. 10M was a *post-GPU* value; on the current
+# in-process CPU bge-m3 (~2.8 chunks/s) it does NOT bound embedding -- a 5MB CSV
+# (~64k rows, ~9M chars) sailed under it and took 6+ HOURS to embed. 3M chars ~= ~3k
+# chunks ~= ~18 min worst-case on CPU, while still covering every real business doc (a
+# 400-page PDF ~= ~0.7-1.2M chars; office docs are far smaller). It rejects only
+# data-dump spreadsheets/CSVs, which are a poor RAG fit anyway. Raise back toward 10M
+# once embedding is GPU-offloaded (see AUDIT-015/026). 0 disables. Reject (not truncate).
 try:
-    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = int(os.getenv('CONTENT_EXTRACTION_MAX_OUTPUT_CHARS', '30000000'))
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = int(os.getenv('CONTENT_EXTRACTION_MAX_OUTPUT_CHARS', '3000000'))
 except (ValueError, TypeError):
-    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = 30000000
+    CONTENT_EXTRACTION_MAX_OUTPUT_CHARS = 5000000
+
+# Per-user file-upload rate limit (Sunway): every uploaded file is extracted + embedded,
+# so one user's bulk-upload burst can saturate the shared GPU/embedding pipeline for
+# everyone. Caps uploads per user over a rolling window. Plain env reads (take effect on
+# restart). Set FILE_UPLOAD_RATE_LIMIT=0 to disable (e.g. during upload stress tests).
+try:
+    FILE_UPLOAD_RATE_LIMIT = int(os.getenv('FILE_UPLOAD_RATE_LIMIT', '60'))
+except (ValueError, TypeError):
+    FILE_UPLOAD_RATE_LIMIT = 60
+try:
+    FILE_UPLOAD_RATE_LIMIT_WINDOW = int(os.getenv('FILE_UPLOAD_RATE_LIMIT_WINDOW', '60'))
+except (ValueError, TypeError):
+    FILE_UPLOAD_RATE_LIMIT_WINDOW = 60
+
+# Full-context injection budget (Sunway). When a file or KB is attached in "full context /
+# use entire document" mode, its ENTIRE extracted text is injected into the prompt,
+# bypassing retrieval. Unbounded, that overflows the model's context window -- worst on
+# the SMALLEST served model (e.g. Qwen 128K). Above this many characters, full mode is
+# transparently downgraded to normal chunked retrieval instead of overflowing. Size for
+# your smallest model's window: 200000 chars ~= ~50K tokens, leaving headroom for chat
+# history + the answer on a 128K model. Plain env read (restart to apply). 0 disables the
+# guard (unbounded full context -- not recommended for a mixed/128K fleet).
+try:
+    RAG_FULL_CONTEXT_MAX_CHARS = int(os.getenv('RAG_FULL_CONTEXT_MAX_CHARS', '200000'))
+except (ValueError, TypeError):
+    RAG_FULL_CONTEXT_MAX_CHARS = 200000
+
+# Sunway: skip embedding for SMALL chat attachments and serve them full-context instead.
+# Embedding is the slow half of an upload; for a doc that fits RAG_FULL_CONTEXT_MAX_CHARS
+# it's unnecessary work — the whole extracted text can be injected directly (the SOTA
+# "attach a file to a chat" pattern), so the file is usable the instant extraction finishes.
+# ONLY applies to chat attachments (never Knowledge Bases — those are the persistent
+# retrieval corpus and always embed) and only when the extracted text fits the budget;
+# larger files fall through to normal embed + RAG. process_file marks these with
+# data['full_context']=True; retrieval (utils.get_sources_from_items) injects them whole.
+# Plain env read (restart to apply). OFF by default — enable AFTER an inference-concurrency
+# stress test, since full-context re-sends the doc each turn (KV-cache/context-window load).
+RAG_CHAT_ATTACHMENT_FULL_CONTEXT = os.getenv('RAG_CHAT_ATTACHMENT_FULL_CONTEXT', 'False').lower() == 'true'
+
+# Image-aware PDF routing (Sunway). The PDF fast path trusts pypdf's text layer, so a
+# born-digital PDF with SCREENSHOTS / scanned figures pasted in passes as "digital" and
+# the text baked into those images is never OCR'd (silently lost). When enabled, a
+# digital-looking PDF that also embeds substantial raster images is instead routed to
+# Docling with force_ocr=true so the image text is read. This TRADES SPEED FOR
+# COMPLETENESS: force_ocr OCRs every page (much slower, and on the shared Docling GPU),
+# vs the millisecond pypdf fast path. Tune the two thresholds against real sample docs --
+# raising them reroutes fewer docs (faster, may miss some); lowering catches more (slower).
+# Plain env reads (restart to apply).
+RAG_PDF_IMAGE_ROUTE_ENABLED = os.getenv('RAG_PDF_IMAGE_ROUTE_ENABLED', 'True').lower() == 'true'
+try:
+    # Minimum embedded-image pixel area (width*height) to count as "substantial"; filters
+    # out small logos/icons/bullets. 90000 ~= a 300x300 image.
+    RAG_PDF_IMAGE_MIN_PIXELS = int(os.getenv('RAG_PDF_IMAGE_MIN_PIXELS', '90000'))
+except (ValueError, TypeError):
+    RAG_PDF_IMAGE_MIN_PIXELS = 90000
+try:
+    # How many substantial embedded images trigger the forced-OCR reroute. 1 = reroute any
+    # digital PDF with a screenshot (most thorough, slowest); raise to cut Docling load.
+    RAG_PDF_IMAGE_MIN_COUNT = int(os.getenv('RAG_PDF_IMAGE_MIN_COUNT', '1'))
+except (ValueError, TypeError):
+    RAG_PDF_IMAGE_MIN_COUNT = 1
+
+# Sunway: hard page cap for PDFs, checked BEFORE any extraction engine runs (pypdf can
+# count pages in milliseconds). This is the early, cheap guard that
+# CONTENT_EXTRACTION_MAX_OUTPUT_CHARS cannot be: for image-bearing/scanned PDFs the char
+# count is only known AFTER Docling OCR, so the char cap would reject a 400-page scan only
+# after burning minutes of GPU. Page count is known up front, on every route.
+# 400 covers effectively every internal business document (reports, policies, contracts,
+# manuals); it also caps downstream embedding cost (~400pp is ~700 chunks vs ~10k at the
+# 10M-char ceiling). Deliberately NOT set in dev.ps1 or the Helm manifest -- this default
+# IS the policy; the env var exists only so prod can retune without a code change + image
+# rebuild. 0 disables the cap.
+try:
+    RAG_PDF_MAX_PAGES = int(os.getenv('RAG_PDF_MAX_PAGES', '400'))
+except (ValueError, TypeError):
+    RAG_PDF_MAX_PAGES = 400
 
 # Image OCR fallback (Sunway): when a selected model is NOT vision-capable
 # (capabilities.vision = false in Admin > Models), uploaded images are run through
@@ -566,6 +683,78 @@ try:
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = int(os.getenv('RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE', '100'))
 except (ValueError, TypeError):
     RAG_PDF_FAST_PATH_MIN_CHARS_PER_PAGE = 100
+
+# PDF fast-path engine (Sunway A/B): which lightweight loader reads born-digital PDFs when
+# RAG_PDF_FAST_PATH is on -- 'pypdf' (default) or 'markitdown'. Scanned/low-text PDFs still
+# fall back to Docling for OCR. Seeds the runtime toggle store (flip live in the Admin UI).
+RAG_PDF_FAST_PATH_ENGINE = os.getenv('RAG_PDF_FAST_PATH_ENGINE', 'pypdf').strip().lower()
+if RAG_PDF_FAST_PATH_ENGINE not in ('pypdf', 'markitdown'):
+    RAG_PDF_FAST_PATH_ENGINE = 'pypdf'
+
+# Office fast-path (Sunway A/B): when the engine is Docling and this is on, born-digital
+# OOXML office files (.docx/.xlsx/.pptx) are extracted by a lightweight loader instead of
+# Docling. RAG_OFFICE_FAST_PATH_ENGINE picks which lightweight engine: 'unstructured' (the
+# langchain Unstructured loaders already bundled) or 'markitdown' (Microsoft MarkItDown ->
+# Markdown). Falls back to Docling on failure/empty text. These SEED the runtime toggle
+# store (retrieval/loaders/extraction_ab.py), which the Admin UI flips WITHOUT a restart --
+# so this env value is only the boot default. Legacy .doc/.xls/.ppt are unaffected (they
+# already use local loaders). Default off.
+RAG_OFFICE_FAST_PATH = os.getenv('RAG_OFFICE_FAST_PATH', 'False').lower() == 'true'
+RAG_OFFICE_FAST_PATH_ENGINE = os.getenv('RAG_OFFICE_FAST_PATH_ENGINE', 'unstructured').strip().lower()
+if RAG_OFFICE_FAST_PATH_ENGINE not in ('unstructured', 'markitdown'):
+    RAG_OFFICE_FAST_PATH_ENGINE = 'unstructured'
+
+# Image vision LLM (Sunway): route uploaded IMAGES through a vision LLM (e.g. Gemma
+# served via vLLM/LiteLLM) so a text-only chat model gets BOTH the image's transcribed
+# text AND a description of non-text visuals (photos, charts, diagrams) that OCR alone
+# can't provide. Works with ENABLE_IMAGE_OCR_FALLBACK: that fallback routes images to the
+# extraction pipeline; this decides an image is read by the vision LLM (and, when
+# COMBINE_OCR is on and the engine is Docling, ALSO by Docling for faithful text). Only
+# images are affected -- PDFs/documents still go to the configured engine. Active only
+# when BASE_URL and MODEL are both set. Plain env reads -> take effect on restart.
+RAG_IMAGE_VISION_LLM_BASE_URL = os.getenv('RAG_IMAGE_VISION_LLM_BASE_URL', '')
+RAG_IMAGE_VISION_LLM_API_KEY = os.getenv('RAG_IMAGE_VISION_LLM_API_KEY', '')
+RAG_IMAGE_VISION_LLM_MODEL = os.getenv('RAG_IMAGE_VISION_LLM_MODEL', '')
+# Optional override of the extraction prompt. Empty -> loader picks a sensible default
+# (transcribe+describe when vision-only, describe-only when Docling OCR is combined).
+RAG_IMAGE_VISION_LLM_PROMPT = os.getenv('RAG_IMAGE_VISION_LLM_PROMPT', '')
+# When true (and engine is Docling), also run Docling OCR for faithful text and prepend
+# it; the vision LLM then only describes visuals. A VLM can misread exact text
+# (digits/tables), so Docling stays authoritative for text-embedded images.
+RAG_IMAGE_VISION_LLM_COMBINE_OCR = os.getenv('RAG_IMAGE_VISION_LLM_COMBINE_OCR', 'True').lower() == 'true'
+try:
+    RAG_IMAGE_VISION_LLM_MAX_TOKENS = int(os.getenv('RAG_IMAGE_VISION_LLM_MAX_TOKENS', '2048'))
+except (ValueError, TypeError):
+    RAG_IMAGE_VISION_LLM_MAX_TOKENS = 2048
+# Extra JSON merged into the chat/completions body -- primarily to disable reasoning at
+# request time, e.g. {"chat_template_kwargs": {"enable_thinking": false}}. The loader
+# also strips leaked reasoning defensively, so this is best-effort hardening.
+RAG_IMAGE_VISION_LLM_EXTRA_BODY = os.getenv('RAG_IMAGE_VISION_LLM_EXTRA_BODY', '')
+
+
+# Per-chat System Prompt hardening (Sunway). The text a user types into Chat Controls
+# arrives as a role=system message and is merged into the SAME system message as the
+# admin/model prompt, joined by a newline — so the two become indistinguishable strings
+# in the same role, with the user's text last. Position is not precedence: "disregard the
+# above" in that box frequently wins.
+#
+# With isolation on, the user's text is instead fenced in a labelled <user_preferences>
+# block that states it is user input rather than policy, and a short precedence reminder
+# is appended AFTER it so the last word in the system message belongs to the operator.
+# This does not make prompt injection impossible — nothing does — it removes the specific
+# ambiguity that makes it trivial. Personalization still works: tone, format, persona and
+# detail level all live happily inside the block.
+#
+# The char cap bounds a field that is re-sent on EVERY turn (a 4k blob is ~1k tokens per
+# request, ~20k over a 20-turn chat, times 10K users). 4000 is far wider than any real
+# persona needs; anything longer is a document, which is what file upload is for.
+# 0 disables either guard. Plain env reads — take effect on restart.
+ENABLE_CHAT_SYSTEM_PROMPT_ISOLATION = os.getenv('ENABLE_CHAT_SYSTEM_PROMPT_ISOLATION', 'True').lower() == 'true'
+
+try:
+    CHAT_SYSTEM_PROMPT_MAX_CHARS = int(os.getenv('CHAT_SYSTEM_PROMPT_MAX_CHARS', '4000'))
+except (ValueError, TypeError):
+    CHAT_SYSTEM_PROMPT_MAX_CHARS = 4000
 
 
 # Retention: max chats a user may keep (ALL roles incl. admins), enforced as a
@@ -1001,6 +1190,21 @@ else:
 # -1 means unlimited (no cap).
 if CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS == -1:
     CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS = None
+
+# Sunway: hard cap on how many images generate_image may produce for a SINGLE chat
+# request. The iteration limit above bounds tool-call *rounds*, not the number of
+# parallel calls within a round — so a small model that runs away emitting dozens of
+# generate_image calls in one turn (observed: Qwen3.6 35B A3B, "Exploring 34
+# generate_image" and climbing) is otherwise unbounded, burning generations + files
+# (each counts against retention). Excess image calls beyond this cap are dropped
+# before execution. Plain env (re-read each restart). Set to -1 for unlimited.
+IMAGE_GENERATION_MAX_PER_REQUEST = os.getenv('IMAGE_GENERATION_MAX_PER_REQUEST', '4')
+try:
+    IMAGE_GENERATION_MAX_PER_REQUEST = int(IMAGE_GENERATION_MAX_PER_REQUEST)
+except Exception:
+    IMAGE_GENERATION_MAX_PER_REQUEST = 4
+if IMAGE_GENERATION_MAX_PER_REQUEST == -1:
+    IMAGE_GENERATION_MAX_PER_REQUEST = None
 
 
 # WARNING: Experimental. Only enable if your upstream Responses API endpoint

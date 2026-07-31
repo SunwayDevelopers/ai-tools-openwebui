@@ -33,6 +33,8 @@ from open_webui.env import (
     ENABLE_FORWARD_USER_INFO_HEADERS,
     ENABLE_RETRIEVAL_UNSCOPED_COLLECTIONS,
     OFFLINE_MODE,
+    RAG_CHAT_ATTACHMENT_FULL_CONTEXT,
+    RAG_FULL_CONTEXT_MAX_CHARS,
 )
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.chats import Chats
@@ -1168,6 +1170,15 @@ async def get_sources_from_items(
     extracted_collections = []
     query_results = []
 
+    # Sunway: running total of full-context chars injected across ALL attached items this
+    # request. RAG_FULL_CONTEXT_MAX_CHARS is sized for the smallest model window (~200k chars
+    # ≈ ~50-60k tokens on a 128K model, leaving room for history + the answer), but it was
+    # enforced PER FILE — so N full-context files could stack to N× the budget and overflow
+    # the window. This caps the AGGREGATE: once the budget is used up, further full-context
+    # items downgrade to chunked retrieval. Single-file behaviour is unchanged (the first
+    # file still gets the whole budget). 0/negative = guard off (unbounded).
+    full_context_chars_used = 0
+
     for item in items:
         query_result = None
         collection_names = []
@@ -1251,21 +1262,34 @@ async def get_sources_from_items(
                     'metadatas': [[{'url': item.get('url'), 'name': item.get('url')}]],
                 }
         elif item.get('type') == 'file':
-            if item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
-                if item.get('file', {}).get('data', {}).get('content', ''):
-                    # Manual Full Mode Toggle
-                    # Used from chat file modal, we can assume that the file content will be available from item.get("file").get("data", {}).get("content")
-                    query_result = {
-                        'documents': [[item.get('file', {}).get('data', {}).get('content', '')]],
-                        'metadatas': [
-                            [
-                                {
-                                    'file_id': item.get('id'),
-                                    'name': item.get('name'),
-                                    **item.get('file').get('data', {}).get('metadata', {}),
-                                }
-                            ]
-                        ],
+            full_requested = item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
+            # Sunway: a small chat attachment whose embedding was SKIPPED at ingest (see
+            # RAG_CHAT_ATTACHMENT_FULL_CONTEXT) has NO vector collection, so it MUST be served
+            # full-context — chunked retrieval would query an empty collection and silently
+            # return nothing. Detected via the file.data['full_context'] marker written by
+            # process_file. `must_full` also forces injection even if the running aggregate
+            # budget is spent (there are no vectors to fall back to; whole-doc beats empty).
+            must_full = False
+            if RAG_CHAT_ATTACHMENT_FULL_CONTEXT and not full_requested and item.get('id'):
+                marked = await Files.get_file_by_id(item.get('id'))
+                if marked and (marked.data or {}).get('full_context'):
+                    full_requested = True
+                    must_full = True
+            # Resolve the would-be full-context content (client-supplied inline, else the
+            # stored file, access-checked) so we can honour full mode ONLY if it fits the
+            # budget. An oversized full-context doc would overflow the model window, so we
+            # fall through to chunked retrieval instead of injecting it whole.
+            full_content = None
+            full_metadata = None
+            if full_requested:
+                inline_content = item.get('file', {}).get('data', {}).get('content', '')
+                if inline_content:
+                    # Manual Full Mode Toggle (content available from the chat file modal).
+                    full_content = inline_content
+                    full_metadata = {
+                        'file_id': item.get('id'),
+                        'name': item.get('name'),
+                        **item.get('file').get('data', {}).get('metadata', {}),
                     }
                 elif item.get('id'):
                     file_object = await Files.get_file_by_id(item.get('id'))
@@ -1274,19 +1298,41 @@ async def get_sources_from_items(
                         or file_object.user_id == user.id
                         or await has_access_to_file(item.get('id'), 'read', user)
                     ):
-                        query_result = {
-                            'documents': [[file_object.data.get('content', '')]],
-                            'metadatas': [
-                                [
-                                    {
-                                        'file_id': item.get('id'),
-                                        'name': file_object.filename,
-                                        'source': file_object.filename,
-                                    }
-                                ]
-                            ],
+                        full_content = file_object.data.get('content', '')
+                        full_metadata = {
+                            'file_id': item.get('id'),
+                            'name': file_object.filename,
+                            'source': file_object.filename,
                         }
+
+            # Sunway: honour full-context only if this file fits the budget AND the running
+            # aggregate across all attached files still has room (guards the model window when
+            # several full-context files are attached — see full_context_chars_used above).
+            if (
+                full_content
+                and full_metadata is not None
+                and (
+                    # A skip-embedded file has no vectors to fall back to, so inject it whole
+                    # regardless of the aggregate budget (it individually fit the budget at
+                    # ingest; empty chunked retrieval would be strictly worse).
+                    must_full
+                    or RAG_FULL_CONTEXT_MAX_CHARS <= 0
+                    or len(full_content) + full_context_chars_used <= RAG_FULL_CONTEXT_MAX_CHARS
+                )
+            ):
+                full_context_chars_used += len(full_content)
+                query_result = {
+                    'documents': [[full_content]],
+                    'metadatas': [[full_metadata]],
+                }
             else:
+                if full_requested and full_content and RAG_FULL_CONTEXT_MAX_CHARS > 0:
+                    log.info(
+                        f'Full-context file {item.get("id")} ({len(full_content)} chars) exceeds '
+                        f'RAG_FULL_CONTEXT_MAX_CHARS ({RAG_FULL_CONTEXT_MAX_CHARS}) '
+                        f'or the remaining aggregate budget ({RAG_FULL_CONTEXT_MAX_CHARS - full_context_chars_used} '
+                        f'chars left); downgrading to chunked retrieval.'
+                    )
                 # Chunked-retrieval fallback — verify read access before
                 # exposing the file's vector collection (same posture as the
                 # full-context branch above).
@@ -1348,10 +1394,29 @@ async def get_sources_from_items(
                                 }
                             )
 
-                        query_result = {
-                            'documents': [documents],
-                            'metadatas': [metadatas],
-                        }
+                        # Sunway: same aggregate budget as the per-file path above — a whole
+                        # collection injected full counts against the shared window budget.
+                        collection_chars = sum(len(doc or '') for doc in documents)
+                        if (
+                            RAG_FULL_CONTEXT_MAX_CHARS <= 0
+                            or collection_chars + full_context_chars_used <= RAG_FULL_CONTEXT_MAX_CHARS
+                        ):
+                            full_context_chars_used += collection_chars
+                            query_result = {
+                                'documents': [documents],
+                                'metadatas': [metadatas],
+                            }
+                        else:
+                            # KB too large to inject whole (on its own or once the aggregate
+                            # budget is accounted for); downgrade to chunked retrieval via the
+                            # collection_names fallback below (query_result stays None).
+                            log.info(
+                                f'Full-context collection {item.get("id")} ({collection_chars} chars) exceeds '
+                                f'RAG_FULL_CONTEXT_MAX_CHARS ({RAG_FULL_CONTEXT_MAX_CHARS}) '
+                                f'or the remaining aggregate budget ({RAG_FULL_CONTEXT_MAX_CHARS - full_context_chars_used} '
+                                f'chars left); downgrading to chunked retrieval.'
+                            )
+                            collection_names.append(item['id'])
                 else:
                     if item.get('legacy'):
                         if BYPASS_RETRIEVAL_ACCESS_CONTROL:

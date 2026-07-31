@@ -3,7 +3,9 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / docling / searxng / minio / valkey -> Docker (detached, volumes persist)
+#   postgres / qdrant / searxng / minio / valkey -> Docker (detached, volumes persist)
+#   (docling is NOT started -- dev uses the team's GPU docling-serve on the AI server;
+#    see the CONTENT_EXTRACTION_ENGINE block below to run it locally again)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -40,7 +42,8 @@ function Import-DotEnv([string]$path) {
 # -- stop ----------------------------------------------------------------------
 
 if ($Stop) {
-    Write-Host "Stopping Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
+    Write-Host "Stopping Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+    # docling is still named here so a locally-started container gets stopped too.
     docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant docling searxng minio valkey
     exit $LASTEXITCODE
 }
@@ -116,8 +119,12 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, docling, searxng, minio, valkey)..." -ForegroundColor Yellow
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant docling searxng minio valkey createbuckets
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+# 'docling' is deliberately absent: dev extracts via the team's GPU docling-serve on the
+# AI server, so the local CPU container (7GB image) was idle waste. To run it locally
+# again: docker compose -f docker-compose.dev.yml up -d docling  AND point
+# Admin Settings -> Documents -> Docling URL back at http://localhost:5001.
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant searxng minio valkey createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -132,12 +139,16 @@ Write-Host "      Postgres is healthy." -ForegroundColor Green
 
 # -- backend env vars (consumed by uvicorn child below) ------------------------
 
-# Document extraction via the docling container (docker-compose.dev.yml). Docling
-# does layout-aware extraction + OCR (scanned PDFs, embedded text in PNG/JPEG),
-# unlike Tika which has no OCR. NOTE: CONTENT_EXTRACTION_ENGINE is PersistentConfig
-# -- this env only SEEDS the DB on first boot. To switch an existing DB, set it in
-# Admin Settings -> Documents (Engine=Docling, URL, Params). Tika is left running
-# as a fallback you can flip back to in the UI.
+# Document extraction via Docling: layout-aware extraction + OCR (scanned PDFs,
+# embedded text in PNG/JPEG), unlike Tika which has no OCR.
+#
+# NOTE: both CONTENT_EXTRACTION_ENGINE and DOCLING_SERVER_URL are PersistentConfig --
+# these envs only SEEDED the DB on first boot and are IGNORED now. The live values are
+# in Admin Settings -> Documents, which points at the team's GPU docling-serve on the
+# AI server (https://docling.mymswgl-ai-application.sunway.com). That is why the local
+# CPU docling container is no longer started (see the compose block above).
+# The localhost URL below is kept only as the seed value for a fresh DB; if you wipe
+# the DB and want the GPU server, set it in Admin Settings after first boot.
 $env:CONTENT_EXTRACTION_ENGINE     = 'docling'
 $env:TIKA_SERVER_URL               = 'http://localhost:9998'
 $env:DOCLING_SERVER_URL            = 'http://localhost:5001'
@@ -150,10 +161,25 @@ $env:DOCLING_SERVER_URL            = 'http://localhost:5001'
 #   table_mode   -> 'fast' (TableFormer ACCURATE is dramatically slower)
 # force_ocr is intentionally omitted (defaults false) so the selective path stays.
 # Re-add '"force_ocr": true' ONLY if your PDFs have unreliable text layers -- it
-# OCRs every page incl. digital = much slower. Add "ocr_lang": "en,ch" etc. for
-# non-English docs (restricting langs is faster + more accurate). All tunable live
-# in Admin Settings -> Documents.
-$env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", "images_scale": 2, "table_mode": "fast"}'
+# OCRs every page incl. digital = much slower.
+# ocr_lang is "en" ONLY. It used to be "ch_sim,en" (Sunway EN/ZH/MS: Malay is Latin so
+# the English recognizer reads it). BUT the GPU docling-serve on the AI server
+# (https://docling.mymswgl-ai-application.sunway.com) has NO Chinese EasyOCR model:
+# requesting ch_sim/chi_sim crashes the convert task server-side and returns
+# 404 "Task result not found" in ~2s (verified 2026-07-21). "en" works; dropping
+# ocr_lang also works (server default == en output) but we pin it explicitly (no drift).
+# To restore Chinese OCR: teammate must bake the EasyOCR ch_sim model into the
+# docling-serve image, THEN re-test the multi-lang join format before setting it back.
+# All tunable live in Admin Settings -> Documents.
+$env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", "ocr_lang": "en", "images_scale": 2, "table_mode": "fast"}'
+# Sunway: use docling-serve's ASYNC API (submit -> long-poll -> fetch result) instead of the
+# blocking sync convert. The sync endpoint is capped by docling-serve's DOCLING_SERVE_MAX_SYNC_WAIT
+# (default 120s) and 504s large/OCR-heavy PDFs mid-convert regardless of our client timeout; async
+# holds no single request open, so that failure class disappears (and it scales better under
+# concurrent uploads). ON by default — DoclingLoader retries synchronously whenever the async path
+# gives no verdict (no async endpoint / connection error / contract mismatch), so a server without
+# a matching async API degrades gracefully. Set 'false' as a kill-switch to force the sync path.
+$env:DOCLING_ASYNC                 = 'true'
 # Web search via the searxng container (docker-compose.dev.yml). These only
 # seed the DB on first boot; after that, Admin Settings -> Web Search wins.
 $env:ENABLE_WEB_SEARCH             = 'true'
@@ -170,6 +196,12 @@ $env:AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL = 'false'
 # (POST /api/v1/retrieval/reset/db as admin) and re-adding knowledge files.
 $env:RAG_EMBEDDING_MODEL           = 'BAAI/bge-m3'
 $env:RAG_EMBEDDING_BATCH_SIZE      = '8'
+# Sunway: skip embedding for SMALL chat attachments (<= RAG_FULL_CONTEXT_MAX_CHARS) and
+# inject them full-context instead — makes those uploads extraction-only (instant, no embed
+# wait). KB adds + larger files still embed + RAG. OFF until an inference-concurrency stress
+# test confirms the fleet handles re-sending full docs each turn (KV-cache/window load).
+# Flip to 'true' to test in dev; enable prod only after that test + prefix-caching is on.
+$env:RAG_CHAT_ATTACHMENT_FULL_CONTEXT = 'true'
 # File storage via the minio container (docker-compose.dev.yml). These are plain
 # startup env reads (not PersistentConfig), so they take effect on restart
 # regardless of existing DB. The bucket is auto-created by the 'createbuckets'
@@ -209,7 +241,53 @@ $env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
 $env:MAX_CHATS_PER_USER            = '30'
 $env:CHAT_RETENTION_DAYS           = '30'
 $env:ENABLE_CHAT_ARCHIVE           = 'false'
-$env:RAG_PDF_FAST_PATH             = 'true'
+# FINALIZED 2026-07-23 (A/B closed): pdf -> DOCLING, fast-path OFF. Live tests on GPU-Docling:
+# small digital pdf pypdf ~2s (NO table structure, bold lost) vs markitdown ~3s (some structure)
+# vs docling ~4s (full tables + bold); large digital docling ~14s (full fidelity) vs pypdf ~1s
+# (plain text only). pypdf is a plain char dump — loses table structure, inline bold/emphasis,
+# and image-baked text — so Docling wins outright once GPU removes the CPU-timeout reason pypdf
+# existed for. The pypdf/markitdown fast-path CODE + A/B harness are KEPT (hide-not-delete): flip
+# this back 'true' as a CPU-only-deployment timeout guard if GPU-Docling isn't serving prod yet.
+$env:RAG_PDF_FAST_PATH             = 'false'
+# PDF fast-path engine (only used if the fast-path is flipped back ON): 'pypdf' or 'markitdown'.
+$env:RAG_PDF_FAST_PATH_ENGINE      = 'pypdf'
+# NB: RAG_PDF_IMAGE_ROUTE_ENABLED is intentionally NOT seeded here — it uses its env.py default
+# ('true'). Since 2026-07-21 the reroute routes image-bearing born-digital PDFs to Docling with
+# SELECTIVE OCR (it no longer forces OCR — the A/B showed force degraded the native text without
+# reading more image text), so leaving it on is beneficial and harmless.
+# Office fast-path (Sunway A/B): lightweight loaders for born-digital docx/xlsx/pptx vs
+# Docling. DECIDED 2026-07-21: docx/xlsx/pptx -> DOCLING (fast-path OFF) — Docling's TableFormer
+# beats text-layer loaders on complex tables, and embedded-image OCR is Docling regardless of
+# engine (so the fast-path saves ~nothing on image-heavy office). CSV is pinned to MarkItDown by
+# a code carve-out (loaders/main.py), independent of this toggle. The toggle is KEPT (seeds the
+# runtime A/B store; flip live in Admin Settings -> Documents) for the post-GPU re-test. ENGINE =
+# 'unstructured' or 'markitdown' (only used if you flip the fast-path back ON to A/B).
+$env:RAG_OFFICE_FAST_PATH          = 'false'
+$env:RAG_OFFICE_FAST_PATH_ENGINE   = 'unstructured'
+# File-upload allow-list (Sunway SECURITY): which extensions may be uploaded. EMPTY
+# (upstream default) = ALLOW-ALL -> .exe/.bat/.tiff/.svg etc. are accepted. This curated
+# list = document + safe-image types the app can actually extract. Enforced server-side
+# for the UI AND direct API/MCP callers (no ?process=false bypass); frontend accept= is
+# cosmetic only. PersistentConfig -> seeds a FRESH DB only; on an existing DB set it in
+# Admin Settings -> Documents -> Allowed File Extensions. Add code exts (py,js,ts,...) if
+# you want code upload; do NOT add exe/bat/ps1/cmd/sh/env (scripts/secrets).
+$env:RAG_ALLOWED_FILE_EXTENSIONS   = 'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg'
+# Image vision LLM (Sunway): route uploaded IMAGES to a small vision model (Gemma via
+# vLLM/LiteLLM) so text-only models (DeepSeek) get non-text visual understanding OCR
+# can't provide. COMBINE_OCR keeps Docling authoritative for text in text-embedded
+# images; the vision LLM then only describes visuals. Only images are affected --
+# PDFs/documents still go to Docling. Active only when BASE_URL + MODEL are set.
+# Plain env reads -> take effect on restart.
+# BASE_URL + API_KEY come from .env (ISO 27001 -- no committed creds), loaded by the
+# Import-DotEnv call above. Do NOT assign them here: this block runs AFTER Import-DotEnv,
+# so an assignment here would silently overwrite the .env values (that's the bug that made
+# setting them in .env "not work" before). Set them in .env; see .env.example.
+$env:RAG_IMAGE_VISION_LLM_MODEL    = 'google/gemma-4-E4B-it'   # e.g. 'gemma-4-e2b-it'
+$env:RAG_IMAGE_VISION_LLM_COMBINE_OCR = 'false'   # Sunway: Gemma-alone for rollout (fast on limited GPU, no OCR noise). Flip to 'true' (keeps ocr_lang set) only if IR shows text-dense images need OCR fidelity.
+# Disable reasoning at request time so chain-of-thought never lands in extracted text
+# (the loader also strips leaked reasoning as a fallback). Exact kwarg depends on the
+# model's chat template; confirm by curling the vLLM endpoint directly.
+# $env:RAG_IMAGE_VISION_LLM_EXTRA_BODY = '{"chat_template_kwargs": {"enable_thinking": false}}'
 # Voice (STT/TTS/Call) deferred for internal rollout — hide UI for everyone incl.
 # admins. Plain env flag (not PersistentConfig), so this takes effect on restart.
 $env:ENABLE_VOICE                  = 'false'

@@ -29,7 +29,9 @@
 		selectedFolder,
 		WEBUI_NAME,
 		sidebarWidth,
-		activeChatIds
+		activeChatIds,
+		chatCount,
+		showChatLimitModal
 	} from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
@@ -59,6 +61,7 @@
 	import TenantSwitcher from './Sidebar/TenantSwitcher.svelte';
 	import ChatItem from './Sidebar/ChatItem.svelte';
 	import RetentionNotice from '../common/RetentionNotice.svelte';
+	import ChatLimitModal from '../common/ChatLimitModal.svelte';
 	import Spinner from '../common/Spinner.svelte';
 	import Loader from '../common/Loader.svelte';
 	import Folder from '../common/Folder.svelte';
@@ -101,12 +104,12 @@
 	let showPinnedNotes = false;
 
 	// Live per-user chat count for the retention cap display. Refreshes whenever
-	// the chat list store changes (create / delete / load).
-	let chatCount = 0;
+	// the chat list store changes (create / delete / load). Published to the `chatCount`
+	// store so the cap can also be pre-flighted from the chat view (see Chat.svelte).
 	$: if (typeof localStorage !== 'undefined' && localStorage.token && $chats) {
 		getChatCount(localStorage.token)
 			.then((c) => {
-				if (typeof c === 'number') chatCount = c;
+				if (typeof c === 'number') chatCount.set(c);
 			})
 			.catch(() => {});
 	}
@@ -660,7 +663,17 @@
 		}
 	};
 
-	const newChatHandler = async () => {
+	const newChatHandler = async (e) => {
+		// Sunway retention cap: at the limit, block the new chat and open the
+		// chat-management modal instead of routing to a fresh chat. The backend
+		// enforces the cap independently — this is the UX layer. Applies to all roles.
+		const maxChats = $config?.retention?.max_chats_per_user ?? 0;
+		if (maxChats > 0 && $chatCount >= maxChats) {
+			e?.preventDefault?.();
+			showChatLimitModal.set(true);
+			return;
+		}
+
 		selectedChatId = null;
 		selectedFolder.set(null);
 
@@ -695,6 +708,21 @@
 
 	const isWindows = /Windows/i.test(navigator.userAgent);
 </script>
+
+<ChatLimitModal
+	bind:show={$showChatLimitModal}
+	maxChats={$config?.retention?.max_chats_per_user ?? 0}
+	onUpdate={async () => {
+		await initChatList();
+		if (localStorage.token) {
+			getChatCount(localStorage.token)
+				.then((c) => {
+					if (typeof c === 'number') chatCount.set(c);
+				})
+				.catch(() => {});
+		}
+	}}
+/>
 
 <ArchivedChatsModal
 	bind:show={$showArchivedChats}
@@ -1386,7 +1414,7 @@
 						<RetentionNotice variant="banner" />
 						{#if ($config?.retention?.max_chats_per_user ?? 0) > 0}
 							<div class="flex justify-end pr-1">
-								<RetentionNotice variant="counter" {chatCount} />
+								<RetentionNotice variant="counter" chatCount={$chatCount} />
 							</div>
 						{/if}
 					</div>

@@ -32,6 +32,7 @@ from open_webui.env import (
     BYPASS_MODEL_ACCESS_CONTROL,
     CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS,
     CHAT_RESPONSE_STREAM_DELTA_CHUNK_SIZE,
+    IMAGE_GENERATION_MAX_PER_REQUEST,
     ENABLE_CHAT_RESPONSE_BASE64_IMAGE_URL_CONVERSION,
     ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_QUERIES_CACHE,
@@ -112,6 +113,7 @@ from open_webui.utils.misc import (
     strip_internal_image_embeds,
 )
 from open_webui.utils.payload import apply_system_prompt_to_body
+from open_webui.utils.system_prompt import isolate_user_system_prompt
 from open_webui.utils.plugin import load_function_module_by_id
 from open_webui.utils.response import normalize_usage
 from open_webui.utils.sanitize import sanitize_code
@@ -204,6 +206,80 @@ def _split_tool_calls(
                 expanded.append(cloned)
 
     return expanded
+
+
+# Sunway: name of the built-in image tool we dedup on. Kept as a constant so the
+# dedup below stays image-only and is easy to find/extend.
+IMAGE_GENERATION_TOOL_NAME = 'generate_image'
+
+
+def _filter_image_generation_tool_calls(
+    tool_calls: list[dict],
+    seen_signatures: set,
+    budget: dict,
+) -> list[dict]:
+    """Dedup and cap generate_image tool calls for one chat request (Sunway).
+
+    Two failure modes on small self-hosted models (e.g. Qwen3.6 35B A3B), both fixed here:
+
+    1. Exact duplicates — the SAME generate_image call emitted two+ times in one turn
+       (byte-identical prompts), producing duplicate images / "View Result" blocks for a
+       single "show me a pic". Collapsed by (name, normalized-args) signature. A legit
+       "make me two images" uses *different* prompts, so it is NOT deduped.
+
+    2. Runaway — the model emits dozens of DIFFERENT generate_image calls for one vague
+       prompt ("Exploring 34 generate_image" and climbing). Signatures differ, so dedup
+       can't help; instead `budget['remaining']` caps total image generations per request.
+
+    Both are request-scoped: `seen_signatures` and `budget` are owned by the caller and
+    persist across tool-call iterations, so a repeat/overflow in a later round is caught
+    too. Image-only on purpose — deduping/capping arbitrary tools would suppress
+    legitimate repeats (e.g. two web searches). Non-image calls pass through untouched.
+    """
+    kept = []
+    for tool_call in tool_calls:
+        name = tool_call.get('function', {}).get('name', '')
+        if name != IMAGE_GENERATION_TOOL_NAME:
+            kept.append(tool_call)
+            continue
+
+        raw_args = tool_call.get('function', {}).get('arguments', '') or ''
+        # Normalize so semantically-identical args (key order / whitespace) share a
+        # signature; fall back to the raw string when the args don't parse.
+        normalized = None
+        try:
+            normalized = ast.literal_eval(raw_args)
+        except Exception:
+            try:
+                normalized = json.loads(raw_args)
+            except Exception:
+                normalized = None
+
+        if normalized is not None:
+            try:
+                sig_args = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
+            except Exception:
+                sig_args = raw_args.strip()
+        else:
+            sig_args = raw_args.strip()
+
+        signature = (name, sig_args)
+        if signature in seen_signatures:
+            log.info(f'[image dedup] skipping duplicate {name} call: {sig_args[:160]}')
+            continue
+
+        # Cap total (non-duplicate) image generations per request. None = unlimited.
+        remaining = budget.get('remaining')
+        if remaining is not None:
+            if remaining <= 0:
+                log.warning(f'[image cap] dropping {name} call over per-request limit: {sig_args[:160]}')
+                continue
+            budget['remaining'] = remaining - 1
+
+        seen_signatures.add(signature)
+        kept.append(tool_call)
+
+    return kept
 
 
 def get_citation_source_from_tool_result(
@@ -2436,8 +2512,17 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     system_message = get_system_message(form_data.get('messages', []))
     if system_message:  # Chat Controls/User Settings
         try:
+            # Sunway: this system message is USER-authored (the per-chat System Prompt). The
+            # provider router will prepend the admin/model prompt into the same message, so
+            # without isolation the two are indistinguishable strings in one role with the
+            # user's text last. Cap it, fence it as <user_preferences>, and append a
+            # precedence reminder so the operator holds both ends. See utils/system_prompt.py.
             form_data = await apply_system_prompt_to_body(
-                system_message.get('content'), form_data, metadata, user, replace=True
+                isolate_user_system_prompt(system_message.get('content') or ''),
+                form_data,
+                metadata,
+                user,
+                replace=True,
             )  # Required to handle system prompt variables
         except Exception:
             pass
@@ -4637,6 +4722,13 @@ async def streaming_chat_response_handler(response, ctx):
                         get_content_from_message(original_system_message) if original_system_message else None
                     )
 
+                # Sunway: request-scoped state for generate_image dedup + cap. The signature
+                # set collapses exact-duplicate image calls; the budget hard-caps total image
+                # generations per request (runaway guard). Both persist across tool-call
+                # iterations. See _filter_image_generation_tool_calls.
+                seen_image_tool_signatures: set = set()
+                image_generation_budget = {'remaining': IMAGE_GENERATION_MAX_PER_REQUEST}
+
                 while tool_calls and (
                     CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None
                     or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS
@@ -4644,6 +4736,19 @@ async def streaming_chat_response_handler(response, ctx):
                     tool_call_iterations += 1
 
                     response_tool_calls = tool_calls.pop(0)
+
+                    # Sunway: dedup exact-duplicate generate_image calls and cap the total
+                    # per request, before they spawn function_call items / result blocks —
+                    # fixes both the "two identical images" bug and the runaway "Exploring N
+                    # generate_image" loop.
+                    response_tool_calls = _filter_image_generation_tool_calls(
+                        response_tool_calls, seen_image_tool_signatures, image_generation_budget
+                    )
+
+                    # If filtering emptied this batch (all duplicates / over the cap), skip
+                    # straight to the next iteration rather than emitting an empty tool round.
+                    if not response_tool_calls:
+                        continue
 
                     # Append function_call items for each tool call
                     # (Responses API already has them from streaming, so skip duplicates)

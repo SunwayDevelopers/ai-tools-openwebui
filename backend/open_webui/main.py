@@ -429,6 +429,7 @@ from open_webui.env import (
     BYPASS_MODEL_ACCESS_CONTROL,
     CHANGELOG,
     CHAT_RETENTION_DAYS,
+    CHAT_SYSTEM_PROMPT_MAX_CHARS,
     ENABLE_CHAT_ARCHIVE,
     ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_TEMPORARY_CHAT,
@@ -456,6 +457,7 @@ from open_webui.env import (
     LICENSE_KEY,
     LOG_FORMAT,
     MAX_BODY_LOG_SIZE,
+    RAG_FULL_CONTEXT_MAX_CHARS,
     # Redis
     REDIS_CLUSTER,
     REDIS_KEY_PREFIX,
@@ -1888,6 +1890,22 @@ async def chat_completion(
                 'channel:'
             ):  # temporary/channel chats are not stored
                 if is_new_chat:
+                    # Sunway retention cap: the real new-chat persistence path is HERE
+                    # (the completion handler) — the frontend saves a fresh chat by
+                    # sending its first message, so the POST /chats/new gate never fires
+                    # for the normal flow. Enforce the cap here too so it holds for EVERY
+                    # role incl. admins. Hard block before any history build / generation.
+                    if MAX_CHATS_PER_USER:
+                        chat_count = await Chats.count_chats_by_user_id(user.id)
+                        if chat_count >= MAX_CHATS_PER_USER:
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail=ERROR_MESSAGES.DEFAULT(
+                                    f'You have reached the maximum of {MAX_CHATS_PER_USER} chats. '
+                                    'Please delete a chat before creating a new one.'
+                                ),
+                            )
+
                     # Build the full history upfront with ALL assistant placeholders
                     user_message = metadata.get('user_message') or {}
                     user_message_id = user_message.get('id') if user_message else None
@@ -2523,6 +2541,13 @@ async def get_app_config(request: Request):
                 'file': {
                     'max_size': app.state.config.FILE_MAX_SIZE,
                     'max_count': app.state.config.FILE_MAX_COUNT,
+                    # Drives the upload picker's `accept` filter (UX only — the server-side
+                    # allowlist in the files router is the actual boundary).
+                    'allowed_extensions': app.state.config.ALLOWED_FILE_EXTENSIONS,
+                    # Full-context ("use entire document") is downgraded to chunked
+                    # retrieval above this many extracted chars; the UI disables the
+                    # per-file toggle past it. 0 = unbounded (guard off).
+                    'full_context_max_chars': RAG_FULL_CONTEXT_MAX_CHARS,
                     'image_compression': {
                         'width': app.state.config.FILE_IMAGE_COMPRESSION_WIDTH,
                         'height': app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT,
@@ -2535,6 +2560,10 @@ async def get_app_config(request: Request):
                     'max_chats_per_user': MAX_CHATS_PER_USER,
                     'chat_retention_days': CHAT_RETENTION_DAYS,
                 },
+                # Sunway: char budget for the per-chat System Prompt, so the Controls
+                # textarea can show a live counter and stop the user at the same limit the
+                # backend truncates at (rather than silently trimming after the fact).
+                'chat_system_prompt_max_chars': CHAT_SYSTEM_PROMPT_MAX_CHARS,
                 'enable_chat_archive': ENABLE_CHAT_ARCHIVE,
                 'enable_temporary_chat': ENABLE_TEMPORARY_CHAT,
                 'enable_voice': ENABLE_VOICE,

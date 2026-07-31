@@ -30,6 +30,8 @@
 		socket,
 		audioQueue,
 		showControls,
+		chatControlsSaveState,
+		type ChatControlsSaveState,
 		showCallOverlay,
 		currentChatPage,
 		temporaryChatEnabled,
@@ -49,7 +51,9 @@
 		showFileNavPath,
 		showFileNavDir,
 		chatRequestQueues,
-		desktopEvent
+		desktopEvent,
+		chatCount,
+		showChatLimitModal
 	} from '$lib/stores';
 
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
@@ -188,10 +192,60 @@
 		navigateHandler();
 	}
 
+	// Sunway: per-chat Controls (the System Prompt) autosave + explicit Save button. `params`
+	// is the live request payload (the text applies to the next message whether or not it's
+	// persisted), so the Save button is commit-and-confirm for user reassurance, not a gate on
+	// when the prompt takes effect. State is surfaced via `chatControlsSaveState`.
 	let saveControlsTimer;
-	$: if (!loading && !$temporaryChatEnabled && $chatId && params && chatFiles) {
-		clearTimeout(saveControlsTimer);
-		saveControlsTimer = setTimeout(saveControls, 400);
+	let savedResetTimer;
+
+	// Sunway: independent snapshot of the last-persisted controls, for dirty detection.
+	// It must be a deep CLONE — `params`/`chatFiles` are assigned the *same object refs*
+	// held inside `chat.chat` on load, and the System Prompt textarea mutates `params` in
+	// place, so comparing against `chat.chat.params` would compare an object to itself and
+	// never register a change (the "always Saved" bug). Re-snapshot on load and after save.
+	let savedParamsSnapshot: any = {};
+	let savedFilesSnapshot: any = [];
+
+	const cloneControls = (v: any) => {
+		try {
+			return structuredClone(v);
+		} catch {
+			return JSON.parse(JSON.stringify(v ?? null));
+		}
+	};
+
+	const snapshotSavedControls = () => {
+		savedParamsSnapshot = cloneControls(params ?? {});
+		savedFilesSnapshot = cloneControls(chatFiles ?? []);
+	};
+
+	const controlsDirty = () =>
+		!equal(params ?? {}, savedParamsSnapshot) || !equal(chatFiles ?? [], savedFilesSnapshot);
+
+	const setControlsSaveState = (state: ChatControlsSaveState) => {
+		clearTimeout(savedResetTimer);
+		chatControlsSaveState.set(state);
+
+		if (state === 'saved') {
+			// Settle back to a quiet panel rather than leaving a stale "Saved" behind.
+			savedResetTimer = setTimeout(() => chatControlsSaveState.set('idle'), 2000);
+		}
+	};
+
+	$: if (!loading && !$temporaryChatEnabled && params && chatFiles) {
+		if (!$chatId) {
+			// New/unpersisted chat: there is no chat row to autosave into yet (chatId is
+			// assigned when the first message creates the chat, at which point the prompt is
+			// persisted). Show an honest "applies to your next message" hint rather than a
+			// grey "Saved ✓" that falsely reads as done and leaves the button looking dead.
+			setControlsSaveState('unsaved');
+		} else if (controlsDirty()) {
+			// Immediate, so an impatient user sees the edit register before the debounce.
+			setControlsSaveState('dirty');
+			clearTimeout(saveControlsTimer);
+			saveControlsTimer = setTimeout(saveControls, 400);
+		}
 	}
 
 	const navigateHandler = async () => {
@@ -203,6 +257,8 @@
 
 		clearTimeout(saveControlsTimer);
 		await saveControls();
+		// Don't carry this chat's save status into the next one.
+		setControlsSaveState('idle');
 		loading = true;
 
 		prompt = '';
@@ -881,6 +937,7 @@
 		return () => {
 			try {
 				clearTimeout(saveControlsTimer);
+				clearTimeout(savedResetTimer);
 				saveControls();
 				if (chatIdProp && !$temporaryChatEnabled) {
 					updateLastReadAt(chatIdProp);
@@ -1286,6 +1343,8 @@
 
 		chatFiles = [];
 		params = {};
+		// Baseline dirty detection for the fresh chat (empty controls).
+		snapshotSavedControls();
 		taskIds = null;
 		chatTasks = [];
 
@@ -1442,6 +1501,8 @@
 
 				params = chatContent?.params ?? {};
 				chatFiles = chatContent?.files ?? [];
+				// Baseline dirty detection to the just-loaded (persisted) controls.
+				snapshotSavedControls();
 
 				// Load tasks from chat-level DB field
 				chatTasks = chat?.tasks ?? [];
@@ -2034,6 +2095,28 @@
 					maxCount: $config?.file?.max_count
 				})
 			);
+			return;
+		}
+
+		// Sunway retention cap: pre-flight the limit BEFORE the input is cleared below.
+		//
+		// The sidebar's "New Chat" button guards the cap, but it isn't the only door to an empty
+		// chat — landing on `/` from a bookmark, the mobile navbar button, and post-delete
+		// redirects all get here without passing it. On those paths the old behaviour was: type a
+		// long prompt, attach files, hit send, and only THEN have /chats/new return 403 — by
+		// which point the input had already been wiped, so the message was gone and all the user
+		// got was a toast. Checking here means the cap is enforced on every door, and it fails
+		// before anything is discarded.
+		//
+		// Only for the first message of a persisted chat: that's the only point a chat row is
+		// created. The backend enforces the cap independently — this is the UX layer.
+		if (
+			!$temporaryChatEnabled &&
+			createMessagesList(history, history.currentId).length === 0 &&
+			($config?.retention?.max_chats_per_user ?? 0) > 0 &&
+			$chatCount >= $config.retention.max_chats_per_user
+		) {
+			showChatLimitModal.set(true);
 			return;
 		}
 
@@ -2876,12 +2959,38 @@
 
 	const saveControls = async () => {
 		if (!$chatId || $temporaryChatEnabled) return;
-		const loaded = chat?.chat ?? {};
-		if (equal(params, loaded.params ?? {}) && equal(chatFiles, loaded.files ?? [])) return;
+		if (!controlsDirty()) {
+			setControlsSaveState('idle');
+			return;
+		}
 
-		await updateChatById(localStorage.token, $chatId, { params, files: chatFiles }).catch((err) =>
-			console.error('[controls autosave]', err)
-		);
+		setControlsSaveState('saving');
+		try {
+			const updated = await updateChatById(localStorage.token, $chatId, {
+				params,
+				files: chatFiles
+			});
+			if (updated) {
+				chat = updated;
+			}
+			// Re-baseline the dirty snapshot to what we just persisted, so identical
+			// content isn't re-saved and the button correctly settles to "Saved".
+			snapshotSavedControls();
+			setControlsSaveState('saved');
+		} catch (err) {
+			console.error('[controls autosave] failed to save chat controls', err);
+			setControlsSaveState('error');
+		}
+	};
+
+	// Sunway: explicit "save now" for the System Prompt Save button. Cancels the pending
+	// debounce and persists immediately, so an impatient user who clicks gets an instant
+	// Saving.../Saved instead of waiting out the 400ms autosave. Doubles as the error retry.
+	// NOTE: this changes only WHEN the prompt is persisted, not WHEN it applies — the text is
+	// already the live request payload, so it takes effect on the next message regardless.
+	const saveControlsNow = () => {
+		clearTimeout(saveControlsTimer);
+		saveControls();
 	};
 
 	const MAX_DRAFT_LENGTH = 5000;
@@ -3281,6 +3390,7 @@
 					bind:params
 					bind:files
 					bind:pane={controlPane}
+					onSave={saveControlsNow}
 					chatId={$chatId}
 					modelId={selectedModelIds?.at(0) ?? null}
 					models={selectedModelIds.reduce((a, e, i, arr) => {
