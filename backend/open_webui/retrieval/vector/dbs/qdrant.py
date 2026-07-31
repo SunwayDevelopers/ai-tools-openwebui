@@ -16,6 +16,7 @@ from open_webui.config import (
     QDRANT_TIMEOUT,
     QDRANT_URI,
 )
+from open_webui.env import ENABLE_MULTI_TENANCY
 from open_webui.retrieval.vector.main import (
     GetResult,
     SearchResult,
@@ -33,6 +34,8 @@ log = logging.getLogger(__name__)
 
 class QdrantClient(VectorDBBase):
     def __init__(self):
+        # Per-tenant underlying clients (multi-tenancy), keyed by (url, api_key).
+        self._tenant_clients: dict = {}
         self.collection_prefix = QDRANT_COLLECTION_PREFIX
         self.QDRANT_URI = QDRANT_URI
         self.QDRANT_API_KEY = QDRANT_API_KEY
@@ -67,6 +70,53 @@ class QdrantClient(VectorDBBase):
                 timeout=QDRANT_TIMEOUT,
             )
 
+    # ── Multi-tenancy: per-tenant collection prefix + underlying client ──
+    #
+    # Single chokepoint. Every method composes the physical collection name via
+    # _physical_name() and talks to the connection via _qc(); with multi-tenancy
+    # off both resolve to today's behaviour (the shared prefix + the single
+    # client built in __init__). With it on, they read the tenant's brokered
+    # Qdrant prefix/url/api_key from the request ContextVar and FAIL CLOSED if it
+    # is absent — so no query can ever run without a tenant scope.
+
+    def _collection_prefix(self) -> str:
+        if not ENABLE_MULTI_TENANCY:
+            return self.collection_prefix
+        from open_webui.utils.tenant import TenantContextError, require_tenant_context
+
+        prefix = require_tenant_context().connection.qdrant.collection_prefix
+        if not prefix:
+            raise TenantContextError('Tenant has no Qdrant collection prefix (fail-closed).')
+        return prefix
+
+    def _physical_name(self, collection_name: str) -> str:
+        prefix = self._collection_prefix()
+        if not prefix:
+            return collection_name
+        # Tenant prefixes are conventionally supplied with a trailing separator
+        # (e.g. 'acme_sales_'); the shared default ('open-webui') is not.
+        sep = '' if prefix.endswith('_') else '_'
+        return f'{prefix}{sep}{collection_name}'
+
+    def _client_for(self, url: str, api_key: Optional[str]):
+        key = (url, api_key or '')
+        client = self._tenant_clients.get(key)
+        if client is None:
+            client = Qclient(url=url, api_key=api_key, timeout=self.QDRANT_TIMEOUT)
+            self._tenant_clients[key] = client
+        return client
+
+    def _qc(self):
+        """Return the underlying qdrant client for the current scope."""
+        if not ENABLE_MULTI_TENANCY:
+            if self.client is None:
+                raise RuntimeError('Qdrant is not configured (QDRANT_URI is unset).')
+            return self.client
+        from open_webui.utils.tenant import require_tenant_context
+
+        qdrant = require_tenant_context().connection.qdrant
+        return self._client_for(qdrant.url, qdrant.api_key)
+
     def _result_to_get_result(self, points) -> GetResult:
         ids = []
         documents = []
@@ -87,8 +137,8 @@ class QdrantClient(VectorDBBase):
         )
 
     def _create_collection(self, collection_name: str, dimension: int):
-        collection_name_with_prefix = f'{self.collection_prefix}_{collection_name}'
-        self.client.create_collection(
+        collection_name_with_prefix = self._physical_name(collection_name)
+        self._qc().create_collection(
             collection_name=collection_name_with_prefix,
             vectors_config=models.VectorParams(
                 size=dimension,
@@ -101,7 +151,7 @@ class QdrantClient(VectorDBBase):
         )
 
         # Create payload indexes for efficient filtering
-        self.client.create_payload_index(
+        self._qc().create_payload_index(
             collection_name=collection_name_with_prefix,
             field_name='metadata.hash',
             field_schema=models.KeywordIndexParams(
@@ -110,7 +160,7 @@ class QdrantClient(VectorDBBase):
                 on_disk=self.QDRANT_ON_DISK,
             ),
         )
-        self.client.create_payload_index(
+        self._qc().create_payload_index(
             collection_name=collection_name_with_prefix,
             field_name='metadata.file_id',
             field_schema=models.KeywordIndexParams(
@@ -136,10 +186,10 @@ class QdrantClient(VectorDBBase):
         ]
 
     def has_collection(self, collection_name: str) -> bool:
-        return self.client.collection_exists(f'{self.collection_prefix}_{collection_name}')
+        return self._qc().collection_exists(self._physical_name(collection_name))
 
     def delete_collection(self, collection_name: str):
-        return self.client.delete_collection(collection_name=f'{self.collection_prefix}_{collection_name}')
+        return self._qc().delete_collection(collection_name=self._physical_name(collection_name))
 
     def search(
         self,
@@ -152,8 +202,8 @@ class QdrantClient(VectorDBBase):
         if limit is None:
             limit = NO_LIMIT  # otherwise qdrant would set limit to 10!
 
-        query_response = self.client.query_points(
-            collection_name=f'{self.collection_prefix}_{collection_name}',
+        query_response = self._qc().query_points(
+            collection_name=self._physical_name(collection_name),
             query=vectors[0],
             limit=limit,
         )
@@ -180,8 +230,8 @@ class QdrantClient(VectorDBBase):
                     models.FieldCondition(key=f'metadata.{key}', match=models.MatchValue(value=value))
                 )
 
-            points = self.client.scroll(
-                collection_name=f'{self.collection_prefix}_{collection_name}',
+            points = self._qc().scroll(
+                collection_name=self._physical_name(collection_name),
                 scroll_filter=models.Filter(should=field_conditions),
                 limit=limit,
             )
@@ -192,8 +242,8 @@ class QdrantClient(VectorDBBase):
 
     def get(self, collection_name: str) -> Optional[GetResult]:
         # Get all the items in the collection.
-        points = self.client.scroll(
-            collection_name=f'{self.collection_prefix}_{collection_name}',
+        points = self._qc().scroll(
+            collection_name=self._physical_name(collection_name),
             limit=NO_LIMIT,  # otherwise qdrant would set limit to 10!
         )
         return self._result_to_get_result(points[0])
@@ -202,13 +252,13 @@ class QdrantClient(VectorDBBase):
         # Insert the items into the collection, if the collection does not exist, it will be created.
         self._create_collection_if_not_exists(collection_name, len(items[0]['vector']))
         points = self._create_points(items)
-        self.client.upload_points(f'{self.collection_prefix}_{collection_name}', points)
+        self._qc().upload_points(self._physical_name(collection_name), points)
 
     def upsert(self, collection_name: str, items: list[VectorItem]):
         # Update the items in the collection, if the items are not present, insert them. If the collection does not exist, it will be created.
         self._create_collection_if_not_exists(collection_name, len(items[0]['vector']))
         points = self._create_points(items)
-        return self.client.upsert(f'{self.collection_prefix}_{collection_name}', points)
+        return self._qc().upsert(self._physical_name(collection_name), points)
 
     def delete(
         self,
@@ -220,8 +270,8 @@ class QdrantClient(VectorDBBase):
         # Filtering on metadata.id silently misses points whose payload omits an
         # id (e.g. memories), leaving orphaned vectors behind.
         if ids:
-            return self.client.delete(
-                collection_name=f'{self.collection_prefix}_{collection_name}',
+            return self._qc().delete(
+                collection_name=self._physical_name(collection_name),
                 points_selector=models.PointIdsList(points=ids),
             )
 
@@ -235,14 +285,17 @@ class QdrantClient(VectorDBBase):
                     )
                 )
 
-        return self.client.delete(
-            collection_name=f'{self.collection_prefix}_{collection_name}',
+        return self._qc().delete(
+            collection_name=self._physical_name(collection_name),
             points_selector=models.FilterSelector(filter=models.Filter(must=field_conditions)),
         )
 
     def reset(self):
         # Resets the database. This will delete all collections and item entries.
-        collection_names = self.client.get_collections().collections
+        # Tenant-scoped: only collections under THIS scope's prefix are deleted,
+        # so a reset can never wipe another tenant's collections.
+        prefix = self._collection_prefix()
+        collection_names = self._qc().get_collections().collections
         for collection_name in collection_names:
-            if collection_name.name.startswith(self.collection_prefix):
-                self.client.delete_collection(collection_name=collection_name.name)
+            if collection_name.name.startswith(prefix):
+                self._qc().delete_collection(collection_name=collection_name.name)

@@ -56,6 +56,7 @@
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
+	import TenantSwitcher from './Sidebar/TenantSwitcher.svelte';
 	import ChatItem from './Sidebar/ChatItem.svelte';
 	import RetentionNotice from '../common/RetentionNotice.svelte';
 	import Spinner from '../common/Spinner.svelte';
@@ -1090,6 +1091,9 @@
 				}}
 			>
 				<div class="pb-1.5">
+					<!-- Multi-tenancy: workspace switcher (renders only when tenants are loaded) -->
+					<TenantSwitcher />
+
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<a
 							id="sidebar-new-chat-button"

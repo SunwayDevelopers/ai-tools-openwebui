@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import logging
 import re
+import secrets
 import time
 import urllib
 import uuid
@@ -28,6 +29,7 @@ from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from open_webui.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
     ENABLE_INITIAL_ADMIN_SIGNUP,
+    ENABLE_MULTI_TENANCY,
     ENABLE_OAUTH_TOKEN_EXCHANGE,
     WEBUI_AUTH,
     WEBUI_AUTH_COOKIE_SAME_SITE,
@@ -74,6 +76,7 @@ from open_webui.utils.auth import (
     verify_password,
 )
 from open_webui.utils.groups import apply_default_group_assignment
+from open_webui.utils.iam_session import clear_iam_cookies
 from open_webui.utils.misc import parse_duration, validate_email_format
 from open_webui.utils.oauth import auth_manager_config
 from open_webui.utils.rate_limit import RateLimiter
@@ -800,9 +803,17 @@ async def signout(request: Request, response: Response, db: AsyncSession = Depen
     if token:
         await invalidate_token(request, token)
 
+    # Under multi-tenancy the schat `token` cookie is not the credential that grants
+    # access — `iam_token` is, and it is what the tenant middleware authenticates on.
+    # Clearing cookies alone would not be enough either: the IAM JWT is a stateless
+    # signature, so a copy taken before sign-out stays valid until it expires. Revoking
+    # the refresh token server-side is what actually ends the session (todo.md T1.1).
+    await _revoke_iam_session(request)
+
     response.delete_cookie('token')
     response.delete_cookie('oui-session')
     response.delete_cookie('oauth_id_token')
+    clear_iam_cookies(response)
 
     oauth_session_id = request.cookies.get('oauth_session_id')
     if oauth_session_id:
@@ -898,9 +909,69 @@ async def delete_oauth_session_by_provider(
     return True
 
 
+async def _revoke_iam_session(request: Request) -> None:
+    """Tell IAM to end this user's session (all devices — spec §13 O6).
+
+    Deliberately best-effort: a failure here must NOT fail sign-out. If IAM is
+    unreachable the user still gets their cookies cleared and lands on /auth; trapping
+    them in a session because the control plane is down would be worse than the residual
+    risk (the access token expires within its short TTL regardless). No-ops when MT is off
+    or no refresh cookie is present — e.g. a session opened before this shipped.
+    """
+    if not ENABLE_MULTI_TENANCY:
+        return
+
+    from open_webui.utils.iam_session import get_refresh_token
+    from open_webui.utils.tenant import TenantResolutionError, get_iam_client
+
+    refresh_token = get_refresh_token(request)
+    if not refresh_token:
+        return
+
+    try:
+        await get_iam_client().revoke_session(refresh_token)
+    except TenantResolutionError as e:
+        log.warning('IAM session revoke failed during signout (status=%s)', e.status_code)
+    except Exception:
+        log.exception('IAM session revoke raised during signout')
+
+
 ############################
 # AddUser
 ############################
+
+
+async def _grant_iam_membership(request: Request, email: str, role: str) -> None:
+    """Under multi-tenancy, entitle ``email`` to the active tenant by writing an IAM
+    membership — the real access grant (a local user row alone grants nothing). Done
+    before the local user is created so a denied grant (e.g. a BU-admin trying to add
+    an ``admin``) fails the request cleanly instead of leaving an orphan local row.
+
+    Authorization is the caller's IAM JWT (the httpOnly ``iam_token`` cookie); IAM
+    enforces BU-admin/super-admin scope from it. No-ops when MT is off.
+    """
+    if not ENABLE_MULTI_TENANCY:
+        return
+
+    from open_webui.utils.tenant import (
+        TenantResolutionError,
+        get_iam_client,
+        require_tenant_context,
+    )
+
+    iam_token = request.cookies.get('iam_token')
+    if not iam_token:
+        raise HTTPException(401, detail='IAM session missing; sign in again to add members.')
+
+    ctx = require_tenant_context()
+    # Map the Open WebUI role to IAM's ('admin' | 'user'); 'pending' → 'user'.
+    iam_role = 'admin' if role == 'admin' else 'user'
+    try:
+        await get_iam_client().add_member(iam_token, ctx.slug, email=email, role=iam_role)
+    except TenantResolutionError as e:
+        if e.status_code == 409:
+            return  # already a member — idempotent, treat as success
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
 @router.post('/add', response_model=SigninResponse)
@@ -916,13 +987,22 @@ async def add_user(
     if await Users.get_user_by_email(form_data.email.lower(), db=db):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
-    try:
-        try:
-            validate_password(form_data.password)
-        except Exception as e:
-            raise HTTPException(400, detail=str(e))
+    # Grant tenant access first (fails closed under MT before any local row is written).
+    await _grant_iam_membership(request, form_data.email.lower(), form_data.role)
 
-        hashed = get_password_hash(form_data.password)
+    try:
+        password = form_data.password
+        if ENABLE_MULTI_TENANCY and not (password or '').strip():
+            # SSO-only tenants have no local password: login is WorkOS/OIDC and never
+            # checks it. Generate an unusable random secret so the auth row is valid.
+            password = secrets.token_urlsafe(32)
+        else:
+            try:
+                validate_password(password)
+            except Exception as e:
+                raise HTTPException(400, detail=str(e))
+
+        hashed = get_password_hash(password)
         user = await Auths.insert_new_auth(
             form_data.email.lower(),
             hashed,
@@ -1058,8 +1138,58 @@ class AdminConfig(BaseModel):
     RESPONSE_WATERMARK: str | None = None
 
 
+# Settings that govern identity, authentication or authorisation. Under
+# multi-tenancy IAM owns all three, so these are either inert or actively
+# dangerous — and they are NOT tenant-scoped:
+#
+#   * app.state.config is ONE process-global AppConfig (main.py:793) shared by
+#     every tenant served by the pod; utils/tenant.py never overlays it.
+#   * get_admin_user (utils/auth.py:530) checks only `user.role == 'admin'`, and
+#     under MT that role is a PER-TENANT value synced from the caller's own IAM
+#     membership (utils/auth.py:316).
+#
+# So without this guard a single business-unit admin could re-open local signup,
+# re-arm API keys, or set DEFAULT_USER_ROLE='admin' (explicitly allowed by the
+# allowlist below) for every tenant in the process. If REDIS_URL is set it is
+# worse: AppConfig mirrors writes to an untenanted key with no TTL and re-reads
+# it on every attribute access (internal/config.py:226,236-254), so the change
+# reaches every pod and outlives restarts.
+#
+# The admin UI submits the whole form on every save, so this compares against the
+# current value and only rejects an actual CHANGE — and rejects it loudly, since
+# silently discarding a setting an admin just toggled is its own bug.
+#
+# NOT a substitute for making config tenant-scoped; it closes the
+# security-relevant subset. See todo.md T2.4.
+_MT_MANAGED_BY_IAM = (
+    'ENABLE_SIGNUP',
+    'ENABLE_API_KEYS',
+    'ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS',
+    'API_KEYS_ALLOWED_ENDPOINTS',
+    'DEFAULT_USER_ROLE',
+    'JWT_EXPIRES_IN',
+)
+
+
+def _reject_iam_managed_changes(request: Request, form_data: AdminConfig) -> None:
+    if not ENABLE_MULTI_TENANCY:
+        return
+    changed = [key for key in _MT_MANAGED_BY_IAM if getattr(form_data, key) != getattr(request.app.state.config, key)]
+    if changed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                'These settings are managed by the IAM service and cannot be changed here: '
+                f'{", ".join(changed)}. They apply to every tenant on this deployment, '
+                'so they are configured at deploy time rather than per business unit.'
+            ),
+        )
+
+
 @router.post('/admin/config')
 async def update_admin_config(request: Request, form_data: AdminConfig, user=Depends(get_admin_user)):
+    _reject_iam_managed_changes(request, form_data)
+
     request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
     request.app.state.config.ADMIN_EMAIL = form_data.ADMIN_EMAIL
     request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
@@ -1174,6 +1304,19 @@ async def get_ldap_server(request: Request, user=Depends(get_admin_user)):
 
 @router.post('/admin/config/ldap/server')
 async def update_ldap_server(request: Request, form_data: LdapServerConfig, user=Depends(get_admin_user)):
+    # Writes an LDAP host and bind-DN password into the process-global config that
+    # every tenant shares, from a per-tenant admin role. Pointless while LDAP is
+    # disabled, and a credential-exfil primitive if it is ever enabled: point the
+    # server at an attacker-controlled host and collect the bind attempts.
+    if ENABLE_MULTI_TENANCY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                'LDAP server configuration is not available on this deployment. '
+                'Authentication is handled by the IAM service for every tenant.'
+            ),
+        )
+
     required_fields = [
         'label',
         'host',
@@ -1228,6 +1371,18 @@ class LdapConfigForm(BaseModel):
 
 @router.post('/admin/config/ldap')
 async def update_ldap_config(request: Request, form_data: LdapConfigForm, user=Depends(get_admin_user)):
+    # Same process-global, per-tenant-admin exposure as /admin/config — see the
+    # comment on _MT_MANAGED_BY_IAM. Called out separately because ENABLE_LDAP is
+    # NOT part of the AdminConfig model, so the guard there does not cover it.
+    # LDAP is a second authentication authority; schat has exactly one (IAM).
+    if ENABLE_MULTI_TENANCY and form_data.enable_ldap != request.app.state.config.ENABLE_LDAP:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                'LDAP is disabled on this deployment and cannot be enabled here. '
+                'Authentication is handled by the IAM service for every tenant.'
+            ),
+        )
     request.app.state.config.ENABLE_LDAP = form_data.enable_ldap
     return {'ENABLE_LDAP': request.app.state.config.ENABLE_LDAP}
 

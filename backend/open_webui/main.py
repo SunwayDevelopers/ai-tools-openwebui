@@ -437,6 +437,7 @@ from open_webui.env import (
     DEPLOYMENT_ID,
     ENABLE_AUDIT_GET_REQUESTS,
     ENABLE_COMPRESSION_MIDDLEWARE,
+    ENABLE_MULTI_TENANCY,
     ENABLE_CUSTOM_MODEL_FALLBACK,
     ENABLE_EASTER_EGGS,
     # OAuth Back-Channel Logout
@@ -647,6 +648,18 @@ async def lifespan(app: FastAPI):
     app.state.instance_id = INSTANCE_ID
     start_logger()
 
+    # Multi-tenancy: startup work (config load, admin bootstrap, function/tool
+    # init) and the background loops it spawns run against the system/default DB
+    # — there is no request tenant here. Enter a system context so the
+    # tenant-aware engine registry uses the default engine instead of failing
+    # closed. Reset just before yield; background tasks created during startup
+    # capture the system context at creation time and keep it for their life.
+    _mt_system_token = None
+    if ENABLE_MULTI_TENANCY:
+        from open_webui.utils.tenant import enter_system_context
+
+        _mt_system_token = enter_system_context()
+
     if RESET_CONFIG_ON_START:
         await async_reset_config()
 
@@ -740,6 +753,11 @@ async def lifespan(app: FastAPI):
 
     # Mark application as ready to accept traffic from a startup perspective.
     app.state.startup_complete = True
+
+    if _mt_system_token is not None:
+        from open_webui.utils.tenant import exit_system_context
+
+        exit_system_context(_mt_system_token)
 
     yield
 
@@ -1401,6 +1419,14 @@ app.add_middleware(RedirectMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CommitSessionMiddleware)
 app.add_middleware(AuthTokenMiddleware, fastapi_app=app)
+# Tenant resolution. Registered AFTER AuthTokenMiddleware so (add_middleware is
+# LIFO) it runs BEFORE it on the request phase and pins the tenant ContextVar
+# ahead of the route dependencies and DB/vector/storage access. Inert unless
+# multi-tenancy is enabled. See utils/tenant_middleware.py.
+if ENABLE_MULTI_TENANCY:
+    from open_webui.utils.tenant_middleware import TenantResolutionMiddleware
+
+    app.add_middleware(TenantResolutionMiddleware)
 app.add_middleware(WebsocketUpgradeGuardMiddleware)
 
 
@@ -1431,6 +1457,15 @@ app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
 
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
+
+# Multi-tenancy: workspace gate + BU-admin membership management, proxied to the
+# IAM control-plane. Only mounted when multi-tenancy is enabled.
+if ENABLE_MULTI_TENANCY:
+    from open_webui.routers import tenant, tenant_members
+
+    # GET /api/v1/tenant/me — pre-tenant bootstrap for the workspace gate.
+    app.include_router(tenant.router, prefix='/api/v1/tenant', tags=['tenant'])
+    app.include_router(tenant_members.router, prefix='/api/v1/tenant/members', tags=['tenant-members'])
 
 
 app.include_router(channels.router, prefix='/api/v1/channels', tags=['channels'])
@@ -2421,6 +2456,7 @@ async def get_app_config(request: Request):
             'enable_signup': app.state.config.ENABLE_SIGNUP,
             'enable_login_form': app.state.config.ENABLE_LOGIN_FORM,
             'enable_websocket': ENABLE_WEBSOCKET_SUPPORT,
+            'enable_multi_tenancy': ENABLE_MULTI_TENANCY,
             # --- Authenticated: only consumed by logged-in frontend ---
             **(
                 {
@@ -2823,7 +2859,6 @@ async def oauth_login(provider: str, request: Request):
 
 
 @app.get('/oauth/{provider}/login/callback')
-@app.get('/oauth/{provider}/callback')  # Legacy endpoint
 async def oauth_login_callback(
     provider: str,
     request: Request,
