@@ -1,0 +1,263 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Build & Deploy — schat
+#
+# Builds the image, pushes it to ACR tagged with the commit SHA, then updates
+# image.tag in the manifests repo so the cluster picks it up.
+#
+# Manual trigger only (workflow_dispatch): deploys are a deliberate act, and
+# production must never happen as a side effect of a merge.
+#
+# Why SHA tags and not :latest — a floating tag makes `docker push` a silent
+# no-op when the content is unchanged, makes two pods able to run different
+# code, and makes `helm rollback` unable to name a previous image. A SHA tag
+# fixes all three. :latest is still published for convenience, but the manifest
+# always pins the SHA.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Build and Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy to which environment?'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+      image_tag:
+        description: 'Existing image tag to deploy (leave blank to build from this ref)'
+        required: false
+        type: string
+
+      skip_tests:
+        description: 'Skip tests?'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  IMAGE_NAME: schat
+  MANIFESTS_REPO: SunwayDevelopers/ai-tools-openwebui-manifest
+  MANIFESTS_BRANCH: main
+
+# One deploy at a time. Two concurrent runs would race each other's commit to
+# the manifests repo, and the loser's image tag would be silently discarded.
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests && inputs.image_tag == '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run tests
+        # Importing anything under open_webui runs Alembic at import time
+        # (config.py:131), so the suite needs a real database. Throwaway SQLite
+        # keeps it hermetic — no Postgres service container required.
+        env:
+          DATABASE_URL: sqlite:///./ci-test.db
+          ENABLE_DB_MIGRATIONS: 'true'
+          WEBUI_SECRET_KEY: ci-test-only-not-a-real-secret
+        working-directory: backend
+        run: python -m pytest open_webui/test -q
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push to ACR
+    runs-on: ubuntu-latest
+    # Runs whether or not `test` was skipped, but never after a real failure.
+    needs: [test]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Free up disk space
+        if: ${{ inputs.image_tag == '' }}
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Checkout source code
+        if: ${{ inputs.image_tag == '' }}
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved image tag: $TAG"
+
+      - name: Log in to Azure Container Registry
+        if: ${{ inputs.image_tag == '' }}
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.CTNREG_LOGIN_SERVER }}
+          username: ${{ secrets.CTNREG_USERNAME }}
+          password: ${{ secrets.CTNREG_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        if: ${{ inputs.image_tag == '' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: ${{ inputs.image_tag == '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          # Explicit, because the runtime stage has no --platform pin. Building
+          # on anything other than amd64 (e.g. an Apple Silicon laptop) yields
+          # an arm64 image that CrashLoopBackOffs with `exec format error`.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.CTNREG_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+            ${{ secrets.CTNREG_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          # Surfaces in the UI as the running version — makes "which code is
+          # actually deployed?" answerable without shelling into a pod.
+          build-args: |
+            BUILD_HASH=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the pushed image contains this commit
+        if: ${{ inputs.image_tag == '' }}
+        run: |
+          IMAGE="${{ secrets.CTNREG_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
+          echo "Inspecting $IMAGE"
+          BAKED=$(docker run --rm --entrypoint sh "$IMAGE" -c 'cat /app/backend/open_webui/env.py > /dev/null && echo ok')
+          if [ "$BAKED" != "ok" ]; then
+            echo "::error::Image does not look like a valid schat build."
+            exit 1
+          fi
+          docker image inspect "$IMAGE" --format 'digest: {{ index .RepoDigests 0 }}'
+
+  # ───────────────────────────────────────────────────────────────────────────
+  update-manifests:
+    name: Update Helm values
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+
+    steps:
+      - name: Checkout manifests repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MANIFESTS_REPO }}
+          ref: ${{ env.MANIFESTS_BRANCH }}
+          token: ${{ secrets.MANIFESTS_REPO_TOKEN }}
+          persist-credentials: true
+
+      - name: Install yq and Helm
+        run: |
+          wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Update image tag
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          FILE="helm-chart/values.${ENVIRONMENT}.yaml"
+          test -f "$FILE" || { echo "::error::$FILE not found in ${{ env.MANIFESTS_REPO }}"; exit 1; }
+          echo "Updating $FILE → image.tag: $TAG"
+          yq e ".image.tag = \"$TAG\"" -i "$FILE"
+          yq e '.image.tag' "$FILE"
+
+      - name: Validate the chart still renders
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          # The chart has fail-fast guards in templates/validate.yaml (unset
+          # required secrets, forbidden auth overrides). Catching those here
+          # beats discovering them during `helm upgrade` with a half-applied
+          # release — and beats committing a tag that cannot be deployed.
+          #
+          # `helm template` is the real gate: verified that `helm lint` reports a
+          # template-time `fail` as INFO and still exits 0, so lint alone would
+          # wave a broken overlay straight through. Keep both; do not drop the
+          # template call.
+          helm lint ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml"
+          helm template schat ./helm-chart -f "helm-chart/values.${ENVIRONMENT}.yaml" > /dev/null
+          echo "Chart renders cleanly for ${ENVIRONMENT}."
+
+      - name: Commit and push
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          FILE="helm-chart/values.${ENVIRONMENT}.yaml"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "image.tag is already $TAG — nothing to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "ci: deploy ${TAG} to ${ENVIRONMENT}"
+
+          # Rebase-and-retry: another deploy may have landed between checkout
+          # and push. Without this the run fails on a non-fast-forward and the
+          # built image is stranded, tagged but never referenced.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${{ env.MANIFESTS_BRANCH }}"; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected — rebasing and retrying ($attempt/3)."
+            git pull --rebase origin "${{ env.MANIFESTS_BRANCH }}"
+          done
+          echo "::error::Could not push to ${{ env.MANIFESTS_REPO }} after 3 attempts."
+          exit 1
+
+      - name: Summary
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          {
+            echo "### Deployed to \`${ENVIRONMENT}\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`${{ env.IMAGE_NAME }}:${TAG}\` |"
+            echo "| Manifests | \`${{ env.MANIFESTS_REPO }}@${{ env.MANIFESTS_BRANCH }}\` |"
+            echo
+            echo "If the cluster is not watching the manifests repo, apply it:"
+            echo '```'
+            echo "helm upgrade --install schat ./helm-chart -f helm-chart/values.${ENVIRONMENT}.yaml"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

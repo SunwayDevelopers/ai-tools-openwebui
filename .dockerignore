@@ -1,3 +1,10 @@
+# .git is NOT needed by any build step, but it changes on every commit/fetch/checkout —
+# while it was in the context, routine git activity alone invalidated COPY layers and
+# forced full rebuilds. It is also large, so excluding it speeds up context upload too.
+.git
+.gitattributes
+.gitignore
+
 .github
 .DS_Store
 docs
@@ -18,3 +25,17 @@ uploads
 **/*.db
 _test
 backend/data/*
+
+# Local build/tool output. `build/` in particular is a stale local frontend bundle — the
+# image uses the one produced by the build stage (COPY --from=build /app/build), never
+# this one, so shipping it in the context only risks confusion and invalidated layers.
+build
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.eslintcache
+
+# Packaged charts and deploy config: not build inputs, and they change often.
+helm-chart
+*.tgz
