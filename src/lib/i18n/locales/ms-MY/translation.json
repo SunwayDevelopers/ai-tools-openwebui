@@ -1152,6 +1152,7 @@
 	"Image Size": "Saiz Imej",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Imej",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "Import",
 	"Import Chats": "Import Perbualan",
 	"Import Config": "Konfigurasi Import",

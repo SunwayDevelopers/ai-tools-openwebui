@@ -861,17 +861,31 @@ class Loader:
         else:
             prompt = DEFAULT_VISION_DESCRIBE_PROMPT if combine_ocr else DEFAULT_VISION_PROMPT
 
-        vision_docs = VisionLLMLoader(
-            base_url=RAG_IMAGE_VISION_LLM_BASE_URL,
-            model=RAG_IMAGE_VISION_LLM_MODEL,
-            file_path=file_path,
-            api_key=RAG_IMAGE_VISION_LLM_API_KEY,
-            mime_type=file_content_type,
-            prompt=prompt,
-            max_tokens=RAG_IMAGE_VISION_LLM_MAX_TOKENS,
-            extra_body=extra_body,
-        ).load()
-        vision_text = '\n'.join(doc.page_content for doc in vision_docs).strip()
+        # Mirror of the Docling step above: degrade instead of failing the whole upload when
+        # the vision endpoint is down/slow -- but ONLY when the OCR step already produced
+        # text worth keeping. With nothing else extracted there is no partial result to
+        # return, and quietly storing an empty document would be the same silent-degradation
+        # trap as a blank DOCLING_SERVER_URL (see sunway-schat-notes.md §2 cutover checks):
+        # the upload would "succeed" with no content and nobody would learn the VLM is down.
+        # So: partial result -> warn and continue; no result -> surface the error.
+        vision_text = ''
+        try:
+            vision_docs = VisionLLMLoader(
+                base_url=RAG_IMAGE_VISION_LLM_BASE_URL,
+                model=RAG_IMAGE_VISION_LLM_MODEL,
+                file_path=file_path,
+                api_key=RAG_IMAGE_VISION_LLM_API_KEY,
+                mime_type=file_content_type,
+                prompt=prompt,
+                max_tokens=RAG_IMAGE_VISION_LLM_MAX_TOKENS,
+                extra_body=extra_body,
+            ).load()
+            vision_text = '\n'.join(doc.page_content for doc in vision_docs).strip()
+        except Exception as e:
+            if not ocr_text:
+                log.error(f'Vision image path: vision LLM failed ({e}) and no OCR text to fall back on')
+                raise
+            log.warning(f'Vision image path: vision LLM failed ({e}); using Docling OCR text only')
 
         # Drop the describe-only sentinel so pure-text images don't get an empty section.
         if vision_text.lower().strip('.() ') == 'no additional visual content':

@@ -326,7 +326,11 @@
 		};
 		setupKeyboardShortcuts();
 
-		if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
+		// Sunway: upstream auto-pops its CHANGELOG modal at admins whenever the Open WebUI
+		// version changes. That surfaces upstream release notes (and the upstream version)
+		// inside schat on every sync. Not licence-bearing — the required attribution lives in
+		// Settings > About and is kept. Gated off; restore the condition to re-enable.
+		if (false && $user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
 			showChangelog.set($settings?.version !== $config.version);
 		}
 
@@ -394,7 +398,13 @@
 <SettingsModal bind:show={$showSettings} />
 <ChangelogModal bind:show={$showChangelog} />
 
-{#if version && compareVersion(version.latest, version.current) && ($settings?.showUpdateToast ?? true)}
+<!-- Sunway: the "A new version (vX.Y.Z) is now available" toast. Already unreachable while
+     ENABLE_VERSION_UPDATE_CHECK is false (the fetch at ~line 353 never runs, so `version`
+     stays null), but hard-gated here too: this advertises an UPSTREAM Open WebUI release
+     inside schat, and schat is versioned by SCHAT_VERSION, so the number shown is
+     meaningless-to-wrong for staff. Belt and braces — a future default flip or a manual
+     env override can't bring it back by accident. Hidden, not deleted. -->
+{#if false && version && compareVersion(version.latest, version.current) && ($settings?.showUpdateToast ?? true)}
 	<div class=" absolute bottom-8 right-8 z-50" in:fade={{ duration: 100 }}>
 		<UpdateInfoToast
 			{version}

@@ -767,11 +767,25 @@
 				// text, instead of blocking. Not available in temporary chats (no upload).
 				const effectiveModelCount = atSelectedModel?.id ? 1 : selectedModels.length;
 				const someModelLacksVision = visionCapableModels.length !== effectiveModelCount;
-				const ocrFallback = ($config?.file?.image_ocr_fallback ?? false) && !$temporaryChatEnabled;
+				// Two independent reasons the fallback can be unavailable — keep them apart so
+				// the toast names the real blocker. Conflating them sends people to the model's
+				// vision toggle when the actual cause is the chat mode.
+				const fallbackEnabled = $config?.file?.image_ocr_fallback ?? false;
+				const ocrFallback = fallbackEnabled && !$temporaryChatEnabled;
 				const useOcr = ocrFallback && someModelLacksVision;
 
 				if (visionCapableModels.length === 0 && !ocrFallback) {
-					toast.error($i18n.t('Selected model(s) do not support image inputs'));
+					if (fallbackEnabled && $temporaryChatEnabled) {
+						// The model is irrelevant here: a temporary chat never persists the
+						// upload, so there is no file to hang the extracted text on.
+						toast.error(
+							$i18n.t(
+								'Images for model(s) without vision support are not available in a temporary chat.'
+							)
+						);
+					} else {
+						toast.error($i18n.t('Selected model(s) do not support image inputs'));
+					}
 					return;
 				}
 

@@ -83,14 +83,20 @@
 						v{WEBUI_VERSION}
 					</div>
 
-					<button
-						class=" underline flex items-center space-x-1 text-xs text-gray-500 dark:text-gray-500"
-						on:click={() => {
-							showChangelog.set(true);
-						}}
-					>
-						<div>{$i18n.t("See what's new")}</div>
-					</button>
+					<!-- Sunway: "See what's new" opens Open WebUI's upstream CHANGELOG, which lists
+					     upstream feature work that has no relationship to a schat release and is
+					     confusing for staff. Not licence-bearing (the attribution line above is).
+					     Hidden, not deleted. -->
+					{#if false}
+						<button
+							class=" underline flex items-center space-x-1 text-xs text-gray-500 dark:text-gray-500"
+							on:click={() => {
+								showChangelog.set(true);
+							}}
+						>
+							<div>{$i18n.t("See what's new")}</div>
+						</button>
+					{/if}
 				</div>
 
 				{#if $config?.features?.enable_version_update_check}
@@ -131,55 +137,83 @@
 				<span class=" capitalize">{$config?.license_metadata?.organization_name}</span>
 			</div>
 		{:else}
-			<div class="flex space-x-1">
-				<a href="https://discord.gg/5rJgQTnV4s" target="_blank">
-					<img
-						alt="Discord"
-						src="https://img.shields.io/badge/Discord-Open_WebUI-blue?logo=discord&logoColor=white"
-					/>
-				</a>
+			<!-- Sunway: Open WebUI community badges hidden for the internal rollout. These are
+			     PROMOTIONAL (join Discord / follow X / star the repo), not the attribution the
+			     licence requires — that is the "Powered by Open WebUI v{WEBUI_VERSION}" line
+			     above, which is DELIBERATELY RETAINED (LICENSE clause 4). The copyright and
+			     author-credit blocks below were hidden separately on request; the Twemoji
+			     credit below is KEPT (CC-BY, unrelated to Open WebUI — see the note there).
+			     These badges also each load an image from img.shields.io, i.e. an outbound
+			     third-party request from every staff member opening Settings.
+			     Hidden, not deleted. -->
+			{#if false}
+				<div class="flex space-x-1">
+					<a href="https://discord.gg/5rJgQTnV4s" target="_blank">
+						<img
+							alt="Discord"
+							src="https://img.shields.io/badge/Discord-Open_WebUI-blue?logo=discord&logoColor=white"
+						/>
+					</a>
 
-				<a href="https://twitter.com/OpenWebUI" target="_blank">
-					<img
-						alt="X (formerly Twitter) Follow"
-						src="https://img.shields.io/twitter/follow/OpenWebUI"
-					/>
-				</a>
+					<a href="https://twitter.com/OpenWebUI" target="_blank">
+						<img
+							alt="X (formerly Twitter) Follow"
+							src="https://img.shields.io/twitter/follow/OpenWebUI"
+						/>
+					</a>
 
-				<a href="https://github.com/open-webui/open-webui" target="_blank">
-					<img
-						alt="Github Repo"
-						src="https://img.shields.io/github/stars/open-webui/open-webui?style=social&label=Star us on Github"
-					/>
-				</a>
-			</div>
+					<a href="https://github.com/open-webui/open-webui" target="_blank">
+						<img
+							alt="Github Repo"
+							src="https://img.shields.io/github/stars/open-webui/open-webui?style=social&label=Star us on Github"
+						/>
+					</a>
+				</div>
+			{/if}
 		{/if}
 
+		<!-- Sunway: KEPT ON PURPOSE (re-enabled 2026-07-31 after verifying actual usage).
+		     This is a CC-BY 4.0 attribution and has NOTHING to do with Open WebUI. schat
+		     really does use Twemoji: utils/pdf_generator.py registers Twemoji.ttf as a
+		     fallback font (pdf.add_font('Twemoji', ...) / set_fallback_fonts) so emoji render
+		     in the per-chat PDF download, and static/assets/pdf-style.css lists it in the
+		     font stack. CC-BY requires attribution wherever the work is used, so this line
+		     stays for as long as we ship those assets. To remove it, drop the Twemoji font +
+		     emoji SVGs first and fall back to system emoji. -->
 		<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 			Emoji graphics provided by
 			<a href="https://github.com/jdecked/twemoji" target="_blank">Twemoji</a>, licensed under
 			<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC-BY 4.0</a>.
 		</div>
 
-		<div>
-			<pre
-				class="text-xs text-gray-400 dark:text-gray-500">Copyright (c) {new Date().getFullYear()} <a
-					href="https://openwebui.com"
-					target="_blank"
-					class="underline">Open WebUI Inc.</a
-				> <a href="https://github.com/open-webui/open-webui/blob/main/LICENSE" target="_blank"
-					>All rights reserved.</a
-				>
+		<!-- Sunway: Open WebUI copyright notice + author credit hidden on request (confirmed
+		     2026-07-31). The "Powered by Open WebUI v{WEBUI_VERSION}" line ABOVE is
+		     deliberately RETAINED as the LICENSE clause-4 attribution.
+		     ⚠️ Note (open item, sunway-schat-notes.md §1): the copyright notice + LICENSE
+		     link are the notice-retention part of the upstream licence — a separate
+		     obligation from the clause-4 branding rule the "Powered by" line satisfies.
+		     Hidden, not deleted — restore by dropping the {#if false} guard. -->
+		{#if false}
+			<div>
+				<pre
+					class="text-xs text-gray-400 dark:text-gray-500">Copyright (c) {new Date().getFullYear()} <a
+						href="https://openwebui.com"
+						target="_blank"
+						class="underline">Open WebUI Inc.</a
+					> <a href="https://github.com/open-webui/open-webui/blob/main/LICENSE" target="_blank"
+						>All rights reserved.</a
+					>
 </pre>
-		</div>
+			</div>
 
-		<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-			{$i18n.t('Created by')}
-			<a
-				class=" text-gray-500 dark:text-gray-300 font-medium"
-				href="https://github.com/tjbck"
-				target="_blank">Timothy J. Baek</a
-			>
-		</div>
+			<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+				{$i18n.t('Created by')}
+				<a
+					class=" text-gray-500 dark:text-gray-300 font-medium"
+					href="https://github.com/tjbck"
+					target="_blank">Timothy J. Baek</a
+				>
+			</div>
+		{/if}
 	</div>
 </div>
