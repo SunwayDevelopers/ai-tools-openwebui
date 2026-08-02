@@ -555,7 +555,7 @@ except (ValueError, TypeError):
 # CPU/RAM, risking a crash. This caps how many embed at once; the rest queue. Keep low on CPU
 # (embedding is CPU-bound in-process); raise once embedding is offloaded to the GPU endpoint.
 try:
-    EMBEDDING_MAX_CONCURRENCY = int(os.getenv('EMBEDDING_MAX_CONCURRENCY', '2'))
+    EMBEDDING_MAX_CONCURRENCY = int(os.getenv('EMBEDDING_MAX_CONCURRENCY', '6'))
 except (ValueError, TypeError):
     EMBEDDING_MAX_CONCURRENCY = 2
 if EMBEDDING_MAX_CONCURRENCY < 1:
@@ -721,7 +721,7 @@ RAG_IMAGE_VISION_LLM_PROMPT = os.getenv('RAG_IMAGE_VISION_LLM_PROMPT', '')
 # When true (and engine is Docling), also run Docling OCR for faithful text and prepend
 # it; the vision LLM then only describes visuals. A VLM can misread exact text
 # (digits/tables), so Docling stays authoritative for text-embedded images.
-RAG_IMAGE_VISION_LLM_COMBINE_OCR = os.getenv('RAG_IMAGE_VISION_LLM_COMBINE_OCR', 'True').lower() == 'true'
+RAG_IMAGE_VISION_LLM_COMBINE_OCR = os.getenv('RAG_IMAGE_VISION_LLM_COMBINE_OCR', 'False').lower() == 'true'
 try:
     RAG_IMAGE_VISION_LLM_MAX_TOKENS = int(os.getenv('RAG_IMAGE_VISION_LLM_MAX_TOKENS', '2048'))
 except (ValueError, TypeError):
@@ -761,18 +761,18 @@ except (ValueError, TypeError):
 # hard cap on chat creation ("delete one to create a new one"). 0 disables the
 # cap. The 1-month rolling expiry sweep is a separate mechanism.
 try:
-    MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '0'))
+    MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '30'))
 except (ValueError, TypeError):
-    MAX_CHATS_PER_USER = 0
+    MAX_CHATS_PER_USER = 30
 
 # Retention sweep: rolling deletion of chats (and the files/vectors they own
 # exclusively) whose last activity is older than CHAT_RETENTION_DAYS. 0 disables
 # the sweep. INTERVAL throttles how often it runs (cluster-wide, via a Redis
 # lock); BATCH caps chats purged per run so Qdrant/storage aren't hammered.
 try:
-    CHAT_RETENTION_DAYS = int(os.getenv('CHAT_RETENTION_DAYS', '0'))
+    CHAT_RETENTION_DAYS = int(os.getenv('CHAT_RETENTION_DAYS', '30'))
 except (ValueError, TypeError):
-    CHAT_RETENTION_DAYS = 0
+    CHAT_RETENTION_DAYS = 30
 try:
     RETENTION_SWEEP_INTERVAL = int(os.getenv('RETENTION_SWEEP_INTERVAL', '3600'))
 except (ValueError, TypeError):
@@ -785,13 +785,13 @@ except (ValueError, TypeError):
 # Chat archive feature. Default on (upstream behavior). When false, users cannot
 # archive chats — the archive endpoints reject it and the UI hides the controls;
 # unarchiving an already-archived chat is still allowed so any can be recovered.
-ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'True').lower() == 'true'
+ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'False').lower() == 'true'
 
 # Voice features (STT mic, TTS read-aloud, Call mode). Default on. When false the
 # voice UI is hidden for EVERYONE incl. admins (the per-user chat.stt/tts/call
 # permissions only hide it for non-admins). Code is kept — reversible by flipping
 # this back to true.
-ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'True').lower() == 'true'
+ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'False').lower() == 'true'
 
 # Temporary Chat. Default on (upstream behavior). When false, every entry point is
 # hidden/disabled for EVERYONE incl. admins (the per-user chat.temporary permission
@@ -799,7 +799,7 @@ ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'True').lower() == 'true'
 # ?temporary-chat=true URL param, temporary_enforced auto-enable, and the
 # "Temporary Chat by Default" setting. There is no server-side surface to disable —
 # a temporary chat is simply a chat that is never persisted.
-ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'True').lower() == 'true'
+ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == 'true'
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA
@@ -1282,7 +1282,9 @@ PIP_PACKAGE_INDEX_OPTIONS = os.getenv('PIP_PACKAGE_INDEX_OPTIONS', '').split()
 # OFFLINE_MODE
 ####################################
 
-ENABLE_VERSION_UPDATE_CHECK = os.getenv('ENABLE_VERSION_UPDATE_CHECK', 'true').lower() == 'true'
+# Sunway: default OFF (upstream default is 'true'). schat must not phone home to GitHub
+# or surface upstream release numbers -- the product is versioned by SCHAT_VERSION.
+ENABLE_VERSION_UPDATE_CHECK = os.getenv('ENABLE_VERSION_UPDATE_CHECK', 'false').lower() == 'true'
 OFFLINE_MODE = os.getenv('OFFLINE_MODE', 'false').lower() == 'true'
 
 if OFFLINE_MODE:

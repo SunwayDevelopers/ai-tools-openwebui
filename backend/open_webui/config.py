@@ -520,16 +520,20 @@ CODE_EXECUTION_JUPYTER_TIMEOUT = ConfigVar(
     int(os.getenv('CODE_EXECUTION_JUPYTER_TIMEOUT', '60')),
 )
 
+# Sunway: deferred features default OFF (upstream defaults are True). NOTE: these are
+# PersistentConfig -- the default only SEEDS a fresh DB. An existing deployment keeps the
+# value already in its DB, so staging/prod must still be flipped in Admin Settings. See
+# the deferred-features table in CLAUDE.md and sunway-schat-notes.md §2.
 ENABLE_CODE_INTERPRETER = ConfigVar(
     'ENABLE_CODE_INTERPRETER',
     'code_interpreter.enable',
-    os.getenv('ENABLE_CODE_INTERPRETER', 'True').lower() == 'true',
+    os.getenv('ENABLE_CODE_INTERPRETER', 'False').lower() == 'true',
 )
 
 ENABLE_MEMORIES = ConfigVar(
     'ENABLE_MEMORIES',
     'memories.enable',
-    os.getenv('ENABLE_MEMORIES', 'True').lower() == 'true',
+    os.getenv('ENABLE_MEMORIES', 'False').lower() == 'true',
 )
 
 CODE_INTERPRETER_ENGINE = ConfigVar(
@@ -1246,7 +1250,7 @@ ENABLE_RAG_HYBRID_SEARCH = ConfigVar(
 ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS = ConfigVar(
     'ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS',
     'rag.enable_hybrid_search_enriched_texts',
-    os.getenv('ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS', 'False').lower() == 'true',
+    os.getenv('ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS', 'True').lower() == 'true',
 )
 
 RAG_FULL_CONTEXT = ConfigVar(
@@ -1332,7 +1336,7 @@ ENABLE_ASYNC_EMBEDDING = ConfigVar(
 RAG_EMBEDDING_CONCURRENT_REQUESTS = ConfigVar(
     'RAG_EMBEDDING_CONCURRENT_REQUESTS',
     'rag.embedding_concurrent_requests',
-    int(os.getenv('RAG_EMBEDDING_CONCURRENT_REQUESTS', '0')),
+    int(os.getenv('RAG_EMBEDDING_CONCURRENT_REQUESTS', '8')),
 )
 
 RAG_EMBEDDING_QUERY_PREFIX = os.getenv('RAG_EMBEDDING_QUERY_PREFIX', None)
@@ -1383,7 +1387,7 @@ RAG_EXTERNAL_RERANKER_API_KEY = ConfigVar(
 RAG_EXTERNAL_RERANKER_TIMEOUT = ConfigVar(
     'RAG_EXTERNAL_RERANKER_TIMEOUT',
     'rag.external_reranker_timeout',
-    os.getenv('RAG_EXTERNAL_RERANKER_TIMEOUT', ''),
+    os.getenv('RAG_EXTERNAL_RERANKER_TIMEOUT', '20'),
 )
 
 
@@ -2812,7 +2816,10 @@ USER_PERMISSIONS_FEATURES_AUTOMATIONS = os.getenv('USER_PERMISSIONS_FEATURES_AUT
 USER_PERMISSIONS_FEATURES_CALENDAR = os.getenv('USER_PERMISSIONS_FEATURES_CALENDAR', 'True').lower() == 'true'
 
 
-USER_PERMISSIONS_SETTINGS_INTERFACE = os.getenv('USER_PERMISSIONS_SETTINGS_INTERFACE', 'True').lower() == 'true'
+# Sunway: the ~30 cosmetic toggles in Settings -> Interface are hidden from users (admins
+# bypass the permission). Seeds DEFAULT_USER_PERMISSIONS -- PersistentConfig, so an existing
+# DB keeps its stored group permission and must be changed in Admin Settings.
+USER_PERMISSIONS_SETTINGS_INTERFACE = os.getenv('USER_PERMISSIONS_SETTINGS_INTERFACE', 'False').lower() == 'true'
 
 
 DEFAULT_USER_PERMISSIONS = {
@@ -2899,7 +2906,7 @@ USER_PERMISSIONS = ConfigVar(
 ENABLE_FOLDERS = ConfigVar(
     'ENABLE_FOLDERS',
     'folders.enable',
-    os.getenv('ENABLE_FOLDERS', 'True').lower() == 'true',
+    os.getenv('ENABLE_FOLDERS', 'False').lower() == 'true',  # Sunway: deferred (PersistentConfig)
 )
 
 FOLDER_MAX_FILE_COUNT = ConfigVar(
@@ -2917,13 +2924,13 @@ ENABLE_CHANNELS = ConfigVar(
 ENABLE_CALENDAR = ConfigVar(
     'ENABLE_CALENDAR',
     'calendar.enable',
-    os.getenv('ENABLE_CALENDAR', 'True').lower() == 'true',
+    os.getenv('ENABLE_CALENDAR', 'False').lower() == 'true',  # Sunway: deferred (PersistentConfig)
 )
 
 ENABLE_AUTOMATIONS = ConfigVar(
     'ENABLE_AUTOMATIONS',
     'automations.enable',
-    os.getenv('ENABLE_AUTOMATIONS', 'True').lower() == 'true',
+    os.getenv('ENABLE_AUTOMATIONS', 'False').lower() == 'true',  # Sunway: deferred (PersistentConfig)
 )
 
 AUTOMATION_MAX_COUNT = ConfigVar(
@@ -2941,7 +2948,7 @@ AUTOMATION_MIN_INTERVAL = ConfigVar(
 ENABLE_NOTES = ConfigVar(
     'ENABLE_NOTES',
     'notes.enable',
-    os.getenv('ENABLE_NOTES', 'True').lower() == 'true',
+    os.getenv('ENABLE_NOTES', 'False').lower() == 'true',  # Sunway: deferred (PersistentConfig)
 )
 
 ENABLE_USER_STATUS = ConfigVar(
@@ -2989,16 +2996,23 @@ ENABLE_ADMIN_CHAT_ACCESS = os.getenv('ENABLE_ADMIN_CHAT_ACCESS', 'True').lower()
 
 ENABLE_ADMIN_ANALYTICS = os.getenv('ENABLE_ADMIN_ANALYTICS', 'True').lower() == 'true'
 
+# Sunway: default OFF (upstream default True). This single flag gates every "Made by Open
+# WebUI Community" / openwebui.com surface in the app -- Workspace Models + Tools +
+# Prompts, Admin Functions, the "Community Reviews" item in the CHAT model-selector menu
+# (user-facing, not covered by any of our nav/route hides), and the share link in
+# RateComment. All of them advertise the upstream community store, which staff cannot use
+# and which leaks the fork's identity. PersistentConfig -- existing DBs also need Admin
+# Settings.
 ENABLE_COMMUNITY_SHARING = ConfigVar(
     'ENABLE_COMMUNITY_SHARING',
     'ui.enable_community_sharing',
-    os.getenv('ENABLE_COMMUNITY_SHARING', 'True').lower() == 'true',
+    os.getenv('ENABLE_COMMUNITY_SHARING', 'False').lower() == 'true',
 )
 
 ENABLE_MESSAGE_RATING = ConfigVar(
     'ENABLE_MESSAGE_RATING',
     'ui.enable_message_rating',
-    os.getenv('ENABLE_MESSAGE_RATING', 'True').lower() == 'true',
+    os.getenv('ENABLE_MESSAGE_RATING', 'False').lower() == 'true',  # Sunway: deferred (PersistentConfig)
 )
 
 ENABLE_USER_WEBHOOKS = ConfigVar(

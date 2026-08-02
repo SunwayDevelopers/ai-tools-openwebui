@@ -36,6 +36,13 @@ $App          = $PSScriptRoot
 $staticStatic = Join-Path $App 'static\static'
 $staticRoot   = Join-Path $App 'static'
 $fontsDest    = Join-Path $App 'static\assets\fonts'
+# The backend's DEFAULT STATIC_DIR (env.py: STATIC_DIR = OPEN_WEBUI_DIR / 'static'), which
+# main.py mounts at /static BEFORE the SPA mount -- so it wins for /static/* even when a
+# built frontend is being served. dev.ps1 overrides STATIC_DIR to the repo's static\, which
+# is why brand assets look right there and upstream/404 everywhere else (start.sh, dev.sh,
+# bare uvicorn, the container). Vendoring here too makes STATIC_DIR unnecessary: no launcher
+# and no Helm manifest has to set it, and the wordmark stops 404-ing.
+$backendStatic = Join-Path $App 'backend\open_webui\static'
 
 if (-not (Test-Path $BrandRepo)) { throw "Brand repo not found: $BrandRepo" }
 foreach ($d in @('fonts', 'logos', 'favicons')) {
@@ -66,12 +73,14 @@ $slots = @(
     'favicon.png', 'favicon-dark.png', 'favicon-96x96.png', 'apple-touch-icon.png', 'logo.png',
     'splash.png', 'splash-dark.png', 'web-app-manifest-192x192.png', 'web-app-manifest-512x512.png', 'favicon.ico'
 )
-# Copy to BOTH static/static/ (frontend / prod build) and top-level static/ (backend STATIC_DIR,
-# which serves /static in dev). In-app <img> tags resolve via WEBUI_BASE_URL -> the backend, so
-# every in-app asset must exist in the top-level static/ dir or it 404s in dev.
+# Copy to ALL THREE: static/static/ (SvelteKit prod build), top-level static/ (what dev.ps1
+# points STATIC_DIR at), and backend/open_webui/static/ (the backend's DEFAULT STATIC_DIR).
+# In-app <img> tags resolve via WEBUI_BASE_URL -> the backend, so every in-app asset must
+# exist wherever that backend is actually serving /static from.
 foreach ($s in $slots) {
     Copy-Item $fav (Join-Path $staticStatic $s) -Force
     Copy-Item $fav (Join-Path $staticRoot $s) -Force
+    Copy-Item $fav (Join-Path $backendStatic $s) -Force
 }
 
 # 3) Wordmark (light) + generated dark variant (near-black body -> white; brand red preserved).
@@ -83,7 +92,7 @@ $wordmark = Join-Path $BrandRepo 'logos\schat-ai-logo.svg'
 $svg  = Get-Content $wordmark -Raw
 $dark = $svg -replace 'rgb\(10\.980225%, 10\.980225%, 10\.980225%\)', 'rgb(100%, 100%, 100%)'
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-foreach ($dir in @($staticStatic, $staticRoot)) {
+foreach ($dir in @($staticStatic, $staticRoot, $backendStatic)) {
     Copy-Item $wordmark (Join-Path $dir 'schat-wordmark.svg') -Force
     [System.IO.File]::WriteAllText((Join-Path $dir 'schat-wordmark-dark.svg'), $dark, $utf8NoBom)
 }
@@ -92,7 +101,8 @@ Write-Host ''
 Write-Host "Synced @sunway/brand-assets v$version ($commit)"
 Write-Host "  fonts    : $fontCount SunwaySans woff2 -> static/assets/fonts/"
 Write-Host "  icons    : $($slots.Count) slots + top-level favicon -> red-'S' mark"
-Write-Host "  wordmark : schat-wordmark.svg + schat-wordmark-dark.svg -> static/static/"
+Write-Host "  wordmark : schat-wordmark.svg + schat-wordmark-dark.svg"
+Write-Host "  targets  : static/static/, static/, backend/open_webui/static/ (backend default STATIC_DIR)"
 Write-Host ''
 Write-Host "Note: tab + app icons use the canonical brand favicon.png (red 'S'); the wordmark"
 Write-Host "      (schat-wordmark.svg + dark variant) is used on the login + sidebar header."

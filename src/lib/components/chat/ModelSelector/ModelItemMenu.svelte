@@ -144,7 +144,12 @@
 				<div class="flex items-center">{$i18n.t('Copy Link')}</div>
 			</button>
 
-			{#if $config?.features.enable_community_sharing}
+			<!-- Sunway: "Community Reviews" opens openwebui.com/models for the selected model.
+			     USER-FACING (chat model-selector menu) and not covered by any nav/route hide.
+			     ENABLE_COMMUNITY_SHARING now defaults false, but that is PersistentConfig — an
+			     existing DB keeps its stored value until Admin Settings is changed — so this is
+			     hard-gated too. Restore by dropping the `false &&`. -->
+			{#if false && $config?.features.enable_community_sharing}
 				<hr class="border-gray-50 dark:border-gray-800/30 my-1" />
 
 				<button

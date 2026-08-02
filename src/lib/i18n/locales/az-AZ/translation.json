@@ -1156,6 +1156,7 @@
 	"Image Size": "Şəkil ölçüsü",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Şəkillər",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "İdxal et",
 	"Import Chats": "Çatları idxal et",
 	"Import Config": "Konfiqurasiyanı idxal et",

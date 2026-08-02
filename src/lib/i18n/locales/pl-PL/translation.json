@@ -1164,6 +1164,7 @@
 	"Image Size": "Rozmiar obrazu",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Obrazy",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "Importuj",
 	"Import Chats": "Importuj czaty",
 	"Import Config": "Importuj konfigurację",

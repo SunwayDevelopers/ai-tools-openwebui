@@ -27,6 +27,8 @@ from open_webui.env import (
     ENABLE_IMAGE_OCR_FALLBACK,
     FILE_UPLOAD_RATE_LIMIT,
     FILE_UPLOAD_RATE_LIMIT_WINDOW,
+    RAG_IMAGE_VISION_LLM_BASE_URL,
+    RAG_IMAGE_VISION_LLM_MODEL,
 )
 
 # Content-extraction engines that can OCR image files (png/jpeg/tiff/...). When the
@@ -41,6 +43,8 @@ IMAGE_OCR_CAPABLE_ENGINES = {
     'mineru',
     'paddleocr_vl',
 }
+
+
 from open_webui.internal.db import get_async_db_context, get_async_session
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.channels import Channels
@@ -73,6 +77,26 @@ router = APIRouter()
 
 from open_webui.utils.access_control.files import has_access_to_file
 from open_webui.utils.retention import purge_file
+
+
+def _image_reader_configured(engine: str) -> bool:
+    """Whether SOMETHING can read an uploaded image into text.
+
+    Two independent readers, either of which is sufficient:
+      - an OCR-capable extraction engine (the original 2026-07-01 path), or
+      - the vision LLM (added 2026-07-20), which needs no extraction engine at all.
+
+    The vision LLM was slotted into the extraction pipeline and so inherited its
+    engine check, which meant Docling had to be selected even when the vision LLM
+    was doing all the work (RAG_IMAGE_VISION_LLM_COMBINE_OCR=false) and Docling was
+    never called. Keeping the two readers independent removes that hidden coupling;
+    `Loader` already tries the vision path first and degrades on its own when the
+    engine is not Docling.
+    """
+    if engine in IMAGE_OCR_CAPABLE_ENGINES:
+        return True
+    return bool(RAG_IMAGE_VISION_LLM_BASE_URL and RAG_IMAGE_VISION_LLM_MODEL)
+
 
 # Per-user upload rate limiter (Sunway). Every uploaded file is extracted + embedded, so
 # an unthrottled bulk upload can pin the shared GPU/embedding pipeline for all users.
@@ -208,12 +232,13 @@ async def process_uploaded_file(
                 and content_type.startswith(('image/', 'video/'))
                 and request.app.state.config.CONTENT_EXTRACTION_ENGINE != 'external'
                 # Sunway image OCR fallback: let images through to process_file when an
-                # OCR-capable engine (Docling et al.) is configured, so text-only models
-                # can read them. Videos and non-capable engines still skip/raise below.
+                # OCR-capable engine (Docling et al.) OR the vision LLM is configured, so
+                # text-only models can read them. Videos and images with no reader
+                # configured at all still skip/raise below.
                 and not (
                     content_type.startswith('image/')
                     and ENABLE_IMAGE_OCR_FALLBACK
-                    and request.app.state.config.CONTENT_EXTRACTION_ENGINE in IMAGE_OCR_CAPABLE_ENGINES
+                    and _image_reader_configured(request.app.state.config.CONTENT_EXTRACTION_ENGINE)
                 )
             ):
                 # Media files without an external extraction engine
