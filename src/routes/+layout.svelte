@@ -153,7 +153,24 @@
 			// Multi-tenancy: the active tenant slug rides on the handshake so the
 			// socket's connect handler can resolve the tenant (the iam_token cookie
 			// is sent automatically). Harmless when MT is off.
-			auth: { token: localStorage.token, tenant: getActiveTenant() }
+			//
+			// MUST be a callback, not an object literal. Socket.IO evaluates an object
+			// `auth` exactly once, at construction, and replays that same snapshot on
+			// every reconnection attempt. setupSocket() can run before the tenant
+			// bootstrap has written activeTenant — on a cold start with cleared storage
+			// it always does — and the snapshot then pins `tenant: null` for the life of
+			// the socket. _resolve_socket_tenant() fails closed on a missing slug, so
+			// the server rejects the connection, the client retries after
+			// reconnectionDelay, and it rejects again: a permanent 1s reject loop that
+			// no later tenant selection can break. Chat completions are delivered over
+			// this socket, so the response streams server-side, gets persisted, and
+			// never reaches the browser — the message hangs until a reload re-reads it
+			// from the database.
+			//
+			// A callback is re-invoked before each attempt, so both values are read
+			// fresh. That also stops a reconnect from replaying a token that has since
+			// been rotated by /api/v1/tenant/refresh.
+			auth: (cb) => cb({ token: localStorage.token, tenant: getActiveTenant() })
 		});
 		await socket.set(_socket);
 

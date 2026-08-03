@@ -5,6 +5,37 @@ import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 // injected globally by installTenantHeaderInjection() (see below).
 const ACTIVE_TENANT_KEY = 'activeTenant';
 
+// Mirror of ACTIVE_TENANT_KEY, for requests that cannot carry X-Tenant-Id.
+// installTenantHeaderInjection() works by patching window.fetch, but browser
+// sub-resource loads — <img>, <video>, CSS url(), EventSource — never go through
+// fetch, so no header can be attached to them. Avatars, model icons and generated
+// images are all <img> pointing at tenant-scoped routes, and 400 without this.
+// The backend reads it only as a fallback (utils/tenant_middleware.py).
+//
+// Not HttpOnly, because it has to be writable here. That grants nothing: the slug
+// was already client-supplied via the header, and the server still verifies
+// membership against the HttpOnly iam_token before honouring it.
+const ACTIVE_TENANT_COOKIE = 'tenant_slug';
+
+const writeTenantCookie = (slug: string): void => {
+	try {
+		// Secure only over https so local http dev still works. Lax matches the IAM
+		// cookies and is enough — these are same-site sub-resource loads.
+		const secure = location.protocol === 'https:' ? '; Secure' : '';
+		document.cookie = `${ACTIVE_TENANT_COOKIE}=${slug}; Path=/; SameSite=Lax${secure}`;
+	} catch {
+		/* ignore */
+	}
+};
+
+const deleteTenantCookie = (): void => {
+	try {
+		document.cookie = `${ACTIVE_TENANT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+	} catch {
+		/* ignore */
+	}
+};
+
 export const getActiveTenant = (): string | null => {
 	try {
 		return localStorage.getItem(ACTIVE_TENANT_KEY);
@@ -19,6 +50,9 @@ export const setActiveTenant = (slug: string): void => {
 	} catch {
 		/* ignore */
 	}
+	// Outside the try above: localStorage can throw (private mode, quota) and the
+	// cookie is what image loads depend on, so it must still be written.
+	writeTenantCookie(slug);
 };
 
 export const clearActiveTenant = (): void => {
@@ -27,6 +61,7 @@ export const clearActiveTenant = (): void => {
 	} catch {
 		/* ignore */
 	}
+	deleteTenantCookie();
 };
 
 export type WhoAmI = {
@@ -187,6 +222,13 @@ export const installTenantHeaderInjection = (): void => {
 	if (typeof window === 'undefined') return;
 	if ((window as any).__tenantFetchPatched) return;
 	(window as any).__tenantFetchPatched = true;
+
+	// Heal sessions that predate the cookie: setActiveTenant() only runs when the
+	// tenant is chosen or switched, so anyone already signed in has the slug in
+	// localStorage but no cookie, and their images would keep 400ing until they
+	// next switched tenant. Re-writing it at boot is idempotent.
+	const activeSlug = getActiveTenant();
+	if (activeSlug) writeTenantCookie(activeSlug);
 
 	const origin = window.location.origin;
 	const apiBase = WEBUI_BASE_URL || origin; // dev points at :8080; prod is same-origin
