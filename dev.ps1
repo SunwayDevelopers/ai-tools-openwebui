@@ -3,9 +3,10 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / searxng / minio / valkey -> Docker (detached, volumes persist)
-#   (docling is NOT started -- dev uses the team's GPU docling-serve on the AI server;
-#    see the CONTENT_EXTRACTION_ENGINE block below to run it locally again)
+#   postgres / qdrant / minio / valkey -> Docker (detached, volumes persist)
+#   (docling and searxng are NOT started -- dev uses the team's GPU docling-serve and
+#    self-hosted SearXNG on the AI server; see the CONTENT_EXTRACTION_ENGINE and
+#    web-search blocks below to run either one locally again)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -138,12 +139,16 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, minio, valkey)..." -ForegroundColor Yellow
 # 'docling' is deliberately absent: dev extracts via the team's GPU docling-serve on the
 # AI server, so the local CPU container (7GB image) was idle waste. To run it locally
 # again: docker compose -f docker-compose.dev.yml up -d docling  AND point
 # Admin Settings -> Documents -> Docling URL back at http://localhost:5001.
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant searxng minio valkey createbuckets
+# 'searxng' is deliberately absent for the same reason: dev searches via the team's
+# self-hosted SearXNG on the AI server. To run it locally again:
+# docker compose -f docker-compose.dev.yml up -d searxng  AND point
+# Admin Settings -> Web Search -> SearXNG Query URL back at http://localhost:8888/search.
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant minio valkey createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -205,11 +210,16 @@ Set-EnvDefault DOCLING_PARAMS                '{"do_ocr": true, "ocr_engine": "ea
 # gives no verdict (no async endpoint / connection error / contract mismatch), so a server without
 # a matching async API degrades gracefully. Set 'false' as a kill-switch to force the sync path.
 Set-EnvDefault DOCLING_ASYNC                 'true'
-# Web search via the searxng container (docker-compose.dev.yml). These only
-# seed the DB on first boot; after that, Admin Settings -> Web Search wins.
+# Web search via the team's self-hosted SearXNG on the AI server (no local container).
+# These only seed the DB on first boot; after that, Admin Settings -> Web Search wins.
+# NOTE: use the external ingress hostname here, NOT the in-cluster service DNS name
+# (http://searxng-http.project-user-zackczc.svc.cluster.local:8080) -- that only
+# resolves from inside the K8s cluster and belongs in the Helm manifest, not dev.
+# The bare base URL is fine: SearXNG 308-redirects '/' to '/search' preserving the
+# query string, and searxng.py appends q/format/etc as params itself.
 Set-EnvDefault ENABLE_WEB_SEARCH             'true'
 Set-EnvDefault WEB_SEARCH_ENGINE             'searxng'
-Set-EnvDefault SEARXNG_QUERY_URL             'http://localhost:8888/search?q=<query>'
+Set-EnvDefault SEARXNG_QUERY_URL             'https://searxng.mymswgl-ai-application.sunway.com/search'
 Set-EnvDefault AIOHTTP_CLIENT_SESSION_SSL    'false'
 Set-EnvDefault REQUESTS_VERIFY               'false'
 # Uncomment if corporate TLS interception breaks cert verification when connecting
@@ -330,7 +340,7 @@ Set-EnvDefault RAG_IMAGE_VISION_LLM_MODEL    'google/gemma-4-E4B-it'   # e.g. 'g
 # an existing dev DB (the postgres volume persists across restarts) the code default only
 # applies to a FRESH database -- flip them in Admin Settings to change an existing one.
 if (-not $env:WEBUI_SECRET_KEY) { $env:WEBUI_SECRET_KEY = 'dev-secret-key-change-in-prod-not-for-real-use' }
-if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash' }
+if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash-0731' }
 
 # -- run backend + frontend in this terminal -----------------------------------
 
