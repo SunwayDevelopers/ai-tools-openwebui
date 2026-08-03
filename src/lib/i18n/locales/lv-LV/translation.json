@@ -1160,6 +1160,7 @@
 	"Image Size": "Attēla izmērs",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Attēli",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "Importēt",
 	"Import Chats": "Importēt tērzēšanas",
 	"Import Config": "",

@@ -100,9 +100,17 @@ else
   ARGS=(--workers "$UVICORN_WORKERS")
 fi
 
+# --ws wsproto (Sunway): serve WebSockets via wsproto instead of the deprecated
+# `websockets` legacy impl that uvicorn[standard] selects by default. That impl has a
+# transport-level keepalive_ping concurrency bug (AssertionError in _drain_helper) which
+# drops the socket during long/idle tool calls -- the chat spinner then hangs forever even
+# though the response already completed and was persisted. wsproto has no redundant
+# transport ping, so Socket.IO's own heartbeat is the single liveness signal.
+# Placed before "${ARGS[@]}" so an explicit caller-supplied --ws still wins.
 exec env WEBUI_SECRET_KEY="${WEBUI_SECRET_KEY:-}" \
   "$PYTHON_CMD" -m uvicorn open_webui.main:app \
     --host "$HOST" \
     --port "$PORT" \
     --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}" \
+    --ws wsproto \
     "${ARGS[@]}"

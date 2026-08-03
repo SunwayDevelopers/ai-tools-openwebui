@@ -1160,6 +1160,7 @@
 	"Image Size": "Mida de la imatge",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Imatges",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "Importar",
 	"Import Chats": "Importar xats",
 	"Import Config": "Importar la configuració",

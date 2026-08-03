@@ -3,7 +3,7 @@
 	import Bolt from '$lib/components/icons/Bolt.svelte';
 	import { onMount, getContext } from 'svelte';
 	import { settings, WEBUI_NAME } from '$lib/stores';
-	import { WEBUI_VERSION } from '$lib/constants';
+	import { SCHAT_VERSION } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -76,7 +76,12 @@
 				? ' -mt-1'
 				: 'text-center items-center justify-center'}  self-start text-gray-600 dark:text-gray-400"
 		>
-			{$WEBUI_NAME} ‧ v{WEBUI_VERSION}
+			<!-- Sunway: was v{WEBUI_VERSION} — that is the UPSTREAM Open WebUI version (0.9.x),
+			     not the product version, and this line sits on the new-chat landing screen every
+			     user sees. Shows SCHAT_VERSION (src/lib/constants.ts) to match Settings → About.
+			     The upstream version stays visible in the "Powered by Open WebUI v…" attribution
+			     in About, which is where the licence requires it. -->
+			{$WEBUI_NAME} ‧ v{SCHAT_VERSION}
 		</div>
 	{/if}
 </div>

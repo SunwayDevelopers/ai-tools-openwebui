@@ -3,9 +3,10 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / searxng / minio / valkey -> Docker (detached, volumes persist)
-#   (docling is NOT started -- dev uses the team's GPU docling-serve on the AI server;
-#    see the CONTENT_EXTRACTION_ENGINE block below to run it locally again)
+#   postgres / qdrant / minio / valkey -> Docker (detached, volumes persist)
+#   (docling and searxng are NOT started -- dev uses the team's GPU docling-serve and
+#    self-hosted SearXNG on the AI server; see the CONTENT_EXTRACTION_ENGINE and
+#    web-search blocks below to run either one locally again)
 #   Backend  uvicorn --reload -> :8080  (prefixed [BE] in this terminal)
 #   Frontend vite dev --host  -> :5173  (prefixed [FE] in this terminal)
 #
@@ -30,13 +31,32 @@ $venvUvicorn = "$root\.venv\Scripts\uvicorn.exe"
 
 # -- helpers -------------------------------------------------------------------
 
+# Keys that came from .env. Set-EnvDefault yields to these, so .env is the single
+# source of truth for any value a developer wants to override -- the same file that
+# backend/start.sh, backend/dev.sh and bare uvicorn read. See .env.example.
+$script:DotEnvKeys = @{}
+
 function Import-DotEnv([string]$path) {
     foreach ($line in (Get-Content $path)) {
         if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
         $k, $v = $line -split '=', 2
         $v = $v -replace "^'(.*)'$", '$1' -replace '^"(.*)"$', '$1'
-        [System.Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), 'Process')
+        $key = $k.Trim()
+        $script:DotEnvKeys[$key] = $true
+        [System.Environment]::SetEnvironmentVariable($key, $v.Trim(), 'Process')
     }
+}
+
+# Seed a backend env var UNLESS .env already defines it.
+#
+# Deliberately keyed on "came from .env" rather than "is already set in the process":
+# this script's own assignments persist in the calling PowerShell session, so a plain
+# "if not set" test would make a SECOND run in the same terminal silently ignore edits
+# to this file. Consequence: a var exported by hand in your shell is still overridden
+# here -- put it in .env instead.
+function Set-EnvDefault([string]$name, [string]$value) {
+    if ($script:DotEnvKeys.ContainsKey($name)) { return }
+    [System.Environment]::SetEnvironmentVariable($name, $value, 'Process')
 }
 
 # -- stop ----------------------------------------------------------------------
@@ -119,12 +139,16 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, minio, valkey)..." -ForegroundColor Yellow
 # 'docling' is deliberately absent: dev extracts via the team's GPU docling-serve on the
 # AI server, so the local CPU container (7GB image) was idle waste. To run it locally
 # again: docker compose -f docker-compose.dev.yml up -d docling  AND point
 # Admin Settings -> Documents -> Docling URL back at http://localhost:5001.
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant searxng minio valkey createbuckets
+# 'searxng' is deliberately absent for the same reason: dev searches via the team's
+# self-hosted SearXNG on the AI server. To run it locally again:
+# docker compose -f docker-compose.dev.yml up -d searxng  AND point
+# Admin Settings -> Web Search -> SearXNG Query URL back at http://localhost:8888/search.
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant minio valkey createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -149,9 +173,15 @@ Write-Host "      Postgres is healthy." -ForegroundColor Green
 # CPU docling container is no longer started (see the compose block above).
 # The localhost URL below is kept only as the seed value for a fresh DB; if you wipe
 # the DB and want the GPU server, set it in Admin Settings after first boot.
-$env:CONTENT_EXTRACTION_ENGINE     = 'docling'
-$env:TIKA_SERVER_URL               = 'http://localhost:9998'
-$env:DOCLING_SERVER_URL            = 'http://localhost:5001'
+#
+# TIKA_SERVER_URL is deliberately NOT seeded (removed 2026-07-31). `_get_loader` is an
+# if/elif chain on the ENGINE, not a cascade, so the tika branch is unreachable while the
+# engine is docling -- the value was inert, and carrying it implied a fallback that does
+# not exist. Nothing falls back across engines: if docling is down the upload RAISES
+# (retrieval/loaders/main.py, "Error calling Docling"), which is what we want. Set the URL
+# in Admin Settings if anyone ever deliberately selects Tika.
+Set-EnvDefault CONTENT_EXTRACTION_ENGINE     'docling'
+Set-EnvDefault DOCLING_SERVER_URL            'http://localhost:5001'
 # OCR-quality tuning (forwarded as-is to docling-serve /v1/convert/file):
 #   do_ocr       -> enable OCR, applied SELECTIVELY: born-digital pages use their
 #                   text layer (fast), only pages without one get OCR'd
@@ -171,7 +201,7 @@ $env:DOCLING_SERVER_URL            = 'http://localhost:5001'
 # To restore Chinese OCR: teammate must bake the EasyOCR ch_sim model into the
 # docling-serve image, THEN re-test the multi-lang join format before setting it back.
 # All tunable live in Admin Settings -> Documents.
-$env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", "ocr_lang": "en", "images_scale": 2, "table_mode": "fast"}'
+Set-EnvDefault DOCLING_PARAMS                '{"do_ocr": true, "ocr_engine": "easyocr", "ocr_lang": "en", "images_scale": 2, "table_mode": "fast"}'
 # Sunway: use docling-serve's ASYNC API (submit -> long-poll -> fetch result) instead of the
 # blocking sync convert. The sync endpoint is capped by docling-serve's DOCLING_SERVE_MAX_SYNC_WAIT
 # (default 120s) and 504s large/OCR-heavy PDFs mid-convert regardless of our client timeout; async
@@ -179,68 +209,72 @@ $env:DOCLING_PARAMS                = '{"do_ocr": true, "ocr_engine": "easyocr", 
 # concurrent uploads). ON by default — DoclingLoader retries synchronously whenever the async path
 # gives no verdict (no async endpoint / connection error / contract mismatch), so a server without
 # a matching async API degrades gracefully. Set 'false' as a kill-switch to force the sync path.
-$env:DOCLING_ASYNC                 = 'true'
-# Web search via the searxng container (docker-compose.dev.yml). These only
-# seed the DB on first boot; after that, Admin Settings -> Web Search wins.
-$env:ENABLE_WEB_SEARCH             = 'true'
-$env:WEB_SEARCH_ENGINE             = 'searxng'
-$env:SEARXNG_QUERY_URL             = 'http://localhost:8888/search?q=<query>'
-$env:AIOHTTP_CLIENT_SESSION_SSL    = 'false'
-$env:REQUESTS_VERIFY               = 'false'
+Set-EnvDefault DOCLING_ASYNC                 'true'
+# Web search via the team's self-hosted SearXNG on the AI server (no local container).
+# These only seed the DB on first boot; after that, Admin Settings -> Web Search wins.
+# NOTE: use the external ingress hostname here, NOT the in-cluster service DNS name
+# (http://searxng-http.project-user-zackczc.svc.cluster.local:8080) -- that only
+# resolves from inside the K8s cluster and belongs in the Helm manifest, not dev.
+# The bare base URL is fine: SearXNG 308-redirects '/' to '/search' preserving the
+# query string, and searxng.py appends q/format/etc as params itself.
+Set-EnvDefault ENABLE_WEB_SEARCH             'true'
+Set-EnvDefault WEB_SEARCH_ENGINE             'searxng'
+Set-EnvDefault SEARXNG_QUERY_URL             'https://searxng.mymswgl-ai-application.sunway.com/search'
+Set-EnvDefault AIOHTTP_CLIENT_SESSION_SSL    'false'
+Set-EnvDefault REQUESTS_VERIFY               'false'
 # Uncomment if corporate TLS interception breaks cert verification when connecting
 # external MCP/OpenAPI tool servers (e.g. staging Sdeck /mcp). Prod default stays on.
-$env:AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL = 'false'
+Set-EnvDefault AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL 'false'
 # RAG embedding: BAAI/bge-m3 (1024-dim, multilingual; ~2.3GB HF download on first
 # use). Seeds the DB on first boot only; after that, Admin Settings -> Documents
 # wins. Switching from MiniLM (384-dim) requires resetting the vector DB
 # (POST /api/v1/retrieval/reset/db as admin) and re-adding knowledge files.
-$env:RAG_EMBEDDING_MODEL           = 'BAAI/bge-m3'
-$env:RAG_EMBEDDING_BATCH_SIZE      = '8'
+Set-EnvDefault RAG_EMBEDDING_MODEL           'BAAI/bge-m3'
+Set-EnvDefault RAG_EMBEDDING_BATCH_SIZE      '8'
 # Sunway: skip embedding for SMALL chat attachments (<= RAG_FULL_CONTEXT_MAX_CHARS) and
 # inject them full-context instead — makes those uploads extraction-only (instant, no embed
 # wait). KB adds + larger files still embed + RAG. OFF until an inference-concurrency stress
 # test confirms the fleet handles re-sending full docs each turn (KV-cache/window load).
 # Flip to 'true' to test in dev; enable prod only after that test + prefix-caching is on.
-$env:RAG_CHAT_ATTACHMENT_FULL_CONTEXT = 'true'
+Set-EnvDefault RAG_CHAT_ATTACHMENT_FULL_CONTEXT 'true'
 # File storage via the minio container (docker-compose.dev.yml). These are plain
 # startup env reads (not PersistentConfig), so they take effect on restart
 # regardless of existing DB. The bucket is auto-created by the 'createbuckets'
 # one-shot service (S3 provider won't auto-create it). Files saved to local disk
 # before this switch are NOT migrated.
-$env:STORAGE_PROVIDER              = 's3'
-$env:S3_ENDPOINT_URL               = 'http://localhost:9000'
-$env:S3_ACCESS_KEY_ID              = 'minioadmin'   # MINIO_ROOT_USER (compose default)
-$env:S3_SECRET_ACCESS_KEY          = 'minioadmin'   # MINIO_ROOT_PASSWORD (compose default)
-$env:S3_BUCKET_NAME                = 'open-webui'
-$env:S3_REGION_NAME                = 'us-east-1'     # any value; MinIO ignores it
+Set-EnvDefault STORAGE_PROVIDER              's3'
+Set-EnvDefault S3_ENDPOINT_URL               'http://localhost:9000'
+Set-EnvDefault S3_ACCESS_KEY_ID              'minioadmin'   # MINIO_ROOT_USER (compose default)
+Set-EnvDefault S3_SECRET_ACCESS_KEY          'minioadmin'   # MINIO_ROOT_PASSWORD (compose default)
+Set-EnvDefault S3_BUCKET_NAME                'open-webui'
+Set-EnvDefault S3_REGION_NAME                'us-east-1'     # any value; MinIO ignores it
 # Cache + websocket manager via the valkey container (Redis-compatible, so the
 # redis:// scheme applies). Without this, sessions/websocket/task state live in
 # process memory and don't survive a restart or scale past one replica.
-$env:REDIS_URL                     = 'redis://localhost:6379/0'
-$env:ENABLE_WEBSOCKET_SUPPORT      = 'true'
-$env:WEBSOCKET_MANAGER             = 'redis'
-$env:WEBSOCKET_REDIS_URL           = 'redis://localhost:6379/0'
+Set-EnvDefault REDIS_URL                     'redis://localhost:6379/0'
+Set-EnvDefault ENABLE_WEBSOCKET_SUPPORT      'true'
+Set-EnvDefault WEBSOCKET_MANAGER             'redis'
+Set-EnvDefault WEBSOCKET_REDIS_URL           'redis://localhost:6379/0'
 # Store Qdrant vectors memory-mapped from disk instead of holding them all in
 # RAM. Trades a small search-latency hit for a much lower RAM footprint -- the
 # right default at 10k-user scale. NOTE: applied at COLLECTION CREATION only;
 # existing collections keep their original setting until recreated/reindexed.
-$env:QDRANT_ON_DISK                = 'true'
-$env:STATIC_DIR                    = "$root\static"
+Set-EnvDefault QDRANT_ON_DISK                'true'
+Set-EnvDefault STATIC_DIR                    "$root\static"
 # Force line-buffered stdout so uvicorn / Python logs appear in real time
 # (without this, log lines sit in the pipe buffer until the browser hits the backend).
-$env:PYTHONUNBUFFERED              = '1'
+Set-EnvDefault PYTHONUNBUFFERED              '1'
 # Force UTF-8 for stdout/stderr so emoji / non-ASCII in log lines don't crash
 # loguru with UnicodeEncodeError on the default Windows cp1252 console encoding.
-$env:PYTHONIOENCODING              = 'utf-8'
+Set-EnvDefault PYTHONIOENCODING              'utf-8'
 # Windows can't make symlinks without admin or Developer Mode; HF falls back to copies anyway.
-$env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
-# Retention & limits (schat policy). Plain env reads -> take effect on restart.
-# NOTE: CHAT_RETENTION_DAYS>0 also arms the background sweep, which DELETES chats
-# (+ their files/vectors) inactive >N days. Your actively-used dev chats are safe
-# (recent updated_at); only long-abandoned ones would be swept.
-$env:MAX_CHATS_PER_USER            = '30'
-$env:CHAT_RETENTION_DAYS           = '30'
-$env:ENABLE_CHAT_ARCHIVE           = 'false'
+Set-EnvDefault HF_HUB_DISABLE_SYMLINKS_WARNING '1'
+# Retention & limits (schat policy) are CODE DEFAULTS as of 2026-07-31 -- 30 chats / 30
+# days in env.py, no longer seeded here (they were '0'/'0' in code before, i.e. the policy
+# was silently OFF for anyone who forgot the env). Override in .env to change them.
+# NOTE: CHAT_RETENTION_DAYS>0 arms the background sweep, which DELETES chats (+ their
+# files/vectors) inactive >N days. Actively-used dev chats are safe (recent updated_at);
+# only long-abandoned ones get swept.
 # FINALIZED 2026-07-23 (A/B closed): pdf -> DOCLING, fast-path OFF. Live tests on GPU-Docling:
 # small digital pdf pypdf ~2s (NO table structure, bold lost) vs markitdown ~3s (some structure)
 # vs docling ~4s (full tables + bold); large digital docling ~14s (full fidelity) vs pypdf ~1s
@@ -248,9 +282,9 @@ $env:ENABLE_CHAT_ARCHIVE           = 'false'
 # and image-baked text — so Docling wins outright once GPU removes the CPU-timeout reason pypdf
 # existed for. The pypdf/markitdown fast-path CODE + A/B harness are KEPT (hide-not-delete): flip
 # this back 'true' as a CPU-only-deployment timeout guard if GPU-Docling isn't serving prod yet.
-$env:RAG_PDF_FAST_PATH             = 'false'
+Set-EnvDefault RAG_PDF_FAST_PATH             'false'
 # PDF fast-path engine (only used if the fast-path is flipped back ON): 'pypdf' or 'markitdown'.
-$env:RAG_PDF_FAST_PATH_ENGINE      = 'pypdf'
+Set-EnvDefault RAG_PDF_FAST_PATH_ENGINE      'pypdf'
 # NB: RAG_PDF_IMAGE_ROUTE_ENABLED is intentionally NOT seeded here — it uses its env.py default
 # ('true'). Since 2026-07-21 the reroute routes image-bearing born-digital PDFs to Docling with
 # SELECTIVE OCR (it no longer forces OCR — the A/B showed force degraded the native text without
@@ -262,8 +296,8 @@ $env:RAG_PDF_FAST_PATH_ENGINE      = 'pypdf'
 # a code carve-out (loaders/main.py), independent of this toggle. The toggle is KEPT (seeds the
 # runtime A/B store; flip live in Admin Settings -> Documents) for the post-GPU re-test. ENGINE =
 # 'unstructured' or 'markitdown' (only used if you flip the fast-path back ON to A/B).
-$env:RAG_OFFICE_FAST_PATH          = 'false'
-$env:RAG_OFFICE_FAST_PATH_ENGINE   = 'unstructured'
+Set-EnvDefault RAG_OFFICE_FAST_PATH          'false'
+Set-EnvDefault RAG_OFFICE_FAST_PATH_ENGINE   'unstructured'
 # File-upload allow-list (Sunway SECURITY): which extensions may be uploaded. EMPTY
 # (upstream default) = ALLOW-ALL -> .exe/.bat/.tiff/.svg etc. are accepted. This curated
 # list = document + safe-image types the app can actually extract. Enforced server-side
@@ -271,7 +305,7 @@ $env:RAG_OFFICE_FAST_PATH_ENGINE   = 'unstructured'
 # cosmetic only. PersistentConfig -> seeds a FRESH DB only; on an existing DB set it in
 # Admin Settings -> Documents -> Allowed File Extensions. Add code exts (py,js,ts,...) if
 # you want code upload; do NOT add exe/bat/ps1/cmd/sh/env (scripts/secrets).
-$env:RAG_ALLOWED_FILE_EXTENSIONS   = 'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg'
+Set-EnvDefault RAG_ALLOWED_FILE_EXTENSIONS   'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg'
 # Image vision LLM (Sunway): route uploaded IMAGES to a small vision model (Gemma via
 # vLLM/LiteLLM) so text-only models (DeepSeek) get non-text visual understanding OCR
 # can't provide. COMBINE_OCR keeps Docling authoritative for text in text-embedded
@@ -282,42 +316,31 @@ $env:RAG_ALLOWED_FILE_EXTENSIONS   = 'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg
 # Import-DotEnv call above. Do NOT assign them here: this block runs AFTER Import-DotEnv,
 # so an assignment here would silently overwrite the .env values (that's the bug that made
 # setting them in .env "not work" before). Set them in .env; see .env.example.
-$env:RAG_IMAGE_VISION_LLM_MODEL    = 'google/gemma-4-E4B-it'   # e.g. 'gemma-4-e2b-it'
-$env:RAG_IMAGE_VISION_LLM_COMBINE_OCR = 'false'   # Sunway: Gemma-alone for rollout (fast on limited GPU, no OCR noise). Flip to 'true' (keeps ocr_lang set) only if IR shows text-dense images need OCR fidelity.
+Set-EnvDefault RAG_IMAGE_VISION_LLM_MODEL    'google/gemma-4-E4B-it'   # e.g. 'gemma-4-e2b-it'
 # Disable reasoning at request time so chain-of-thought never lands in extracted text
 # (the loader also strips leaked reasoning as a fallback). Exact kwarg depends on the
 # model's chat template; confirm by curling the vLLM endpoint directly.
 # $env:RAG_IMAGE_VISION_LLM_EXTRA_BODY = '{"chat_template_kwargs": {"enable_thinking": false}}'
-# Voice (STT/TTS/Call) deferred for internal rollout — hide UI for everyone incl.
-# admins. Plain env flag (not PersistentConfig), so this takes effect on restart.
-$env:ENABLE_VOICE                  = 'false'
-# Temporary Chat hidden for internal rollout — hides the navbar toggle, shortcut,
-# ?temporary-chat=true URL param, and "Temporary Chat by Default" setting for
-# everyone incl. admins. Plain env flag, takes effect on restart.
-$env:ENABLE_TEMPORARY_CHAT         = 'false'
-# Version update check off — internal rollout shouldn't ping GitHub for Open WebUI
-# releases or show employees upstream release numbers. Plain env; server returns
-# current==latest so the About "Check for updates" UI stays hidden.
-$env:ENABLE_VERSION_UPDATE_CHECK   = 'false'
-# Deferred features — hidden from the UI for everyone incl. admins (schat rollout).
-# IMPORTANT: these are PersistentConfig — the env only SEEDS the DB on FIRST boot.
-# On an existing dev DB (postgres volume persists), also flip them off in
-# Admin Settings for the change to take effect now. In prod, set the same env in the
-# Helm manifest before the first deploy, or toggle in Admin Settings post-deploy.
-$env:ENABLE_NOTES                  = 'false'   # Notes workspace (deferred: no user memory)
-$env:ENABLE_MEMORIES               = 'false'   # Personalization / Memory tab (deferred)
-$env:ENABLE_FOLDERS                = 'false'   # Chat folders / grouping (redundant w/ retention)
-$env:ENABLE_CODE_INTERPRETER       = 'false'   # Code interpreter chat toggle (deferred)
-$env:ENABLE_CALENDAR               = 'false'   # Calendar (deferred w/ Outlook integration; default-on upstream + user-visible!)
-$env:ENABLE_AUTOMATIONS            = 'false'   # Automations / scheduled prompts (deferred)
-$env:ENABLE_MESSAGE_RATING         = 'false'   # Good/Bad Response thumbs on model messages (deferred; hides for everyone incl. admins)
-# Hide the whole Settings -> Interface tab from USERS (~30 cosmetic/confusing toggles at once).
-# Admins keep it via the role bypass (several toggles genuinely useful to the AI team).
-# PersistentConfig (part of USER_PERMISSIONS): on an existing DB flip "Interface Settings
-# Access" off under Admin Panel -> Users -> Groups -> default permissions.
-$env:USER_PERMISSIONS_SETTINGS_INTERFACE = 'false'
+
+# -- deferred / hidden feature flags: NOT SET HERE ANY MORE (2026-07-31) -------
+#
+# ENABLE_VOICE, ENABLE_TEMPORARY_CHAT, ENABLE_CHAT_ARCHIVE, ENABLE_VERSION_UPDATE_CHECK,
+# RAG_IMAGE_VISION_LLM_COMBINE_OCR (env.py) and ENABLE_NOTES, ENABLE_MEMORIES,
+# ENABLE_FOLDERS, ENABLE_CODE_INTERPRETER, ENABLE_CALENDAR, ENABLE_AUTOMATIONS,
+# ENABLE_MESSAGE_RATING, USER_PERMISSIONS_SETTINGS_INTERFACE (config.py) now default to
+# FALSE IN CODE. Seeding them here as well would be pure duplication -- worse, it would
+# be a drift trap: change a code default later and this script would keep forcing the old
+# value, so local dev would silently test something different from what deploys.
+#
+# The per-flag rationale lives in the deferred-features table in CLAUDE.md; the code
+# defaults live in backend/open_webui/env.py + config.py. To re-enable one for a pilot,
+# put it in .env (which now WINS over this script -- see Set-EnvDefault above).
+#
+# STILL TRUE and unchanged by the above: the config.py ones are PersistentConfig, so on
+# an existing dev DB (the postgres volume persists across restarts) the code default only
+# applies to a FRESH database -- flip them in Admin Settings to change an existing one.
 if (-not $env:WEBUI_SECRET_KEY) { $env:WEBUI_SECRET_KEY = 'dev-secret-key-change-in-prod-not-for-real-use' }
-if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash' }
+if (-not $env:DEFAULT_MODELS)   { $env:DEFAULT_MODELS   = 'deepseek-ai/DeepSeek-V4-Flash-0731' }
 
 # -- run backend + frontend in this terminal -----------------------------------
 

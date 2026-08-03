@@ -1156,6 +1156,7 @@
 	"Image Size": "Pildi suurus",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "Pildid",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "Impordi",
 	"Import Chats": "Impordi vestlused",
 	"Import Config": "Impordi seadistus",

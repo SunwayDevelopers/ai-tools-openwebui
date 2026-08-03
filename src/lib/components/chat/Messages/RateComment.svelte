@@ -253,7 +253,11 @@
 		</button>
 	</div>
 
-	{#if $config?.features.enable_community_sharing && message?.model}
+	<!-- Sunway: shares the rated model to openwebui.com. User-facing (rating comment box).
+	     Doubly covered already — ENABLE_MESSAGE_RATING is false so this box never renders,
+	     and ENABLE_COMMUNITY_SHARING now defaults false — but both are PersistentConfig, so
+	     hard-gated here as well. Restore by dropping the `false &&`. -->
+	{#if false && $config?.features.enable_community_sharing && message?.model}
 		<div class="mt-3 pt-3 border-t border-gray-100/30 dark:border-gray-850/30">
 			<a
 				href={`https://openwebui.com/models?q=${encodeURIComponent(message.model)}`}

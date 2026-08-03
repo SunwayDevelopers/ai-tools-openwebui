@@ -1152,6 +1152,7 @@
 	"Image Size": "图片尺寸",
 	"Image will be read as text for model(s) without vision support.": "",
 	"Images": "图片",
+	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "导入",
 	"Import Chats": "导入对话记录",
 	"Import Config": "导入配置文件",
