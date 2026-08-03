@@ -761,7 +761,7 @@ except (ValueError, TypeError):
 # hard cap on chat creation ("delete one to create a new one"). 0 disables the
 # cap. The 1-month rolling expiry sweep is a separate mechanism.
 try:
-    MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '0'))
+    MAX_CHATS_PER_USER = int(os.getenv('MAX_CHATS_PER_USER', '30'))
 except (ValueError, TypeError):
     MAX_CHATS_PER_USER = 0
 
@@ -770,7 +770,7 @@ except (ValueError, TypeError):
 # the sweep. INTERVAL throttles how often it runs (cluster-wide, via a Redis
 # lock); BATCH caps chats purged per run so Qdrant/storage aren't hammered.
 try:
-    CHAT_RETENTION_DAYS = int(os.getenv('CHAT_RETENTION_DAYS', '0'))
+    CHAT_RETENTION_DAYS = int(os.getenv('CHAT_RETENTION_DAYS', '30'))
 except (ValueError, TypeError):
     CHAT_RETENTION_DAYS = 0
 try:

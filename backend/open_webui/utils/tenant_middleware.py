@@ -26,6 +26,7 @@ import logging
 from fastapi.responses import JSONResponse
 from open_webui.env import TENANT_ID_HEADER
 from open_webui.utils.auth import get_http_authorization_cred
+from open_webui.utils.iam_session import TENANT_SLUG_COOKIE
 from open_webui.utils.tenant import (
     TenantResolutionError,
     get_tenant_resolver,
@@ -147,6 +148,18 @@ class TenantResolutionMiddleware:
             cred = get_http_authorization_cred(request.headers.get('Authorization'))
             iam_token = cred.credentials if cred is not None else None
         tenant_slug = request.headers.get(self._tenant_header)
+        if not tenant_slug:
+            # Sub-resource loads cannot carry a custom header.
+            # installTenantHeaderInjection() stamps X-Tenant-Id by patching
+            # window.fetch, but <img>, <video>, CSS url() and EventSource never go
+            # through fetch — so every tenant-scoped route reached that way (user
+            # and model profile images, file content) 400s no matter what. The SPA
+            # mirrors the slug into this cookie in setActiveTenant().
+            #
+            # This widens no trust boundary: the header it falls back from is
+            # equally client-supplied, and the slug alone proves nothing —
+            # resolve_context() below still verifies membership against iam_token.
+            tenant_slug = request.cookies.get(TENANT_SLUG_COOKIE)
 
         try:
             if not tenant_slug:
