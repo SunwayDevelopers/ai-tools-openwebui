@@ -626,7 +626,7 @@ except (ValueError, TypeError):
 # data['full_context']=True; retrieval (utils.get_sources_from_items) injects them whole.
 # Plain env read (restart to apply). OFF by default — enable AFTER an inference-concurrency
 # stress test, since full-context re-sends the doc each turn (KV-cache/context-window load).
-RAG_CHAT_ATTACHMENT_FULL_CONTEXT = os.getenv('RAG_CHAT_ATTACHMENT_FULL_CONTEXT', 'False').lower() == 'true'
+RAG_CHAT_ATTACHMENT_FULL_CONTEXT = os.getenv('RAG_CHAT_ATTACHMENT_FULL_CONTEXT', 'True').lower() == 'true'
 
 # Image-aware PDF routing (Sunway). The PDF fast path trusts pypdf's text layer, so a
 # born-digital PDF with SCREENSHOTS / scanned figures pasted in passes as "digital" and
