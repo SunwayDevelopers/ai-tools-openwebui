@@ -624,7 +624,7 @@ except (ValueError, TypeError):
 # retrieval corpus and always embed) and only when the extracted text fits the budget;
 # larger files fall through to normal embed + RAG. process_file marks these with
 # data['full_context']=True; retrieval (utils.get_sources_from_items) injects them whole.
-# Plain env read (restart to apply). ON by default as of 2026-08-04 (hybrid full-context +
+# Plain env read (restart to apply). ON by default as hybrid full-context +
 # selective RAG is the decided behaviour). Full-context re-sends the doc each turn, so it
 # carries KV-cache/context-window load: set it 'false' per environment if an
 # inference-concurrency stress test says the fleet can't take it.
@@ -1375,3 +1375,57 @@ OTEL_METRICS_OTLP_SPAN_EXPORTER = os.getenv(
 OTEL_LOGS_OTLP_SPAN_EXPORTER = os.getenv(
     'OTEL_LOGS_OTLP_SPAN_EXPORTER', OTEL_OTLP_SPAN_EXPORTER
 ).lower()  # grpc or http
+
+
+####################################
+# MULTI-TENANCY (schat data-plane ↔ IAM control-plane)
+####################################
+#
+# schat becomes multi-tenant by delegating tenant resolution to the in-house
+# IAM microservice: it verifies the WorkOS token, confirms the user's
+# membership in the requested business unit, and brokers that BU's data-store
+# connection (Postgres DB, Qdrant collection prefix, object-store bucket/prefix).
+#
+# All of this is INERT unless ENABLE_MULTI_TENANCY is true. With the flag off,
+# schat behaves exactly as the single-tenant fork does today (no engine
+# registry, no tenant middleware, no per-tenant prefixing).
+#
+# See MULTITENANCY_ACTION_PLAN.md and IAM_INTEGRATION_GUIDE.md.
+
+ENABLE_MULTI_TENANCY = os.getenv('ENABLE_MULTI_TENANCY', 'False').lower() == 'true'
+
+# IAM control-plane service (the /resolve broker). TLS only in real envs.
+IAM_BASE_URL = (os.environ.get('IAM_BASE_URL') or '').strip().rstrip('/') or None
+# Service-to-service credentials schat presents on s2s endpoints. Keep in a
+# secrets manager / env — never in code. The IAM service client must hold the
+# scopes `tenant.resolve` and `tenant.connection.read`.
+IAM_CLIENT_ID = (os.environ.get('IAM_CLIENT_ID') or '').strip() or None
+IAM_CLIENT_SECRET = (os.environ.get('IAM_CLIENT_SECRET') or '').strip() or None
+# Network timeout (seconds) for calls to IAM. Fail closed on timeout.
+IAM_HTTP_TIMEOUT = float(os.getenv('IAM_HTTP_TIMEOUT', '10.0'))
+# Verify TLS on the IAM connection. Corporate TLS interception in dev may need
+# this false (mirrors AIOHTTP_CLIENT_SESSION_SSL); keep TRUE in prod.
+IAM_VERIFY_SSL = os.getenv('IAM_VERIFY_SSL', 'True').lower() == 'true'
+# How long (seconds) to cache a tenant's brokered connection bundle. Bundles
+# change rarely — IAM is a cache-miss dependency, not a per-request hop.
+TENANT_BUNDLE_CACHE_TTL = int(os.getenv('TENANT_BUNDLE_CACHE_TTL', '300'))
+# Max number of per-tenant DB engines held in the registry before LRU eviction
+# (each engine holds a small connection pool; keep the product under Postgres
+# max_connections).
+TENANT_ENGINE_CACHE_SIZE = int(os.getenv('TENANT_ENGINE_CACHE_SIZE', '50'))
+# The header carrying the active business-unit slug on every REST/WS request.
+TENANT_ID_HEADER = os.getenv('TENANT_ID_HEADER', 'X-Tenant-Id')
+
+# --- WorkOS session-token verification (local JWKS) ---------------------------
+# schat verifies the WorkOS JWT itself (RS256 against the JWKS) so entitlement
+# stays a cache-miss hop, not a per-request one. These MUST match the IAM
+# service's WORKOS_CLAIM_* config so both sides read the same claims.
+WORKOS_JWKS_URL = (os.environ.get('WORKOS_JWKS_URL') or '').strip() or None
+WORKOS_ISSUER = (os.environ.get('WORKOS_ISSUER') or '').strip() or None
+WORKOS_AUDIENCE = (os.environ.get('WORKOS_AUDIENCE') or '').strip() or None
+# Claim-name mapping (IAM defaults). Override in lockstep with IAM if the real
+# WorkOS token uses different names — do NOT hardcode elsewhere.
+WORKOS_CLAIM_USER_ID = os.getenv('WORKOS_CLAIM_USER_ID', 'sub')
+WORKOS_CLAIM_ORG_ID = os.getenv('WORKOS_CLAIM_ORG_ID', 'org_id')
+WORKOS_CLAIM_EMAIL = os.getenv('WORKOS_CLAIM_EMAIL', 'email')
+WORKOS_CLAIM_NAME = os.getenv('WORKOS_CLAIM_NAME', 'name')

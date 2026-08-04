@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 
 import aiohttp
+import httpx
 from authlib.integrations.starlette_client import OAuth
 from authlib.jose.errors import BadSignatureError
 from authlib.oauth2.rfc6749.errors import OAuth2Error
@@ -68,6 +69,7 @@ from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from open_webui.env import (
     AIOHTTP_CLIENT_ALLOW_REDIRECTS,
     AIOHTTP_CLIENT_SESSION_SSL,
+    ENABLE_MULTI_TENANCY,
     ENABLE_OAUTH_EMAIL_FALLBACK,
     ENABLE_OAUTH_ID_TOKEN_COOKIE,
     OAUTH_CLIENT_INFO_ENCRYPTION_KEY,
@@ -1488,6 +1490,76 @@ class OAuthManager:
             log.error(f"Error processing profile picture '{picture_url}': {e}")
             return '/user.png'
 
+    async def _handle_mt_signin(self, request, token, response):
+        """Multi-tenancy sign-in. Exchange the WorkOS token for an IAM JWT, mint a
+        schat session JWT for the SPA, set both cookies, and redirect to /auth.
+
+        Bypasses OWUI's userinfo/default-user path: WorkOS has no OIDC
+        userinfo_endpoint, and under MT the authoritative identity + tenants come
+        from IAM's /token response. The schat JWT's id is never looked up
+        (get_current_user short-circuits to the tenant context), so an
+        email-derived id needs no backing user row. Secrets are never logged."""
+        from open_webui.utils.iam_session import set_iam_cookies
+        from open_webui.utils.tenant import TenantResolutionError, get_iam_client
+
+        workos_token = token.get('access_token') or token.get('id_token')
+        if not workos_token:
+            raise HTTPException(400, detail='WorkOS token missing from callback')
+        try:
+            exchange = await get_iam_client().exchange_token(workos_token)
+        except TenantResolutionError as e:
+            # Include IAM's own reason — logging the status alone left every failure
+            # here indistinguishable (bad s2s creds, bad token, unknown user).
+            log.error('MT IAM token exchange failed (status=%s): %s', e.status_code, e.detail)
+            raise HTTPException(
+                e.status_code if e.status_code in (401, 403) else 400,
+                detail='sign-in failed at the IAM token exchange',
+            )
+
+        email = (exchange.identity.email or '').strip().lower()
+        if not email:
+            raise HTTPException(400, detail='IAM returned no email for the signed-in user')
+
+        session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'workos-email:{email}'))
+        jwt_token = create_token(
+            data={'id': session_id},
+            expires_delta=parse_duration(auth_manager_config.JWT_EXPIRES_IN),
+        )
+
+        redirect_base_url = str(request.app.state.config.WEBUI_URL or request.base_url).rstrip('/')
+        redirect = RedirectResponse(url=f'{redirect_base_url}/auth', headers=response.headers)
+
+        expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)
+        cookie_max_age = int(expires_delta.total_seconds()) if expires_delta else None
+        # schat session JWT — readable by the SPA (marks it logged in).
+        redirect.set_cookie(
+            key='token',
+            value=jwt_token,
+            httponly=False,
+            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+            secure=WEBUI_AUTH_COOKIE_SECURE,
+            **({'max_age': cookie_max_age} if cookie_max_age is not None else {}),
+        )
+        # IAM access JWT (short-lived) + refresh token (the revocable half of the
+        # session). Both httpOnly, both via the shared helper so sign-in, refresh and
+        # sign-out cannot drift on cookie attributes.
+        set_iam_cookies(
+            redirect,
+            access_token=exchange.token,
+            refresh_token=exchange.refresh_token,
+            session_seconds=exchange.refresh_expires_in,
+        )
+        if not exchange.refresh_token:
+            # IAM predates refresh-token support, or is misconfigured. Sign-in still works
+            # but the session will die at the access token's TTL with no way to renew.
+            log.warning(
+                'IAM returned no refresh token for %s — session cannot be refreshed and will expire in %ss',
+                email,
+                exchange.expires_in,
+            )
+        log.info('MT sign-in complete for %s (%d tenant(s))', email, len(exchange.tenants))
+        return redirect
+
     async def handle_login(self, request, provider):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
@@ -1535,6 +1607,19 @@ class OAuthManager:
                     client.server_metadata.pop('jwks', None)
                 try:
                     token = await client.authorize_access_token(request, **auth_params)
+                except httpx.TransportError as retry_exc:
+                    # Same reasoning as the non-retry path below: a transport failure is
+                    # not a credential failure.
+                    log.error(
+                        'OAuth token exchange retry could not reach the provider %s (%s): %s',
+                        provider,
+                        type(retry_exc).__name__,
+                        retry_exc,
+                        exc_info=True,
+                    )
+                    raise HTTPException(
+                        503, detail='Could not reach the identity provider. Please try again.'
+                    )
                 except Exception as retry_exc:
                     detailed_error = _build_oauth_callback_error_message(retry_exc)
                     log.warning(
@@ -1544,6 +1629,25 @@ class OAuthManager:
                         exc_info=True,
                     )
                     raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
+            except httpx.TransportError as e:
+                # The token exchange never reached the IdP: DNS, TCP, TLS, proxy or
+                # egress-policy failure. Reporting this as INVALID_CRED (below) is
+                # actively misleading — there is no password anywhere in this flow, and
+                # "email or password is incorrect" sends whoever is debugging it after
+                # the wrong thing entirely. It is also not the user's fault and not
+                # fixable by retrying credentials, so it is a 503, not a 400.
+                log.error(
+                    'OAuth token exchange could not reach the provider %s (%s): %s — '
+                    'check DNS, egress policy/NetworkPolicy, service-mesh ServiceEntry, '
+                    'and HTTPS_PROXY from this pod',
+                    provider,
+                    type(e).__name__,
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    503, detail='Could not reach the identity provider. Please try again.'
+                )
             except Exception as e:
                 detailed_error = _build_oauth_callback_error_message(e)
                 log.warning(
@@ -1553,6 +1657,13 @@ class OAuthManager:
                     exc_info=True,
                 )
                 raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
+
+            # Multi-tenancy: WorkOS returns identity in the token response and has
+            # no OIDC userinfo_endpoint; the authoritative identity + tenants come
+            # from IAM. Handle the whole MT sign-in here and skip OWUI's
+            # userinfo/default-user flow (which would KeyError on userinfo_endpoint).
+            if ENABLE_MULTI_TENANCY and provider == 'oidc':
+                return await self._handle_mt_signin(request, token, response)
 
             # Try to get userinfo from the token first, some providers include it there
             user_data: UserInfo = token.get('userinfo')
@@ -1816,6 +1927,10 @@ class OAuthManager:
                 secure=WEBUI_AUTH_COOKIE_SECURE,
                 **({'max_age': cookie_max_age} if cookie_max_age is not None else {}),
             )
+
+        # NOTE: multi-tenancy sign-in (WorkOS→IAM token exchange + iam_token
+        # cookie) is handled earlier by _handle_mt_signin, which returns before
+        # reaching this default OWUI-session path.
 
         try:
             _normalize_token_expiry(token)

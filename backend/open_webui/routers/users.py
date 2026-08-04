@@ -9,7 +9,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import ENABLE_PROFILE_IMAGE_URL_FORWARDING, PROFILE_IMAGE_ALLOWED_MIME_TYPES, STATIC_DIR
+from open_webui.env import (
+    ENABLE_MULTI_TENANCY,
+    ENABLE_PROFILE_IMAGE_URL_FORWARDING,
+    PROFILE_IMAGE_ALLOWED_MIME_TYPES,
+    STATIC_DIR,
+)
 from open_webui.internal.db import get_async_session
 from open_webui.models.auths import Auths
 from open_webui.models.groups import Groups
@@ -638,8 +643,42 @@ async def update_user_by_id(
 ############################
 
 
+async def _revoke_iam_membership(request: Request, email: str) -> None:
+    """Mirror of _grant_iam_membership: remove the IAM membership that gives ``email``
+    access to the active tenant, so deleting a user in the admin panel also revokes
+    tenant access instead of leaving an orphan membership. Revoked before the local
+    row is deleted so a 403 aborts cleanly. No-ops when MT is off; a member that is
+    already gone (404) is treated as success. Authorization is the caller's
+    ``iam_token`` cookie; IAM enforces BU-admin/super-admin scope from it."""
+    if not ENABLE_MULTI_TENANCY:
+        return
+
+    from open_webui.utils.tenant import (
+        TenantResolutionError,
+        get_iam_client,
+        require_tenant_context,
+    )
+
+    iam_token = request.cookies.get('iam_token')
+    if not iam_token:
+        raise HTTPException(401, detail='IAM session missing; sign in again to remove members.')
+
+    ctx = require_tenant_context()
+    try:
+        await get_iam_client().remove_member(iam_token, ctx.slug, email)
+    except TenantResolutionError as e:
+        if e.status_code == 404:
+            return  # not a member (or already removed) — idempotent
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+
 @router.delete('/{user_id}', response_model=bool)
-async def delete_user_by_id(user_id: str, user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)):
+async def delete_user_by_id(
+    request: Request,
+    user_id: str,
+    user=Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_session),
+):
     # Prevent deletion of the primary admin user
     try:
         first_user = await Users.get_first_user(db=db)
@@ -658,6 +697,11 @@ async def delete_user_by_id(user_id: str, user=Depends(get_admin_user), db: Asyn
         )
 
     if user.id != user_id:
+        # Revoke tenant access first (fails closed under MT before the local row goes).
+        target = await Users.get_user_by_id(user_id, db=db)
+        if target and target.email:
+            await _revoke_iam_membership(request, target.email.lower())
+
         result = await Auths.delete_auth_by_id(user_id, db=db)
 
         if result:

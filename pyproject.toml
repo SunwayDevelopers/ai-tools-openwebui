@@ -220,6 +220,13 @@ dev = [
     "ruff>=0.15.5",
 ]
 
+[tool.pytest.ini_options]
+# Backend unit tests. `pythonpath = backend` makes `import open_webui...`
+# resolve without an editable install. Tests avoid pytest-asyncio (not a hard
+# dep here) by driving async code via asyncio.run, so no asyncio_mode is needed.
+pythonpath = ["backend"]
+testpaths = ["backend/open_webui/test"]
+
 [tool.black]
 line-length = 120
 skip-string-normalization = true

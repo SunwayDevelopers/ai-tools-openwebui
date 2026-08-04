@@ -12,6 +12,8 @@
 	import {
 		config,
 		user,
+		tenants,
+		activeTenant,
 		settings,
 		theme,
 		WEBUI_NAME,
@@ -52,6 +54,14 @@
 	import 'tippy.js/dist/tippy.css';
 
 	import { executeToolServer, getBackendConfig, getModels, getVersion } from '$lib/apis';
+	import {
+		getMyTenantsWithRetry,
+		TenantGateError,
+		getActiveTenant,
+		setActiveTenant,
+		installTenantHeaderInjection
+	} from '$lib/apis/tenant';
+	import { endSession } from '$lib/utils/session';
 	import { getSessionUser, updateUserTimezone, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 	import { chatCompletion } from '$lib/apis/openai';
@@ -103,6 +113,23 @@
 	let loaded = false;
 	let tokenTimer = null;
 
+	// Set when the workspace gate could not be resolved for a reason that is NOT an
+	// authentication failure — IAM unreachable, 5xx, offline. We keep the session
+	// and render a retry screen instead of signing the user out, because the old
+	// catch-everything branch meant one IAM blip logged out the entire fleet
+	// (todo.md T1.5).
+	let tenantGateError = null;
+
+	// The happy path removes the splash and flips `loaded` near the end of onMount.
+	// The splash is `position:fixed; z-index:100` and `loaded` gates <slot />, so any
+	// early `return` before that point leaves a fixed overlay on top of a page that
+	// was never rendered — a blank screen. Every early exit must call this first
+	// (todo.md T1.3).
+	const finishLoading = () => {
+		document.getElementById('splash-screen')?.remove();
+		loaded = true;
+	};
+
 	let showRefresh = false;
 
 	let showSyncStatsModal = false;
@@ -123,7 +150,27 @@
 			randomizationFactor: 0.5,
 			path: '/ws/socket.io',
 			transports: enableWebsocket ? ['websocket'] : ['polling', 'websocket'],
-			auth: { token: localStorage.token }
+			// Multi-tenancy: the active tenant slug rides on the handshake so the
+			// socket's connect handler can resolve the tenant (the iam_token cookie
+			// is sent automatically). Harmless when MT is off.
+			//
+			// MUST be a callback, not an object literal. Socket.IO evaluates an object
+			// `auth` exactly once, at construction, and replays that same snapshot on
+			// every reconnection attempt. setupSocket() can run before the tenant
+			// bootstrap has written activeTenant — on a cold start with cleared storage
+			// it always does — and the snapshot then pins `tenant: null` for the life of
+			// the socket. _resolve_socket_tenant() fails closed on a missing slug, so
+			// the server rejects the connection, the client retries after
+			// reconnectionDelay, and it rejects again: a permanent 1s reject loop that
+			// no later tenant selection can break. Chat completions are delivered over
+			// this socket, so the response streams server-side, gets persisted, and
+			// never reaches the browser — the message hangs until a reload re-reads it
+			// from the database.
+			//
+			// A callback is re-invoked before each attempt, so both values are read
+			// fresh. That also stops a reconnect from replaying a token that has since
+			// been rotated by /api/v1/tenant/refresh.
+			auth: (cb) => cb({ token: localStorage.token, tenant: getActiveTenant() })
 		});
 		await socket.set(_socket);
 
@@ -188,8 +235,10 @@
 			console.log('version', version);
 
 			if (localStorage.getItem('token')) {
-				// Emit user-join event with auth token
-				_socket.emit('user-join', { auth: { token: localStorage.token } });
+				// Emit user-join event with auth token (+ active tenant for MT)
+				_socket.emit('user-join', {
+					auth: { token: localStorage.token, tenant: getActiveTenant() }
+				});
 			} else {
 				console.warn('No token found in localStorage, user-join event not emitted');
 			}
@@ -882,6 +931,11 @@
 	};
 
 	onMount(async () => {
+		// Multi-tenancy: stamp X-Tenant-Id (from the active tenant in localStorage)
+		// onto every same-origin schat request. Installed before any API call so
+		// the header is present as soon as a tenant is selected. Inert until then.
+		installTenantHeaderInjection();
+
 		window.addEventListener('message', windowMessageEventHandler);
 
 		let touchstartY = 0;
@@ -1056,6 +1110,45 @@
 				const currentUrl = `${window.location.pathname}${window.location.search}`;
 				const encodedUrl = encodeURIComponent(currentUrl);
 
+				// Multi-tenancy workspace gate. Must run BEFORE getSessionUser: under
+				// MT, /api/v1/auths/* requires X-Tenant-Id, so we resolve the active
+				// tenant first. getMyTenants() reads the httpOnly iam_token cookie.
+				//   • not logged in (401)  → fall through to the normal /auth redirect
+				//   • logged in, no tenants → block on /no-access (fail-closed)
+				//   • logged in, ≥1 tenant  → select one, set X-Tenant-Id, continue
+				if ($config.features?.enable_multi_tenancy && localStorage.token) {
+					try {
+						const { tenants: myTenants } = await getMyTenantsWithRetry();
+						if (!myTenants || myTenants.length === 0) {
+							finishLoading();
+							await goto('/no-access');
+							return;
+						}
+						const current = getActiveTenant();
+						const stillValid = current && myTenants.some((t) => t.slug === current);
+						const selected = stillValid ? current : myTenants[0].slug;
+						setActiveTenant(selected);
+						// Publish to stores so the workspace switcher can render.
+						tenants.set(myTenants);
+						activeTenant.set(selected);
+					} catch (error) {
+						const status = error instanceof TenantGateError ? error.status : null;
+						if (status === 401 || status === 403) {
+							// A real answer: the IAM session is gone or revoked. Sign out.
+							localStorage.removeItem('token');
+							finishLoading();
+							await goto(`/auth?redirect=${encodedUrl}`);
+							return;
+						}
+						// Everything else — 5xx, network, unexpected shapes — is an outage,
+						// not a verdict on this user. Keep the session; offer a retry.
+						console.error('Workspace gate unreachable; keeping the session', error);
+						tenantGateError = error?.detail ?? error?.message ?? `${error}`;
+						finishLoading();
+						return;
+					}
+				}
+
 				if (localStorage.token) {
 					// Get Session User Info
 					const sessionUser = await getSessionUser(localStorage.token).catch((error) => {
@@ -1132,8 +1225,7 @@
 
 			loaded = true;
 		} else {
-			document.getElementById('splash-screen')?.remove();
-			loaded = true;
+			finishLoading();
 		}
 
 		// Auto-show SyncStatsModal when opened with ?sync=true (from community)
@@ -1181,7 +1273,45 @@
 	</div>
 {/if}
 
-{#if loaded}
+{#if loaded && tenantGateError}
+	<!-- Workspace gate could not be resolved and it was NOT an auth failure. The
+	     session is intentionally still alive, so this must block the app rather
+	     than let it render: without a resolved tenant every /api/* call would
+	     fail closed with a 400 (todo.md T1.5). -->
+	<div class="flex min-h-screen w-full items-center justify-center bg-white px-6 dark:bg-gray-900">
+		<div class="max-w-md text-center">
+			<h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">
+				{$i18n.t('Cannot reach the identity service')}
+			</h1>
+			<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+				{$i18n.t(
+					'Your workspaces could not be loaded, so {{webUIName}} cannot start. You are still signed in — this is usually temporary.',
+					{ webUIName: $WEBUI_NAME }
+				)}
+			</p>
+			<p class="mt-2 font-mono text-xs text-gray-400 dark:text-gray-500">{tenantGateError}</p>
+
+			<div class="mt-6 flex justify-center gap-2">
+				<button
+					class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+					on:click={() => location.reload()}
+				>
+					{$i18n.t('Try again')}
+				</button>
+				<button
+					class="rounded-full px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+					on:click={async () => {
+						// Best effort: signout is itself an API call and may also be down.
+						await endSession().catch(() => {});
+						location.href = '/auth';
+					}}
+				>
+					{$i18n.t('Sign Out')}
+				</button>
+			</div>
+		</div>
+	</div>
+{:else if loaded}
 	{#if $isApp}
 		<div class="flex flex-row h-screen">
 			<AppSidebar />
