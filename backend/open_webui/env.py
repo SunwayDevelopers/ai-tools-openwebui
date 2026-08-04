@@ -624,9 +624,11 @@ except (ValueError, TypeError):
 # retrieval corpus and always embed) and only when the extracted text fits the budget;
 # larger files fall through to normal embed + RAG. process_file marks these with
 # data['full_context']=True; retrieval (utils.get_sources_from_items) injects them whole.
-# Plain env read (restart to apply). OFF by default — enable AFTER an inference-concurrency
-# stress test, since full-context re-sends the doc each turn (KV-cache/context-window load).
-RAG_CHAT_ATTACHMENT_FULL_CONTEXT = os.getenv('RAG_CHAT_ATTACHMENT_FULL_CONTEXT', 'False').lower() == 'true'
+# Plain env read (restart to apply). ON by default as of 2026-08-04 (hybrid full-context +
+# selective RAG is the decided behaviour). Full-context re-sends the doc each turn, so it
+# carries KV-cache/context-window load: set it 'false' per environment if an
+# inference-concurrency stress test says the fleet can't take it.
+RAG_CHAT_ATTACHMENT_FULL_CONTEXT = os.getenv('RAG_CHAT_ATTACHMENT_FULL_CONTEXT', 'True').lower() == 'true'
 
 # Image-aware PDF routing (Sunway). The PDF fast path trusts pypdf's text layer, so a
 # born-digital PDF with SCREENSHOTS / scanned figures pasted in passes as "digital" and
