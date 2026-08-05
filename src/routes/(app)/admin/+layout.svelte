@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 
 	import { WEBUI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
 	import { page } from '$app/stores';
@@ -12,10 +13,36 @@
 
 	let loaded = false;
 
+	// Sunway: Evaluations and Functions are hidden for EVERYONE incl. super admins (see
+	// CLAUDE.md → "Deferred / hidden features"). This blocks direct-URL access too, so there is
+	// no back-door into the hidden screens.
+	//
+	// Reactive, not onMount-only, for the same reason as the Workspace layout: onMount fires
+	// once per layout mount, so a client-side navigation from /admin/users to /admin/functions
+	// would reuse this already-mounted layout and slip straight past an onMount check. There are
+	// no in-app links left to either screen, so today this is belt-and-braces — but it is the
+	// identical defect that made clicking "Workspace" render the hidden Models page.
+	//
+	// NOTE: hiding the Functions UI does NOT disable Filter functions — any already-installed
+	// inlet/outlet filter keeps running in utils/middleware.py. This only removes the
+	// install/edit surface. Reverse by removing this block + the two nav gates below.
+	const HIDDEN_ADMIN_PATHS = ['/admin/evaluations', '/admin/functions'];
+
+	$: if (browser && HIDDEN_ADMIN_PATHS.some((path) => $page.url.pathname.includes(path))) {
+		loaded = false;
+		goto('/admin');
+	}
+
 	onMount(async () => {
 		if ($user?.role !== 'admin') {
 			await goto('/');
+			return;
 		}
+
+		if (HIDDEN_ADMIN_PATHS.some((path) => $page.url.pathname.includes(path))) {
+			return;
+		}
+
 		loaded = true;
 	});
 </script>
@@ -77,21 +104,35 @@
 							>
 						{/if}
 
-						<a
-							draggable="false"
-							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/evaluations')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-							href="/admin/evaluations">{$i18n.t('Evaluations')}</a
-						>
+						<!-- Sunway: Evaluations hidden — the evaluation programme does not exist and
+						     Good/Bad response ratings are off (ENABLE_MESSAGE_RATING=false), so the
+						     leaderboard/feedback screens are permanently dataless. Arena models are
+						     disabled in Admin Settings too. Original gate: always visible to admins -->
+						{#if false}
+							<a
+								draggable="false"
+								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/evaluations')
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+								href="/admin/evaluations">{$i18n.t('Evaluations')}</a
+							>
+						{/if}
 
-						<a
-							draggable="false"
-							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/functions')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-							href="/admin/functions">{$i18n.t('Functions')}</a
-						>
+						<!-- Sunway: Functions hidden. NOTE this reverses the earlier "deliberately still
+						     admin-visible" call recorded in CLAUDE.md — Filter functions carry the
+						     inlet/outlet hooks the guardrail work depends on. Hiding the UI does NOT
+						     stop installed filters from running (utils/middleware.py is untouched); it
+						     only removes the install/edit surface, so the guardrail work will need this
+						     un-hidden when it starts. Original gate: always visible to admins -->
+						{#if false}
+							<a
+								draggable="false"
+								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/functions')
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+								href="/admin/functions">{$i18n.t('Functions')}</a
+							>
+						{/if}
 
 						<a
 							draggable="false"

@@ -515,7 +515,13 @@
 				</div>
 			{/if}
 
-			{#if role === 'admin'}
+			<!-- Sunway: Playground (raw chat/completions/images against a model, with Advanced Params)
+			     is deferred and hidden for EVERYONE incl. admins — it is a model-tinkering surface,
+			     the same class as Workspace → Models/Tools/Skills, and its Advanced Params are
+			     already hidden everywhere else. Route guard in routes/(app)/playground/+layout.svelte
+			     blocks direct-URL access too. See CLAUDE.md → "Deferred / hidden features".
+			     Original gate was: role === 'admin' -->
+			{#if false}
 				<div class="flex items-center w-full">
 					<a
 						href="/playground"
@@ -564,7 +570,14 @@
 
 				<!-- {$i18n.t('Help')} -->
 
-				{#if $user?.role === 'admin'}
+				<!-- Sunway: Documentation (docs.openwebui.com) and Releases
+				     (github.com/open-webui/open-webui/releases) are upstream Open WebUI links —
+				     they send schat users/admins to another product's docs and expose upstream
+				     release numbers, which we already suppress (ENABLE_VERSION_UPDATE_CHECK=false).
+				     Hidden for EVERYONE incl. admins. NOTE: this is NOT the licence attribution —
+				     the required "Powered by Open WebUI v{WEBUI_VERSION}" line in Settings → About
+				     stays (LICENSE clause 4). Original gate was: user.role === 'admin' -->
+				{#if false}
 					<a
 						href="https://docs.openwebui.com"
 						target="_blank"

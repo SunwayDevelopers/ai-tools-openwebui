@@ -480,7 +480,7 @@ except Exception:
 ENABLE_CODE_EXECUTION = ConfigVar(
     'ENABLE_CODE_EXECUTION',
     'code_execution.enable',
-    os.getenv('ENABLE_CODE_EXECUTION', 'True').lower() == 'true',
+    os.getenv('ENABLE_CODE_EXECUTION', 'False').lower() == 'true',
 )
 
 CODE_EXECUTION_ENGINE = ConfigVar(
@@ -1244,7 +1244,7 @@ RAG_HYBRID_BM25_WEIGHT = ConfigVar(
 ENABLE_RAG_HYBRID_SEARCH = ConfigVar(
     'ENABLE_RAG_HYBRID_SEARCH',
     'rag.enable_hybrid_search',
-    os.getenv('ENABLE_RAG_HYBRID_SEARCH', '').lower() == 'true',
+    os.getenv('ENABLE_RAG_HYBRID_SEARCH', 'True').lower() == 'true',
 )
 
 ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS = ConfigVar(
@@ -1387,7 +1387,7 @@ RAG_EXTERNAL_RERANKER_API_KEY = ConfigVar(
 RAG_EXTERNAL_RERANKER_TIMEOUT = ConfigVar(
     'RAG_EXTERNAL_RERANKER_TIMEOUT',
     'rag.external_reranker_timeout',
-    os.getenv('RAG_EXTERNAL_RERANKER_TIMEOUT', '20'),
+    os.getenv('RAG_EXTERNAL_RERANKER_TIMEOUT', '40'),
 )
 
 
@@ -2960,7 +2960,7 @@ ENABLE_USER_STATUS = ConfigVar(
 ENABLE_EVALUATION_ARENA_MODELS = ConfigVar(
     'ENABLE_EVALUATION_ARENA_MODELS',
     'evaluation.arena.enable',
-    os.getenv('ENABLE_EVALUATION_ARENA_MODELS', 'True').lower() == 'true',
+    os.getenv('ENABLE_EVALUATION_ARENA_MODELS', 'False').lower() == 'true',
 )
 EVALUATION_ARENA_MODELS = ConfigVar(
     'EVALUATION_ARENA_MODELS',

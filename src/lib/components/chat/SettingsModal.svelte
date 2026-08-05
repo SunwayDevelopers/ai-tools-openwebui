@@ -496,8 +496,14 @@
 				);
 			}
 
+			// Sunway: the user Settings → Interface tab (~30 cosmetic toggles) is now hidden for
+			// EVERYONE incl. admins — previously admins bypassed USER_PERMISSIONS_SETTINGS_INTERFACE
+			// by role, which left the AI team staring at a tab of dead/confusing knobs. Nothing in
+			// here changes model behaviour or speed; revisit only if a toggle turns out to be
+			// genuinely productive for staff. See CLAUDE.md → "Deferred / hidden features".
+			// Original gate was: user.role === 'admin' OR permissions.settings.interface
 			if (tab.id === 'interface') {
-				return $user?.role === 'admin' || ($user?.permissions?.settings?.interface ?? true);
+				return false;
 			}
 
 			if (tab.id === 'personalization') {

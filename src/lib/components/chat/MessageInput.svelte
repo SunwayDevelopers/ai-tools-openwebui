@@ -419,8 +419,11 @@
 
 	let command = '';
 	export let showCommands = false;
+	// Sunway: '/' removed — the "Add Custom Prompt" palette is deferred and its suggestion
+	// renderer is no longer registered (see onMount below), so '/' must not be reported as an
+	// open command popup either. Original list: ['/', '#', '@', '$', ':']
 	$: showCommands =
-		['/', '#', '@', '$', ':'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
+		['#', '@', '$', ':'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
 	let suggestions = null;
 
 	let showTools = false;
@@ -1129,6 +1132,15 @@
 				})
 			}
 		];
+
+		// Sunway: the "Add Custom Prompt" (`/`) palette is deferred — hidden for EVERYONE incl.
+		// admins, so typing `/` in the chat input opens nothing. Its `/` entry above is left
+		// untouched (kept for a clean upstream sync) and simply not registered. Note the upstream
+		// label is a misnomer: `/` inserts an EXISTING prompt, it never creates one — Prompts stay
+		// admin-curated in Workspace → Prompts. See CLAUDE.md → "Deferred / hidden features".
+		// Reverse by deleting this filter (and un-hiding 'addPrompt' in ShortcutsModal.svelte).
+		suggestions = suggestions.filter((suggestion: { char: string }) => suggestion.char !== '/');
+
 		loaded = true;
 
 		window.setTimeout(() => {

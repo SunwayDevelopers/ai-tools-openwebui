@@ -22,6 +22,12 @@
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import Integrations from './Settings/Integrations.svelte';
 
+	import {
+		DEFAULT_ADMIN_SETTINGS_TAB,
+		HIDDEN_ADMIN_SETTINGS_TAB_IDS,
+		VISIBLE_ADMIN_SETTINGS_TAB_IDS
+	} from '$lib/utils/admin-settings-tabs';
+
 	import ChartBar from '../icons/ChartBar.svelte';
 	import DocumentChartBar from '../icons/DocumentChartBar.svelte';
 	import Search from '../icons/Search.svelte';
@@ -29,29 +35,15 @@
 
 	const i18n = getContext('i18n');
 
-	let selectedTab = 'general';
+	let selectedTab = DEFAULT_ADMIN_SETTINGS_TAB;
 
-	// Get current tab from URL pathname, default to 'general'
+	// Get current tab from URL pathname, default to the first visible tab
 	$: {
 		const pathParts = $page.url.pathname.split('/');
 		const tabFromPath = pathParts[pathParts.length - 1];
-		selectedTab = [
-			'general',
-			'connections',
-			'models',
-			'evaluations',
-			'integrations',
-			'documents',
-			'web',
-			'code-execution',
-			'interface',
-			'audio',
-			'images',
-			'pipelines',
-			'db'
-		].includes(tabFromPath)
+		selectedTab = VISIBLE_ADMIN_SETTINGS_TAB_IDS.includes(tabFromPath)
 			? tabFromPath
-			: 'general';
+			: DEFAULT_ADMIN_SETTINGS_TAB;
 	}
 
 	$: if (selectedTab) {
@@ -248,6 +240,12 @@
 
 	const setFilteredSettings = () => {
 		filteredSettings = allSettings.filter((tab) => {
+			// Sunway: drop hidden tabs before the search filter, so they cannot be surfaced by
+			// typing e.g. "whisper" or "backup" into the settings search either.
+			if (HIDDEN_ADMIN_SETTINGS_TAB_IDS.includes(tab.id)) {
+				return false;
+			}
+
 			const searchTerm = search.toLowerCase().trim();
 			return (
 				search === '' ||

@@ -204,24 +204,31 @@
 					</div>
 
 					<div class="mb-2.5">
-						<div class="flex w-full justify-between items-center">
-							<div class="text-xs pr-2">
-								<div class="">
-									{$i18n.t('Help')}
+						<!-- Sunway: upstream Open WebUI Help/Documentation link hidden, same call as the
+						     Documentation + Releases entries in layout/Sidebar/UserMenu.svelte — it points
+						     admins at another product's docs and community. Not the licence attribution
+						     (that is the "Powered by Open WebUI" line in Settings → About, which stays).
+						     Hidden, not deleted. -->
+						{#if false}
+							<div class="flex w-full justify-between items-center">
+								<div class="text-xs pr-2">
+									<div class="">
+										{$i18n.t('Help')}
+									</div>
+									<div class=" text-xs text-gray-500">
+										{$i18n.t('Discover how to use Open WebUI and seek support from the community.')}
+									</div>
 								</div>
-								<div class=" text-xs text-gray-500">
-									{$i18n.t('Discover how to use Open WebUI and seek support from the community.')}
-								</div>
-							</div>
 
-							<a
-								class="flex-shrink-0 text-xs font-medium underline"
-								href="https://docs.openwebui.com/"
-								target="_blank"
-							>
-								{$i18n.t('Documentation')}
-							</a>
-						</div>
+								<a
+									class="flex-shrink-0 text-xs font-medium underline"
+									href="https://docs.openwebui.com/"
+									target="_blank"
+								>
+									{$i18n.t('Documentation')}
+								</a>
+							</div>
+						{/if}
 
 						<!-- Sunway: Open WebUI community badges hidden (promotional, not the licence
 						     attribution — see Settings/About.svelte). Also third-party image loads
