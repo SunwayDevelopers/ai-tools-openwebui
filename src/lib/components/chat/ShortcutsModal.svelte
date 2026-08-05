@@ -30,15 +30,17 @@
 	// Sunway: de-clutter the shortcuts help for the internal rollout — these entries are
 	// power-user / conditional shortcuts that confuse more than they help. The key handlers
 	// themselves stay active (they are harmless local UI actions; Esc in particular must keep
-	// working to close modals / stop generation) — EXCEPT Generate Message Pair, whose handler
-	// is also disabled (it fabricates an assistant turn; see CLAUDE.md).
+	// working to close modals / stop generation) — EXCEPT Generate Message Pair and Add Custom
+	// Prompt, whose handlers are ALSO disabled (Generate Message Pair fabricates an assistant
+	// turn; the `/` prompt palette is deferred — see CLAUDE.md and chat/MessageInput.svelte).
 	const HIDDEN_SHORTCUT_IDS = [
 		'copyLastCodeBlock',
 		'generateMessagePair',
 		'acceptAutocomplete',
 		'preventFileCreation',
 		'focusInput',
-		'closeModal'
+		'closeModal',
+		'addPrompt'
 	];
 
 	$: {

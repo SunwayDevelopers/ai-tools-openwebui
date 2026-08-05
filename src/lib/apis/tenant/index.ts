@@ -261,7 +261,9 @@ export const installTenantHeaderInjection = (): void => {
 			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 			const slug = getActiveTenant();
 			if (slug && url && isSchatRequest(url)) {
-				const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+				const headers = new Headers(
+					init?.headers || (input instanceof Request ? input.headers : undefined)
+				);
 				if (!headers.has('X-Tenant-Id')) headers.set('X-Tenant-Id', slug);
 				patched = { ...init, headers };
 			}
