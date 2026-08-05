@@ -15,28 +15,34 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
 
+	import { browser } from '$app/environment';
+	import { isHiddenWorkspacePath } from '$lib/utils/workspace-sections';
+
 	const i18n = getContext('i18n');
 
 	let loaded = false;
 
+	// Sunway: Models, Tools, Skills and Prompts are deferred and hidden for EVERYONE incl.
+	// admins — see lib/utils/workspace-sections.ts for which and why, and CLAUDE.md →
+	// "Deferred / hidden features" for the full record. This blocks direct-URL access so
+	// there is no admin back-door into a hidden screen.
+	//
+	// This guard must be REACTIVE, not onMount-only. onMount fires once per layout mount, and
+	// navigating from /workspace to /workspace/models client-side REUSES this already-mounted
+	// layout — so the old onMount-only guard never ran and the hidden section rendered anyway.
+	// That is exactly how clicking "Workspace" ended up showing Models once Models was hidden.
+	// Keying off $page.url.pathname catches every navigation, direct-URL and client-side alike.
+	// Clearing `loaded` stops the hidden section painting in the frame before goto() resolves.
+	$: if (browser && isHiddenWorkspacePath($page.url.pathname)) {
+		loaded = false;
+		goto('/');
+	}
+
 	onMount(async () => {
-		// Sunway: Models, Tools & Skills workspace are deferred and hidden for EVERYONE incl.
-		// admins (see CLAUDE.md → "Deferred / hidden features"). Block direct-URL access too,
-		// so there is no admin back-door into the deferred screens. Reverse by removing this.
-		//
-		// Skills added 2026-07-31: same arbitrary-code class as Tools, and named in the BA
-		// record's not-allowed list — schat-ba-docs governance/decisions.md:312 rules out
-		// "model customizations / presets / prompt templates / skills that let users or
-		// BU-admin groups build their own assistants ... for anyone". Prompts and Functions
-		// are deliberately NOT here: AUDIT-020 keeps Prompts admin-curated (they are text
-		// snippets, they do not touch the model), and Functions carry the inlet/outlet filter
-		// hooks that the guardrail work depends on. See sunway-schat-notes.md §1.
-		if (
-			$page.url.pathname.includes('/workspace/models') ||
-			$page.url.pathname.includes('/workspace/tools') ||
-			$page.url.pathname.includes('/workspace/skills')
-		) {
-			await goto('/');
+		// Sunway: the hidden-section check that used to live here is now the REACTIVE guard
+		// above — see the comment there for why onMount was not enough. Rationale for which
+		// sections are hidden lives in lib/utils/workspace-sections.ts and CLAUDE.md.
+		if (isHiddenWorkspacePath($page.url.pathname)) {
 			return;
 		}
 
@@ -130,7 +136,12 @@
 							</a>
 						{/if}
 
-						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts}
+						<!-- Sunway: Prompts hidden 2026-08-05 for everyone incl. admins, with the route
+						     guard above. Intended target was BU-admin/user hidden + super-admin visible,
+						     but no super-admin tier exists to gate on yet (see the onMount comment) — so
+						     hidden from everyone until three-tier RBAC lands, then re-gate to super admin.
+						     Original gate was: user.role === 'admin' OR permissions.workspace.prompts -->
+						{#if false}
 							<a
 								draggable="false"
 								aria-current={$page.url.pathname.includes('/workspace/prompts') ? 'page' : null}

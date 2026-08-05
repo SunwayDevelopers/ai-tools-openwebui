@@ -230,7 +230,7 @@ Set-EnvDefault AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL 'false'
 # wins. Switching from MiniLM (384-dim) requires resetting the vector DB
 # (POST /api/v1/retrieval/reset/db as admin) and re-adding knowledge files.
 Set-EnvDefault RAG_EMBEDDING_MODEL           'BAAI/bge-m3'
-Set-EnvDefault RAG_EMBEDDING_BATCH_SIZE      '8'
+Set-EnvDefault RAG_EMBEDDING_BATCH_SIZE      '32'
 # Sunway: skip embedding for SMALL chat attachments (<= RAG_FULL_CONTEXT_MAX_CHARS) and
 # inject them full-context instead — makes those uploads extraction-only (instant, no embed
 # wait). KB adds + larger files still embed + RAG. OFF until an inference-concurrency stress

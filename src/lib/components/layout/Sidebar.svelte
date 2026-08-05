@@ -150,7 +150,9 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.calendar)
 				);
 			case 'playground':
-				return $user?.role === 'admin';
+				// Sunway: Playground deferred, hidden for everyone incl. admins — this also drops
+				// any previously pinned sidebar shortcut. Original gate: user.role === 'admin'
+				return false;
 			default:
 				return false;
 		}

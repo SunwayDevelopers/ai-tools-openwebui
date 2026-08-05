@@ -290,76 +290,90 @@
 					</div>
 				</div>
 
-				<div class=" my-2">
-					<div class="flex justify-between items-center text-sm mb-2">
-						<div class="  font-medium">{$i18n.t('Ollama API')}</div>
+				<!-- Sunway: Ollama is not deployed anywhere in schat — no ollama service in
+				     docker-compose.dev.yml, nothing set by dev.ps1, and the Helm chart pins
+				     ENABLE_OLLAMA_API: "false" (values.yaml). Models are served by MLIS/vLLM over
+				     the OpenAI-compatible API above, so this whole section is dead config that only
+				     invites misconfiguration. Hidden for everyone incl. admins; the section markup
+				     and every Ollama handler are left intact.
+				     CAUTION on re-enable: ENABLE_OLLAMA_API is PersistentConfig (config.py:296) with
+				     a code default of True — the chart's "false" only seeds a FRESH DB. On an
+				     existing DB the stored value wins, so unwrapping this guard may reveal the API
+				     already switched on. -->
+				{#if false}
+					<div class=" my-2">
+						<div class="flex justify-between items-center text-sm mb-2">
+							<div class="  font-medium">{$i18n.t('Ollama API')}</div>
 
-						<div class="mt-1">
-							<Switch
-								bind:state={ENABLE_OLLAMA_API}
-								on:change={async () => {
-									updateOllamaHandler();
-								}}
-							/>
-						</div>
-					</div>
-
-					{#if ENABLE_OLLAMA_API}
-						<div class="">
-							<div class="flex justify-between items-center">
-								<div class="font-medium text-xs">{$i18n.t('Manage Ollama API Connections')}</div>
-
-								<Tooltip content={$i18n.t(`Add Connection`)}>
-									<button
-										class="px-1"
-										on:click={() => {
-											showAddOllamaConnectionModal = true;
-										}}
-										type="button"
-									>
-										<Plus />
-									</button>
-								</Tooltip>
+							<div class="mt-1">
+								<Switch
+									bind:state={ENABLE_OLLAMA_API}
+									on:change={async () => {
+										updateOllamaHandler();
+									}}
+								/>
 							</div>
+						</div>
 
-							<div class="flex w-full gap-1.5">
-								<div class="flex-1 flex flex-col gap-1.5 mt-1.5">
-									{#each OLLAMA_BASE_URLS as url, idx}
-										<OllamaConnection
-											bind:url={OLLAMA_BASE_URLS[idx]}
-											bind:config={OLLAMA_API_CONFIGS[idx]}
-											{idx}
-											onSubmit={() => {
-												updateOllamaHandler();
-											}}
-											onDelete={() => {
-												OLLAMA_BASE_URLS = OLLAMA_BASE_URLS.filter((url, urlIdx) => idx !== urlIdx);
+						{#if ENABLE_OLLAMA_API}
+							<div class="">
+								<div class="flex justify-between items-center">
+									<div class="font-medium text-xs">{$i18n.t('Manage Ollama API Connections')}</div>
 
-												let newConfig = {};
-												OLLAMA_BASE_URLS.forEach((url, newIdx) => {
-													newConfig[newIdx] =
-														OLLAMA_API_CONFIGS[newIdx < idx ? newIdx : newIdx + 1];
-												});
-												OLLAMA_API_CONFIGS = newConfig;
+									<Tooltip content={$i18n.t(`Add Connection`)}>
+										<button
+											class="px-1"
+											on:click={() => {
+												showAddOllamaConnectionModal = true;
 											}}
-										/>
-									{/each}
+											type="button"
+										>
+											<Plus />
+										</button>
+									</Tooltip>
+								</div>
+
+								<div class="flex w-full gap-1.5">
+									<div class="flex-1 flex flex-col gap-1.5 mt-1.5">
+										{#each OLLAMA_BASE_URLS as url, idx}
+											<OllamaConnection
+												bind:url={OLLAMA_BASE_URLS[idx]}
+												bind:config={OLLAMA_API_CONFIGS[idx]}
+												{idx}
+												onSubmit={() => {
+													updateOllamaHandler();
+												}}
+												onDelete={() => {
+													OLLAMA_BASE_URLS = OLLAMA_BASE_URLS.filter(
+														(url, urlIdx) => idx !== urlIdx
+													);
+
+													let newConfig = {};
+													OLLAMA_BASE_URLS.forEach((url, newIdx) => {
+														newConfig[newIdx] =
+															OLLAMA_API_CONFIGS[newIdx < idx ? newIdx : newIdx + 1];
+													});
+													OLLAMA_API_CONFIGS = newConfig;
+												}}
+											/>
+										{/each}
+									</div>
+								</div>
+
+								<div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+									{$i18n.t('Trouble accessing Ollama?')}
+									<a
+										class=" text-gray-300 font-medium underline"
+										href="https://github.com/open-webui/open-webui#troubleshooting"
+										target="_blank"
+									>
+										{$i18n.t('Click here for help.')}
+									</a>
 								</div>
 							</div>
-
-							<div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-								{$i18n.t('Trouble accessing Ollama?')}
-								<a
-									class=" text-gray-300 font-medium underline"
-									href="https://github.com/open-webui/open-webui#troubleshooting"
-									target="_blank"
-								>
-									{$i18n.t('Click here for help.')}
-								</a>
-							</div>
-						</div>
-					{/if}
-				</div>
+						{/if}
+					</div>
+				{/if}
 
 				<div class="my-2">
 					<div class="flex justify-between items-center text-sm">
