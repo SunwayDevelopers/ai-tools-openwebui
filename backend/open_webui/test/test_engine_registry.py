@@ -302,3 +302,46 @@ def test_positive_pool_size_selects_queuepool_with_env_values(monkeypatch, make_
     assert captured['max_overflow'] == 3
     assert captured['pool_pre_ping'] is True
     assert 'poolclass' not in captured
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Connect timeouts. Without them the OS governs the handshake (~127s of SYN retries
+# on Linux), so a tenant pointed at an unreachable host hangs the request instead of
+# erroring. pool_timeout does NOT cover this — it bounds waiting for a pool slot.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_nullpool_engine_gets_connect_timeout(monkeypatch, make_context):
+    captured = _capture_engine_kwargs(monkeypatch)
+    monkeypatch.setattr(db, 'TENANT_DB_POOL_SIZE', 0)
+    monkeypatch.setattr(db, 'TENANT_DB_CONNECT_TIMEOUT', 10)
+
+    db._build_tenant_sessionmaker(make_context())
+
+    assert captured['connect_args']['connect_timeout'] == 10
+
+
+def test_pooled_engine_gets_connect_timeout(monkeypatch, make_context):
+    captured = _capture_engine_kwargs(monkeypatch)
+    monkeypatch.setattr(db, 'TENANT_DB_POOL_SIZE', 1)
+    monkeypatch.setattr(db, 'TENANT_DB_CONNECT_TIMEOUT', 7)
+
+    db._build_tenant_sessionmaker(make_context())
+
+    assert captured['connect_args']['connect_timeout'] == 7
+
+
+def test_keepalives_are_set_so_a_dead_peer_is_detected(monkeypatch, make_context):
+    """connect_timeout only bounds establishing a connection; keepalives bound
+    detecting one that was healthy and then silently died (blackholed route)."""
+    captured = _capture_engine_kwargs(monkeypatch)
+    monkeypatch.setattr(db, 'TENANT_DB_POOL_SIZE', 1)
+    monkeypatch.setattr(db, 'TENANT_DB_KEEPALIVES_IDLE', 30)
+    monkeypatch.setattr(db, 'TENANT_DB_KEEPALIVES_INTERVAL', 10)
+    monkeypatch.setattr(db, 'TENANT_DB_KEEPALIVES_COUNT', 3)
+
+    db._build_tenant_sessionmaker(make_context())
+
+    ca = captured['connect_args']
+    assert ca['keepalives'] == 1
+    assert (ca['keepalives_idle'], ca['keepalives_interval'], ca['keepalives_count']) == (30, 10, 3)
