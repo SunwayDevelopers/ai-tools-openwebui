@@ -1409,6 +1409,58 @@ TENANT_BUNDLE_CACHE_TTL = int(os.getenv('TENANT_BUNDLE_CACHE_TTL', '300'))
 # (each engine holds a small connection pool; keep the product under Postgres
 # max_connections).
 TENANT_ENGINE_CACHE_SIZE = int(os.getenv('TENANT_ENGINE_CACHE_SIZE', '50'))
+# Per-tenant connection pool sizing. Every tenant gets its OWN pool.
+#
+# Default is a MINIMAL POOL (1 resident, bursting to 3) rather than no pool, and it
+# only works because TENANT_ENGINE_IDLE_TIMEOUT below reclaims idle engines. That
+# pairing is the whole design:
+#
+#   without idle eviction  -> resident connections scale with EVERY tenant ever
+#                             touched, which is unbounded as tenants are added
+#   with idle eviction     -> resident connections scale with tenants ACTIVE in the
+#                             last TENANT_ENGINE_IDLE_TIMEOUT seconds
+#
+# With many tenants but few users each, "active right now" stays small however long
+# the tenant list grows — so 1 resident connection per active tenant is ample, and
+# a pooled checkout stays cheap (~3ms vs ~10ms for a fresh connect, measured).
+#
+# Keeping a pool also keeps a HARD CAP: requests beyond POOL_SIZE + MAX_OVERFLOW
+# queue and wait (pool_timeout) instead of piling more connections onto Postgres.
+# That backpressure is what protects `max_connections` during a traffic spike.
+#
+# Budget: (active tenants x POOL_SIZE) resident, peaking at
+# (active tenants x (POOL_SIZE + MAX_OVERFLOW)), times the replica count — all of
+# which must stay under Postgres `max_connections` (default 100).
+#
+# 0 selects NullPool instead: no pooled connections at all, connect per checkout.
+# That removes idle connections entirely, but pays a connect on EVERY DB-touching
+# request and removes the cap, so a concurrency spike can exhaust `max_connections`
+# faster than pooling would. Appropriate for very spiky/serverless deployments, not
+# for an interactive chat app.
+TENANT_DB_POOL_SIZE = int(os.getenv('TENANT_DB_POOL_SIZE', '1'))
+TENANT_DB_MAX_OVERFLOW = int(os.getenv('TENANT_DB_MAX_OVERFLOW', '2'))
+# Dispose a tenant's engine after this many seconds with no request for it, which
+# releases its pooled connections. 0 disables idle eviction (size-based LRU only).
+#
+# THIS IS WHAT MAKES THE POOL ABOVE VIABLE at high tenant counts, and it is
+# load-bearing rather than an optimisation: SQLAlchemy's QueuePool never shrinks
+# below pool_size on its own — only overflow connections close on return, and
+# pool_recycle acts at checkout, not on idle time. Without this, a tenant someone
+# opened once at 09:00 pins its connection until the pod restarts, and the total
+# grows with every tenant ever visited.
+#
+# The value is a trade: shorter reclaims connections sooner but makes the first
+# request after a quiet spell pay a fresh connect. 300s suits an interactive app —
+# a user mid-session never notices it, an abandoned tenant frees up within minutes.
+#
+# Under NullPool (TENANT_DB_POOL_SIZE=0) there are no connections to reclaim, so
+# this only bounds engine-object memory and can be much longer.
+#
+# Known gap: the sweep is lazy (it runs on tenant requests), so a completely idle
+# pod reclaims nothing until the next request. `max_connections` is shared with
+# every other service in the cluster, so if that residue matters, PgBouncer in
+# front of Postgres is the real fix rather than a shorter timeout here.
+TENANT_ENGINE_IDLE_TIMEOUT = int(os.getenv('TENANT_ENGINE_IDLE_TIMEOUT', '300'))
 # The header carrying the active business-unit slug on every REST/WS request.
 TENANT_ID_HEADER = os.getenv('TENANT_ID_HEADER', 'X-Tenant-Id')
 

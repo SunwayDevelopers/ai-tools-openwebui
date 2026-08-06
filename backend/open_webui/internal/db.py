@@ -26,7 +26,10 @@ from open_webui.env import (
     ENABLE_DB_MIGRATIONS,
     ENABLE_MULTI_TENANCY,
     OPEN_WEBUI_DIR,
+    TENANT_DB_MAX_OVERFLOW,
+    TENANT_DB_POOL_SIZE,
     TENANT_ENGINE_CACHE_SIZE,
+    TENANT_ENGINE_IDLE_TIMEOUT,
 )
 from sqlalchemy import Dialect, MetaData, create_engine, event, types
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -377,16 +380,17 @@ AsyncSessionLocal = async_sessionmaker(
 # system DB must run inside ``open_webui.utils.tenant.system_context()``.
 
 import threading
+import time
 from collections import OrderedDict
 
 # tenant_id -> (AsyncEngine, async_sessionmaker); LRU-ordered.
 _tenant_sessionmakers: 'OrderedDict[str, tuple]' = OrderedDict()
+# tenant_id -> time.monotonic() of last use. Kept alongside rather than in the
+# tuple above so a cache hit updates one dict write instead of rebuilding the
+# entry. MUST be popped wherever _tenant_sessionmakers is, or it leaks keys.
+# monotonic, not wall clock: an NTP step must not make every engine look idle.
+_tenant_last_used: dict[str, float] = {}
 _tenant_registry_lock = threading.Lock()
-
-# Per-tenant pools are deliberately small: with pooled infrastructure, the sum
-# of all tenant pools must stay under Postgres ``max_connections``.
-_TENANT_POOL_SIZE = 5
-_TENANT_MAX_OVERFLOW = 5
 
 
 def _build_tenant_async_url(database) -> str:
@@ -401,14 +405,22 @@ def _build_tenant_async_url(database) -> str:
 
 def _build_tenant_sessionmaker(tenant_ctx):
     url = _build_tenant_async_url(tenant_ctx.connection.database)
-    engine = create_async_engine(
-        url,
-        pool_size=_TENANT_POOL_SIZE,
-        max_overflow=_TENANT_MAX_OVERFLOW,
-        pool_timeout=DATABASE_POOL_TIMEOUT,
-        pool_recycle=DATABASE_POOL_RECYCLE,
-        pool_pre_ping=True,
-    )
+    if TENANT_DB_POOL_SIZE <= 0:
+        # NullPool: connect per checkout, close on return. Default — see the
+        # TENANT_DB_POOL_SIZE comment in env.py for why this suits many tenants with
+        # few users each. No pool_size/max_overflow/pool_timeout (NullPool rejects
+        # them) and no pool_pre_ping: every connection is new, so validating it
+        # would just add a round trip.
+        engine = create_async_engine(url, poolclass=NullPool)
+    else:
+        engine = create_async_engine(
+            url,
+            pool_size=TENANT_DB_POOL_SIZE,
+            max_overflow=TENANT_DB_MAX_OVERFLOW,
+            pool_timeout=DATABASE_POOL_TIMEOUT,
+            pool_recycle=DATABASE_POOL_RECYCLE,
+            pool_pre_ping=True,
+        )
     sessionmaker_ = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
@@ -433,18 +445,94 @@ def _dispose_engine(engine, tenant_id: str) -> None:
             log.warning('Failed to dispose evicted tenant engine for %s', tenant_id)
 
 
+def _engine_in_use(engine) -> bool:
+    """True if disposing this engine could close a connection under a live query.
+
+    Fails towards "in use" for pool types we cannot interrogate — "cannot tell" must
+    never licence a dispose.
+    """
+    try:
+        pool = engine.sync_engine.pool
+    except Exception:  # noqa: BLE001 - not an engine we understand, assume busy
+        return True
+    if isinstance(pool, NullPool):
+        # Nothing is pooled. A live connection is owned by its session rather than
+        # the pool, and dispose() on a NullPool closes nothing — so dropping the
+        # engine can never interrupt a query. Answering "busy" here (which the
+        # missing checkedout() would otherwise cause) would disable idle eviction
+        # entirely in the default configuration.
+        return False
+    try:
+        return pool.checkedout() > 0
+    except Exception:  # noqa: BLE001 - unknown pool type, assume busy
+        return True
+
+
+def _sweep_idle_tenant_engines(now: float) -> None:
+    """Dispose tenant engines with no request for TENANT_ENGINE_IDLE_TIMEOUT.
+
+    **Call with ``_tenant_registry_lock`` held.**
+
+    Why this is needed at all: SQLAlchemy's QueuePool never shrinks below
+    ``pool_size``. Only *overflow* connections close on return, and ``pool_recycle``
+    acts at checkout, not on idle time. So a tenant someone opened once this morning
+    still pins TENANT_DB_POOL_SIZE live Postgres connections, and because every
+    tenant gets its own pool that idle cost multiplies by tenant count — which is
+    what actually pushes a pod towards ``max_connections``.
+
+    Swept lazily from _get_tenant_sessionmaker rather than by a background task: if
+    nothing calls that, no tenant is active, and idle pools are not competing for
+    connections anyway.
+
+    Only engines with an empty pool are disposed, so unlike the size-based eviction
+    below this can never close a connection mid-query (least-recently-used is not
+    the same as unused — with more hot tenants than the cache size, the LRU victim
+    may well be serving a request).
+    """
+    if TENANT_ENGINE_IDLE_TIMEOUT <= 0:  # disabled; size-based LRU still applies
+        return
+    stale = [t for t, seen in _tenant_last_used.items() if now - seen > TENANT_ENGINE_IDLE_TIMEOUT]
+    for tenant_id in stale:
+        entry = _tenant_sessionmakers.get(tenant_id)
+        if entry is None:  # already evicted by size; drop the orphaned timestamp
+            _tenant_last_used.pop(tenant_id, None)
+            continue
+        engine = entry[0]
+        if _engine_in_use(engine):
+            # A long-running request outlived the idle window. Refresh the stamp so
+            # it is not re-examined on every call until that request finishes.
+            _tenant_last_used[tenant_id] = now
+            continue
+        _tenant_sessionmakers.pop(tenant_id, None)
+        _tenant_last_used.pop(tenant_id, None)
+        _dispose_engine(engine, tenant_id)
+        log.info(
+            'Disposed idle tenant DB engine tenant=%s (no requests for >%ss), '
+            'releasing up to %s pooled connections',
+            tenant_id,
+            TENANT_ENGINE_IDLE_TIMEOUT,
+            TENANT_DB_POOL_SIZE,
+        )
+
+
 def _get_tenant_sessionmaker(tenant_ctx):
     tenant_id = tenant_ctx.tenant_id
+    now = time.monotonic()
     with _tenant_registry_lock:
+        _sweep_idle_tenant_engines(now)
+
         entry = _tenant_sessionmakers.get(tenant_id)
         if entry is not None:
             _tenant_sessionmakers.move_to_end(tenant_id)
+            _tenant_last_used[tenant_id] = now
             return entry[1]
         engine, sessionmaker_ = _build_tenant_sessionmaker(tenant_ctx)
         _tenant_sessionmakers[tenant_id] = (engine, sessionmaker_)
         _tenant_sessionmakers.move_to_end(tenant_id)
+        _tenant_last_used[tenant_id] = now
         while len(_tenant_sessionmakers) > TENANT_ENGINE_CACHE_SIZE:
             old_id, (old_engine, _) = _tenant_sessionmakers.popitem(last=False)
+            _tenant_last_used.pop(old_id, None)
             _dispose_engine(old_engine, old_id)
         return sessionmaker_
 
