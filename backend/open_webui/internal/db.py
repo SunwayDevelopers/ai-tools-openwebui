@@ -26,6 +26,10 @@ from open_webui.env import (
     ENABLE_DB_MIGRATIONS,
     ENABLE_MULTI_TENANCY,
     OPEN_WEBUI_DIR,
+    TENANT_DB_CONNECT_TIMEOUT,
+    TENANT_DB_KEEPALIVES_COUNT,
+    TENANT_DB_KEEPALIVES_IDLE,
+    TENANT_DB_KEEPALIVES_INTERVAL,
     TENANT_DB_MAX_OVERFLOW,
     TENANT_DB_POOL_SIZE,
     TENANT_ENGINE_CACHE_SIZE,
@@ -403,6 +407,25 @@ def _build_tenant_async_url(database) -> str:
     return f'postgresql+psycopg://{user}:{pwd}@{database.host}:{database.port}/{database.db_name}'
 
 
+def _tenant_connect_args() -> dict:
+    """libpq connect params bounding how long a bad tenant DB can hang a request.
+
+    Applied to BOTH pool modes. Without connect_timeout the OS default governs the
+    handshake (~127s of SYN retries on Linux), so a tenant pointed at an unreachable
+    host stalls the request for over two minutes rather than erroring — and
+    ``pool_timeout`` does not help, since that bounds waiting for a pool slot, not
+    the connect. The keepalives cover the other direction: a connection that was
+    healthy and then silently died, which would otherwise block on read.
+    """
+    return {
+        'connect_timeout': TENANT_DB_CONNECT_TIMEOUT,
+        'keepalives': 1,
+        'keepalives_idle': TENANT_DB_KEEPALIVES_IDLE,
+        'keepalives_interval': TENANT_DB_KEEPALIVES_INTERVAL,
+        'keepalives_count': TENANT_DB_KEEPALIVES_COUNT,
+    }
+
+
 def _build_tenant_sessionmaker(tenant_ctx):
     url = _build_tenant_async_url(tenant_ctx.connection.database)
     if TENANT_DB_POOL_SIZE <= 0:
@@ -411,7 +434,9 @@ def _build_tenant_sessionmaker(tenant_ctx):
         # few users each. No pool_size/max_overflow/pool_timeout (NullPool rejects
         # them) and no pool_pre_ping: every connection is new, so validating it
         # would just add a round trip.
-        engine = create_async_engine(url, poolclass=NullPool)
+        engine = create_async_engine(
+            url, poolclass=NullPool, connect_args=_tenant_connect_args()
+        )
     else:
         engine = create_async_engine(
             url,
@@ -420,6 +445,7 @@ def _build_tenant_sessionmaker(tenant_ctx):
             pool_timeout=DATABASE_POOL_TIMEOUT,
             pool_recycle=DATABASE_POOL_RECYCLE,
             pool_pre_ping=True,
+            connect_args=_tenant_connect_args(),
         )
     sessionmaker_ = async_sessionmaker(
         bind=engine,

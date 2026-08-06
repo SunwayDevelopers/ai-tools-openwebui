@@ -1461,6 +1461,26 @@ TENANT_DB_MAX_OVERFLOW = int(os.getenv('TENANT_DB_MAX_OVERFLOW', '2'))
 # every other service in the cluster, so if that residue matters, PgBouncer in
 # front of Postgres is the real fix rather than a shorter timeout here.
 TENANT_ENGINE_IDLE_TIMEOUT = int(os.getenv('TENANT_ENGINE_IDLE_TIMEOUT', '300'))
+# Seconds to wait for the TCP connect + auth handshake to a tenant's Postgres.
+#
+# WITHOUT this the OS default applies (~127s of SYN retries on Linux), so a tenant
+# whose host is wrong or firewalled HANGS the request for over two minutes instead
+# of erroring — the browser just spins, and uvicorn has no request timeout to cut it
+# short. Note pool_timeout does NOT cover this: that bounds waiting for a POOL SLOT,
+# not the connect itself, so it never fires on a fresh connection.
+#
+# Same failure shape as an S3 endpoint with a missing port: reachable-looking host,
+# nothing answering, no timeout, indefinite hang. Fail fast instead — a wrong
+# connection should surface as an error in seconds.
+TENANT_DB_CONNECT_TIMEOUT = int(os.getenv('TENANT_DB_CONNECT_TIMEOUT', '10'))
+# TCP keepalive for tenant connections, so a SILENTLY dead peer (pod evicted, NAT
+# entry dropped, blackholed route) is detected instead of the socket blocking on a
+# read forever. connect_timeout only covers establishing the connection; these cover
+# a connection that was fine and then quietly died. Detection takes roughly
+# idle + (interval x count) seconds.
+TENANT_DB_KEEPALIVES_IDLE = int(os.getenv('TENANT_DB_KEEPALIVES_IDLE', '30'))
+TENANT_DB_KEEPALIVES_INTERVAL = int(os.getenv('TENANT_DB_KEEPALIVES_INTERVAL', '10'))
+TENANT_DB_KEEPALIVES_COUNT = int(os.getenv('TENANT_DB_KEEPALIVES_COUNT', '3'))
 # The header carrying the active business-unit slug on every REST/WS request.
 TENANT_ID_HEADER = os.getenv('TENANT_ID_HEADER', 'X-Tenant-Id')
 
