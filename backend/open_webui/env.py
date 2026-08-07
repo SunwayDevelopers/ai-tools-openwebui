@@ -1122,6 +1122,33 @@ except ValueError:
 EXTERNAL_PWA_MANIFEST_URL = os.getenv('EXTERNAL_PWA_MANIFEST_URL', None)
 
 ####################################
+# Catalogue landing page
+####################################
+
+# Public URL of the catalogue this app is listed in. When set, a visitor with no
+# session is sent here instead of being shown a sign-in page, after a SILENT SSO
+# attempt (`prompt=none`) has established that they are not signed in upstream
+# either. The catalogue owns logging people in; schat then picks the session up
+# from the shared upstream IdP session without a second prompt.
+#
+# Leave empty to keep the built-in sign-in page (the previous behaviour).
+#
+# Must be an ABSOLUTE http(s) URL. A relative value is rejected below, because a
+# same-origin value would bounce the visitor straight back here and loop.
+#
+# NOTE for whoever configures the catalogue: its link to this app must be a plain
+# link, NOT an automatic redirect. schat → catalogue → schat would loop if both
+# sides redirect automatically, and no guard on this side can prevent that.
+LANDING_PAGE_URL = (os.environ.get('LANDING_PAGE_URL') or '').strip() or None
+if LANDING_PAGE_URL and not LANDING_PAGE_URL.startswith(('http://', 'https://')):
+    log.error(
+        'LANDING_PAGE_URL=%r is not an absolute http(s) URL; ignoring it and falling '
+        'back to the built-in sign-in page.',
+        LANDING_PAGE_URL,
+    )
+    LANDING_PAGE_URL = None
+
+####################################
 # GROUP DEFAULTS
 ####################################
 

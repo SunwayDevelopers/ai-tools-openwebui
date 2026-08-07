@@ -46,6 +46,16 @@
 
 	let ldapUsername = '';
 
+	// Where a sign-in affordance on THIS page should lead.
+	//
+	// When a catalogue is configured it owns signing people in, so every button here
+	// must point there rather than at the IdP — otherwise a user who reaches this page
+	// (only possible when an OAuth error is being shown, or when auto-redirect is off)
+	// is sent to a hosted IdP login screen instead of the front door, and signs in
+	// against this app in isolation.
+	const signInHref = (provider: string) =>
+		$config?.features?.landing_page_url ?? `${WEBUI_BASE_URL}/oauth/${provider}/login`;
+
 	const setSessionUser = async (sessionUser, redirectPath: string | null = null) => {
 		if (sessionUser) {
 			console.log(sessionUser);
@@ -259,9 +269,34 @@
 				!localStorage.token &&
 				!document.cookie.split('; ').some((c) => c.startsWith('token='))
 			) {
-				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login`;
+				// With a catalogue configured, ask the IdP to authenticate ONLY from an
+				// existing upstream session (`prompt=none`). Someone who signed in on the
+				// catalogue is logged in here invisibly — same upstream Microsoft session,
+				// even though the two apps use different WorkOS clients. Someone who is not
+				// signed in gets `error=login_required` back, and the callback sends them to
+				// the catalogue rather than showing them an IdP prompt they did not ask for.
+				//
+				// Without a catalogue, keep the old behaviour: a normal redirect, so the IdP
+				// may prompt and the user can sign in here.
+				const silent = $config?.features?.landing_page_url ? '?prompt=none' : '';
+				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login${silent}`;
 				return;
 			}
+		}
+
+		// No SSO redirect was possible (no provider configured, several providers, or the
+		// login form is enabled) and there is no session. If this app is listed in a
+		// catalogue, that is where an anonymous visitor belongs — the catalogue owns
+		// signing people in. Checked after the block above so a working silent SSO always
+		// wins: bouncing first would stop anyone who IS signed in upstream from getting in.
+		//
+		// `!error` is load-bearing. Without it a genuine OAuth failure — a bad client
+		// secret, an unreachable IdP, a rejected token — would be bounced to the catalogue
+		// instead of displayed, so the deployment would look like a redirect loop with no
+		// diagnosis anywhere. An error must always be shown.
+		if ($config?.features?.landing_page_url && !localStorage.token && !error) {
+			window.location.href = $config.features.landing_page_url;
+			return;
 		}
 
 		loaded = true;
@@ -514,7 +549,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/google/login`;
+												window.location.href = signInHref('google');
 											}}
 										>
 											<svg
@@ -544,7 +579,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/microsoft/login`;
+												window.location.href = signInHref('microsoft');
 											}}
 										>
 											<svg
@@ -575,7 +610,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/github/login`;
+												window.location.href = signInHref('github');
 											}}
 										>
 											<svg
@@ -596,7 +631,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/oidc/login`;
+												window.location.href = signInHref('oidc');
 											}}
 										>
 											<svg
@@ -626,7 +661,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/feishu/login`;
+												window.location.href = signInHref('feishu');
 											}}
 										>
 											<span>{$i18n.t('Continue with {{provider}}', { provider: 'Feishu' })}</span>
