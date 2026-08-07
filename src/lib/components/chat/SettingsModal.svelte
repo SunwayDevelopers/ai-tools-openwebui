@@ -489,11 +489,16 @@
 				return $config?.features?.enable_direct_connections;
 			}
 
+			// Sunway: the user Settings → "Integrations" tab (tab id is 'tools' — the LABEL is
+			// Integrations) lets a user attach their own direct tool servers. Same class as
+			// Workspace → Tools, which is already hidden: arbitrary external endpoints called with
+			// the user's context, outside anything the AI team curates. Hidden for EVERYONE incl.
+			// admins. Note `admin` does NOT distinguish super admin from BU admin under
+			// multi-tenancy, so a role gate here would not have limited it to the AI team anyway.
+			// See CLAUDE.md → "Deferred / hidden features".
+			// Original gate was: user.role === 'admin' OR permissions.features.direct_tool_servers
 			if (tab.id === 'tools') {
-				return (
-					$user?.role === 'admin' ||
-					($user?.role === 'user' && $user?.permissions?.features?.direct_tool_servers)
-				);
+				return false;
 			}
 
 			// Sunway: the user Settings → Interface tab (~30 cosmetic toggles) is now hidden for

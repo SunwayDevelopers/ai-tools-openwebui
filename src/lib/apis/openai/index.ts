@@ -214,7 +214,16 @@ export const chatCompletion = async (
 		body: JSON.stringify(body)
 	}).catch((err) => {
 		console.error(err);
-		error = err;
+		// Sunway: same treatment as generateOpenAIChatCompletion below — a raw TypeError renders
+		// in the chat as the bare string "Failed to fetch", which tells the user nothing. An
+		// AbortError is the user pressing Stop, so it must keep its own identity.
+		if (err instanceof TypeError) {
+			error =
+				'Could not reach SChat.ai as the connection was lost. This usually happens after the ' +
+				'browser has been idle or the network changed. Refresh the page and try again.';
+		} else {
+			error = err;
+		}
 		return null;
 	});
 
@@ -223,6 +232,24 @@ export const chatCompletion = async (
 	}
 
 	return [res, controller];
+};
+
+// Sunway: turn a non-JSON HTTP error into something a user can act on. These come from the
+// Istio gateway rather than from schat, so they carry no `detail` field to show.
+//   502/503/504 -> no pod behind the gateway. Expected during every rollout (strategy Recreate,
+//                  replicaCount 1), and during pod restarts. Resolves on its own.
+//   504 also    -> upstream exceeded the route timeout (VirtualService apiTimeout).
+// Not translated: this module has no i18n context, matching every other error string it throws.
+// Move it into the calling component if these need to follow the user's language.
+const describeNonJsonError = (status: number, raw: string): string => {
+	if (status === 502 || status === 503) {
+		return 'SChat.ai is restarting or temporarily unavailable. This usually clears within a minute so please try again shortly.';
+	}
+	if (status === 504) {
+		return 'The request took too long and the gateway gave up. Try again, or shorten the request if it involved a large document.';
+	}
+	const snippet = (raw ?? '').trim().slice(0, 200);
+	return `Server error ${status}${snippet ? `: ${snippet}` : ''}`;
 };
 
 export const generateOpenAIChatCompletion = async (
@@ -242,11 +269,36 @@ export const generateOpenAIChatCompletion = async (
 		body: JSON.stringify(body)
 	})
 		.then(async (res) => {
-			if (!res.ok) throw await res.json();
+			if (!res.ok) {
+				// Sunway: was `throw await res.json()`. An Istio/Envoy gateway error answers with a
+				// PLAIN-TEXT body ("no healthy upstream"), so res.json() threw a SyntaxError and the
+				// user saw `Unexpected token 'o', "no healthy upstream" is not valid JSON` in the
+				// chat. That is not an edge case: the chart deploys with strategy Recreate at
+				// replicaCount 1 (RWO PVC + Alembic-on-boot), so EVERY rollout has a window with no
+				// pod behind the gateway. Parse defensively and surface something actionable.
+				const raw = await res.text();
+				let parsed = null;
+				try {
+					parsed = JSON.parse(raw);
+				} catch {
+					// not JSON — a gateway/proxy error rather than an application one
+				}
+				if (parsed) throw parsed;
+				throw { detail: describeNonJsonError(res.status, raw) };
+			}
 			return res.json();
 		})
 		.catch((err) => {
-			error = err?.detail ?? err;
+			// fetch() itself rejects with a TypeError ("Failed to fetch") when the request never
+			// got a response at all — laptop sleep, network change, VPN drop, connection reset
+			// mid-request. Reported by users as "left it open, came back, failed to fetch".
+			if (err instanceof TypeError) {
+				error =
+					'Could not reach schat — the connection was lost. This usually happens after the ' +
+					'browser has been idle or the network changed. Refresh the page and try again.';
+			} else {
+				error = err?.detail ?? err;
+			}
 			return null;
 		});
 

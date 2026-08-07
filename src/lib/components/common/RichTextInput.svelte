@@ -1090,13 +1090,26 @@
 									event.preventDefault();
 									return true;
 								} else {
-									const isInCodeBlock = isInside(['codeBlock']);
 									const isInList = isInside(['listItem', 'bulletList', 'orderedList', 'taskList']);
 									const isInHeading = isInside(['heading']);
 
-									console.log({ isInCodeBlock, isInList, isInHeading });
-
-									if (isInCodeBlock || isInList || isInHeading) {
+									// Sunway: codeBlock deliberately REMOVED from this list.
+									//
+									// Upstream also returned false for codeBlock, which made a code block a dead
+									// end: this early return happens before eventDispatch('keydown') below, so the
+									// parent never sees the Enter and never sends. Ctrl+Enter and Cmd+Enter fall
+									// into this same branch, so there was NO key combination that could send while
+									// the cursor sat inside a block — the user had to notice they were trapped and
+									// move the caret out first. Paste a snippet and you are stuck.
+									//
+									// Enter now sends from inside a code block, matching every other context in
+									// the app. Shift+Enter still inserts a newline (handled above), so multi-line
+									// code is still typeable by hand.
+									//
+									// Lists and headings KEEP the old behaviour on purpose: Enter continuing a
+									// bulleted list is the expected editor convention, and unlike code blocks
+									// neither traps the user — the list ends as soon as you Enter on a blank item.
+									if (isInList || isInHeading) {
 										// Let ProseMirror handle the normal Enter behavior
 										return false;
 									}
