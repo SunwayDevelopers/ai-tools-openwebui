@@ -2352,7 +2352,7 @@
 	"Won": "更好",
 	"Working Directory": "工作目录",
 	"Works together with top-k. A higher value (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text.": "与 top-k 配合使用。较高的值（例如 0.95）将产生更加多样化的文本，而较低的值（例如 0.5）将产生更加聚焦和保守的文本。",
-	"Workspace": "工作空间",
+	"Workspace": "知识库",
 	"Workspace Permissions": "工作空间权限",
 	"Workspaces": "",
 	"Write": "可写",

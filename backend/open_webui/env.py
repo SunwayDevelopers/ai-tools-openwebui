@@ -500,7 +500,13 @@ else:
 
 REQUESTS_VERIFY = os.getenv('REQUESTS_VERIFY', 'True').lower() == 'true'
 
-_aiohttp_timeout_raw = os.getenv('AIOHTTP_CLIENT_TIMEOUT', '')
+# Outbound HTTP timeout for model-provider calls. Upstream defaults to '' (no timeout),
+# which lets a hung provider hold a request open forever; we bound it instead.
+#
+# The default was '180s' until 2026-08-07 — a typo. int('180s') raises, so the value
+# silently fell through to the except branch and every deployment has actually been
+# running 300, never the 180 that was intended and documented. Seconds, no unit suffix.
+_aiohttp_timeout_raw = os.getenv('AIOHTTP_CLIENT_TIMEOUT', '300')
 try:
     AIOHTTP_CLIENT_TIMEOUT = int(_aiohttp_timeout_raw) if _aiohttp_timeout_raw else None
 except (ValueError, TypeError):
@@ -802,6 +808,37 @@ ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'False').lower() == 'true'
 # "Temporary Chat by Default" setting. There is no server-side surface to disable —
 # a temporary chat is simply a chat that is never persisted.
 ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == 'true'
+
+# Admin panel → Settings and Admin panel → Functions.
+#
+# MUST BE PLAIN ENV, NEVER PersistentConfig. Admin Settings is the only UI that can
+# edit a PersistentConfig value, so gating it with one is a trap you cannot escape:
+# set it false, and the screen that would let you set it back to true is gone. Plain
+# env means a restart with the var flipped always restores access.
+#
+# Why hide them at all: both are gated on get_admin_user, and under multi-tenancy
+# `admin` is a per-tenant IAM role (utils/auth.py) — a BU admin is a full schat admin
+# inside their own tenant. Admin Settings writes PROCESS-GLOBAL config with no tenant
+# component and no TTL, so one tenant admin's change lands on every pod for every
+# tenant. Functions installs arbitrary Python that runs inlet/outlet on every request.
+#
+# DEFAULT TRUE — a DELIBERATE exception to the "hidden features default False in code"
+# rule the rest of this block follows (CLAUDE.md, 2026-07-31). That rule exists because
+# a forgotten env var must not silently expose a DEFERRED feature to end users. These
+# two are the opposite kind of thing: they are the operational surfaces the platform is
+# administered THROUGH. Defaulting them off would mean a fresh environment boots with no
+# way to configure models or connections — first-run setup would be impossible via the
+# UI — and every dev machine would lose them too, since dev.ps1 deliberately seeds none
+# of these flags and relies on the code default.
+#
+# So the failure mode of default-off here is "cannot administer the system", not "user
+# sees a dead feature". Hiding is opt-in, per deployment, from the manifest.
+#
+# NOT A SECURITY BOUNDARY. /api/v1/functions/* and POST /api/v1/auths/admin/config
+# remain reachable for anyone holding an admin token — this removes the UI, not the
+# endpoint. It reduces accident and casual discovery, not a determined actor.
+ENABLE_ADMIN_SETTINGS_UI = os.getenv('ENABLE_ADMIN_SETTINGS_UI', 'True').lower() == 'true'
+ENABLE_ADMIN_FUNCTIONS_UI = os.getenv('ENABLE_ADMIN_FUNCTIONS_UI', 'True').lower() == 'true'
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA

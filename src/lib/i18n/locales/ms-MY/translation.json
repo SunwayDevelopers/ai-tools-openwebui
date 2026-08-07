@@ -2352,7 +2352,7 @@
 	"Won": "Menang",
 	"Working Directory": "Direktori Kerja",
 	"Works together with top-k. A higher value (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text.": "Berfungsi bersama dengan top-k. Nilai yang lebih tinggi (contohnya, 0.95) akan menghasilkan teks yang lebih pelbagai, manakala nilai yang lebih rendah (contohnya, 0.5) akan menghasilkan teks yang lebih fokus dan konservatif.",
-	"Workspace": "Ruangan Kerja",
+	"Workspace": "Pangkalan Pengetahuan",
 	"Workspace Permissions": "Kebenaran Ruangan Kerja",
 	"Workspaces": "",
 	"Write": "Tulis",

@@ -13,22 +13,35 @@
 
 	let loaded = false;
 
-	// Sunway: Evaluations and Functions are hidden for EVERYONE incl. super admins (see
-	// CLAUDE.md → "Deferred / hidden features"). This blocks direct-URL access too, so there is
-	// no back-door into the hidden screens.
+	// Sunway: Evaluations is hidden for EVERYONE incl. super admins (see CLAUDE.md →
+	// "Deferred / hidden features"). This blocks direct-URL access too, so there is no
+	// back-door into the hidden screen.
 	//
 	// Reactive, not onMount-only, for the same reason as the Workspace layout: onMount fires
-	// once per layout mount, so a client-side navigation from /admin/users to /admin/functions
-	// would reuse this already-mounted layout and slip straight past an onMount check. There are
-	// no in-app links left to either screen, so today this is belt-and-braces — but it is the
-	// identical defect that made clicking "Workspace" render the hidden Models page.
+	// once per layout mount, so a client-side navigation from /admin/users would reuse this
+	// already-mounted layout and slip straight past an onMount check. That is the identical
+	// defect that made clicking "Workspace" render the hidden Models page.
 	//
-	// NOTE: hiding the Functions UI does NOT disable Filter functions — any already-installed
-	// inlet/outlet filter keeps running in utils/middleware.py. This only removes the
-	// install/edit surface. Reverse by removing this block + the two nav gates below.
-	const HIDDEN_ADMIN_PATHS = ['/admin/evaluations', '/admin/functions'];
+	// FUNCTIONS UN-HIDDEN 2026-08-05 — it was hidden earlier the same day, then restored
+	// because Filter functions carry the inlet/outlet hooks the guardrail work attaches to,
+	// and the UI is the only place to install, edit, order or toggle a filter. Hiding it never
+	// disabled anything (utils/middleware.py still ran installed filters); it only blocked the
+	// install surface, which would have blocked the guardrail work itself.
+	//
+	// Functions and Settings are now flag-driven rather than hard-coded, so the guardrail can
+	// be tuned by flipping ENABLE_ADMIN_FUNCTIONS_UI without editing source. Both are PLAIN
+	// env (see env.py for why Settings especially must never be PersistentConfig).
+	//
+	// `=== false` deliberately, not falsy: $config is null on the first render, and treating
+	// "not loaded yet" as "hidden" would bounce an admin off a page they are allowed to see.
+	// Absent flag → visible, which is also what an older backend returns.
+	$: hiddenAdminPaths = [
+		'/admin/evaluations',
+		...($config?.features?.enable_admin_functions_ui === false ? ['/admin/functions'] : []),
+		...($config?.features?.enable_admin_settings_ui === false ? ['/admin/settings'] : [])
+	];
 
-	$: if (browser && HIDDEN_ADMIN_PATHS.some((path) => $page.url.pathname.includes(path))) {
+	$: if (browser && hiddenAdminPaths.some((path) => $page.url.pathname.includes(path))) {
 		loaded = false;
 		goto('/admin');
 	}
@@ -39,7 +52,7 @@
 			return;
 		}
 
-		if (HIDDEN_ADMIN_PATHS.some((path) => $page.url.pathname.includes(path))) {
+		if (hiddenAdminPaths.some((path) => $page.url.pathname.includes(path))) {
 			return;
 		}
 
@@ -118,13 +131,15 @@
 							>
 						{/if}
 
-						<!-- Sunway: Functions hidden. NOTE this reverses the earlier "deliberately still
-						     admin-visible" call recorded in CLAUDE.md — Filter functions carry the
-						     inlet/outlet hooks the guardrail work depends on. Hiding the UI does NOT
-						     stop installed filters from running (utils/middleware.py is untouched); it
-						     only removes the install/edit surface, so the guardrail work will need this
-						     un-hidden when it starts. Original gate: always visible to admins -->
-						{#if false}
+						<!-- Sunway: Filter functions are the inlet/outlet attachment point for the
+						     prompt/content guardrails, and this UI is the only way to install, edit,
+						     order or toggle one — so hiding it blocks guardrail work, not the
+						     guardrails themselves (utils/middleware.py keeps running installed
+						     filters either way). Gated on ENABLE_ADMIN_FUNCTIONS_UI so it can be
+						     reopened for tuning without a code change.
+						     Note `admin` does NOT distinguish super admin from BU admin under
+						     multi-tenancy, so when visible this is reachable by any tenant admin. -->
+						{#if $config?.features?.enable_admin_functions_ui ?? true}
 							<a
 								draggable="false"
 								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/functions')
@@ -134,13 +149,20 @@
 							>
 						{/if}
 
-						<a
-							draggable="false"
-							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/settings')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-							href="/admin/settings">{$i18n.t('Settings')}</a
-						>
+						<!-- Sunway: Admin Settings writes PROCESS-GLOBAL config — no tenant component,
+						     no TTL — so a single BU admin's change propagates to every pod for every
+						     tenant. Gated on ENABLE_ADMIN_SETTINGS_UI (plain env; it must never be
+						     PersistentConfig, since this is the only screen that could turn it back
+						     on). Individual tabs stay filtered by HIDDEN_ADMIN_SETTINGS_TAB_IDS. -->
+						{#if $config?.features?.enable_admin_settings_ui ?? true}
+							<a
+								draggable="false"
+								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/settings')
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+								href="/admin/settings">{$i18n.t('Settings')}</a
+							>
+						{/if}
 					</div>
 				</div>
 			</div>
