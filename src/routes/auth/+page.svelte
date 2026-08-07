@@ -18,7 +18,7 @@
 	} from '$lib/apis/auths';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
-	import { WEBUI_NAME, config, user, socket, tenants, activeTenant } from '$lib/stores';
+	import { WEBUI_NAME, config, user, tenants, activeTenant } from '$lib/stores';
 	import {
 		getMyTenantsWithRetry,
 		TenantGateError,
@@ -53,7 +53,6 @@
 			if (sessionUser.token) {
 				localStorage.token = sessionUser.token;
 			}
-			$socket.emit('user-join', { auth: { token: sessionUser.token } });
 			await user.set(sessionUser);
 			await config.set(await getBackendConfig());
 
@@ -67,8 +66,23 @@
 				redirectPath = $page.url.searchParams.get('redirect') || '/';
 			}
 
-			goto(redirectPath);
+			// Cleared BEFORE navigating: nothing after a location.href assignment is
+			// guaranteed to run.
 			localStorage.removeItem('redirectPath');
+
+			// Full page load, NOT goto(). +layout.svelte creates the Socket.IO connection on
+			// mount, and this page was mounted while signed out — no schat token, no
+			// iam_token cookie, and under multi-tenancy no tenant slug — so connect()
+			// rejected that handshake fail-closed (socket/main.py). socket.io does not retry
+			// a server rejection, and a client-side goto() keeps the same dead socket, which
+			// never joins the `user:{id}` room. Chat completions are delivered ONLY as socket
+			// events, so the first message then generated and saved but never reported as
+			// done: the spinner ran forever until the user refreshed by hand.
+			//
+			// Reloading rebuilds the socket with the token, cookie and slug all in place
+			// (setActiveTenant runs in oauthCallbackHandler before this). Consistent with
+			// signout, tenant switch and no-access, which already use location.href.
+			window.location.href = redirectPath;
 		}
 	};
 
