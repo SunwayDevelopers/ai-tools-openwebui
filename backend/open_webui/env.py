@@ -1159,6 +1159,33 @@ except ValueError:
 EXTERNAL_PWA_MANIFEST_URL = os.getenv('EXTERNAL_PWA_MANIFEST_URL', None)
 
 ####################################
+# Catalogue landing page
+####################################
+
+# Public URL of the catalogue this app is listed in. When set, a visitor with no
+# session is sent here instead of being shown a sign-in page, after a SILENT SSO
+# attempt (`prompt=none`) has established that they are not signed in upstream
+# either. The catalogue owns logging people in; schat then picks the session up
+# from the shared upstream IdP session without a second prompt.
+#
+# Leave empty to keep the built-in sign-in page (the previous behaviour).
+#
+# Must be an ABSOLUTE http(s) URL. A relative value is rejected below, because a
+# same-origin value would bounce the visitor straight back here and loop.
+#
+# NOTE for whoever configures the catalogue: its link to this app must be a plain
+# link, NOT an automatic redirect. schat → catalogue → schat would loop if both
+# sides redirect automatically, and no guard on this side can prevent that.
+LANDING_PAGE_URL = (os.environ.get('LANDING_PAGE_URL') or '').strip() or None
+if LANDING_PAGE_URL and not LANDING_PAGE_URL.startswith(('http://', 'https://')):
+    log.error(
+        'LANDING_PAGE_URL=%r is not an absolute http(s) URL; ignoring it and falling '
+        'back to the built-in sign-in page.',
+        LANDING_PAGE_URL,
+    )
+    LANDING_PAGE_URL = None
+
+####################################
 # GROUP DEFAULTS
 ####################################
 
@@ -1450,6 +1477,78 @@ TENANT_BUNDLE_CACHE_TTL = int(os.getenv('TENANT_BUNDLE_CACHE_TTL', '300'))
 # (each engine holds a small connection pool; keep the product under Postgres
 # max_connections).
 TENANT_ENGINE_CACHE_SIZE = int(os.getenv('TENANT_ENGINE_CACHE_SIZE', '50'))
+# Per-tenant connection pool sizing. Every tenant gets its OWN pool.
+#
+# Default is a MINIMAL POOL (1 resident, bursting to 3) rather than no pool, and it
+# only works because TENANT_ENGINE_IDLE_TIMEOUT below reclaims idle engines. That
+# pairing is the whole design:
+#
+#   without idle eviction  -> resident connections scale with EVERY tenant ever
+#                             touched, which is unbounded as tenants are added
+#   with idle eviction     -> resident connections scale with tenants ACTIVE in the
+#                             last TENANT_ENGINE_IDLE_TIMEOUT seconds
+#
+# With many tenants but few users each, "active right now" stays small however long
+# the tenant list grows — so 1 resident connection per active tenant is ample, and
+# a pooled checkout stays cheap (~3ms vs ~10ms for a fresh connect, measured).
+#
+# Keeping a pool also keeps a HARD CAP: requests beyond POOL_SIZE + MAX_OVERFLOW
+# queue and wait (pool_timeout) instead of piling more connections onto Postgres.
+# That backpressure is what protects `max_connections` during a traffic spike.
+#
+# Budget: (active tenants x POOL_SIZE) resident, peaking at
+# (active tenants x (POOL_SIZE + MAX_OVERFLOW)), times the replica count — all of
+# which must stay under Postgres `max_connections` (default 100).
+#
+# 0 selects NullPool instead: no pooled connections at all, connect per checkout.
+# That removes idle connections entirely, but pays a connect on EVERY DB-touching
+# request and removes the cap, so a concurrency spike can exhaust `max_connections`
+# faster than pooling would. Appropriate for very spiky/serverless deployments, not
+# for an interactive chat app.
+TENANT_DB_POOL_SIZE = int(os.getenv('TENANT_DB_POOL_SIZE', '1'))
+TENANT_DB_MAX_OVERFLOW = int(os.getenv('TENANT_DB_MAX_OVERFLOW', '2'))
+# Dispose a tenant's engine after this many seconds with no request for it, which
+# releases its pooled connections. 0 disables idle eviction (size-based LRU only).
+#
+# THIS IS WHAT MAKES THE POOL ABOVE VIABLE at high tenant counts, and it is
+# load-bearing rather than an optimisation: SQLAlchemy's QueuePool never shrinks
+# below pool_size on its own — only overflow connections close on return, and
+# pool_recycle acts at checkout, not on idle time. Without this, a tenant someone
+# opened once at 09:00 pins its connection until the pod restarts, and the total
+# grows with every tenant ever visited.
+#
+# The value is a trade: shorter reclaims connections sooner but makes the first
+# request after a quiet spell pay a fresh connect. 300s suits an interactive app —
+# a user mid-session never notices it, an abandoned tenant frees up within minutes.
+#
+# Under NullPool (TENANT_DB_POOL_SIZE=0) there are no connections to reclaim, so
+# this only bounds engine-object memory and can be much longer.
+#
+# Known gap: the sweep is lazy (it runs on tenant requests), so a completely idle
+# pod reclaims nothing until the next request. `max_connections` is shared with
+# every other service in the cluster, so if that residue matters, PgBouncer in
+# front of Postgres is the real fix rather than a shorter timeout here.
+TENANT_ENGINE_IDLE_TIMEOUT = int(os.getenv('TENANT_ENGINE_IDLE_TIMEOUT', '300'))
+# Seconds to wait for the TCP connect + auth handshake to a tenant's Postgres.
+#
+# WITHOUT this the OS default applies (~127s of SYN retries on Linux), so a tenant
+# whose host is wrong or firewalled HANGS the request for over two minutes instead
+# of erroring — the browser just spins, and uvicorn has no request timeout to cut it
+# short. Note pool_timeout does NOT cover this: that bounds waiting for a POOL SLOT,
+# not the connect itself, so it never fires on a fresh connection.
+#
+# Same failure shape as an S3 endpoint with a missing port: reachable-looking host,
+# nothing answering, no timeout, indefinite hang. Fail fast instead — a wrong
+# connection should surface as an error in seconds.
+TENANT_DB_CONNECT_TIMEOUT = int(os.getenv('TENANT_DB_CONNECT_TIMEOUT', '10'))
+# TCP keepalive for tenant connections, so a SILENTLY dead peer (pod evicted, NAT
+# entry dropped, blackholed route) is detected instead of the socket blocking on a
+# read forever. connect_timeout only covers establishing the connection; these cover
+# a connection that was fine and then quietly died. Detection takes roughly
+# idle + (interval x count) seconds.
+TENANT_DB_KEEPALIVES_IDLE = int(os.getenv('TENANT_DB_KEEPALIVES_IDLE', '30'))
+TENANT_DB_KEEPALIVES_INTERVAL = int(os.getenv('TENANT_DB_KEEPALIVES_INTERVAL', '10'))
+TENANT_DB_KEEPALIVES_COUNT = int(os.getenv('TENANT_DB_KEEPALIVES_COUNT', '3'))
 # The header carrying the active business-unit slug on every REST/WS request.
 TENANT_ID_HEADER = os.getenv('TENANT_ID_HEADER', 'X-Tenant-Id')
 

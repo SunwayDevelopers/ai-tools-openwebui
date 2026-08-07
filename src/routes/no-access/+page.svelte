@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { WEBUI_NAME } from '$lib/stores';
+	import { WEBUI_NAME, config } from '$lib/stores';
 	import { endSession } from '$lib/utils/session';
 
 	// Shown when a valid login has NO active business-unit membership. Per the IAM
@@ -61,13 +61,28 @@
 			your administrator to request access, then sign in again.
 		</p>
 
-		<button
-			class="mt-6 rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-			on:click={signOut}
-			disabled={signingOut}
-		>
-			{signingOut ? 'Signing out…' : 'Sign out'}
-		</button>
+		<div class="mt-6 flex items-center justify-center gap-3">
+			<button
+				class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+				on:click={signOut}
+				disabled={signingOut}
+			>
+				{signingOut ? 'Signing out…' : 'Sign out'}
+			</button>
+
+			<!-- Deliberately a link, not a redirect. The visitor holds a VALID session here —
+			     they are authenticated but hold no membership — so bouncing them to the
+			     catalogue would only send them back, and signing in again cannot help. Only
+			     an admin granting access can. -->
+			{#if $config?.features?.landing_page_url}
+				<a
+					class="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+					href={$config.features.landing_page_url}
+				>
+					Back to catalogue
+				</a>
+			{/if}
+		</div>
 
 		{#if signOutError}
 			<p class="mt-4 text-xs text-red-600 dark:text-red-400">

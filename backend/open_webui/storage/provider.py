@@ -23,9 +23,12 @@ from open_webui.config import (
     S3_ACCESS_KEY_ID,
     S3_ADDRESSING_STYLE,
     S3_BUCKET_NAME,
+    S3_CONNECT_TIMEOUT,
     S3_ENABLE_TAGGING,
     S3_ENDPOINT_URL,
     S3_KEY_PREFIX,
+    S3_MAX_ATTEMPTS,
+    S3_READ_TIMEOUT,
     S3_REGION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_USE_ACCELERATE_ENDPOINT,
@@ -127,6 +130,14 @@ class S3StorageProvider(StorageProvider):
             # KIT change - see https://github.com/boto/boto3/issues/4400#issuecomment-2600742103∆
             request_checksum_calculation='when_required',
             response_checksum_validation='when_required',
+            # Fail fast on an unreachable endpoint. botocore's defaults (60s connect,
+            # 5 attempts) mean a wrong host or missing port stalls the request for
+            # ~300s rather than erroring — and since the DB write typically lands
+            # first, the record appears on refresh while the upload is still hanging.
+            # read_timeout is per-read, not per-transfer, so large uploads are unaffected.
+            connect_timeout=S3_CONNECT_TIMEOUT,
+            read_timeout=S3_READ_TIMEOUT,
+            retries={'max_attempts': S3_MAX_ATTEMPTS, 'mode': 'standard'},
         )
 
         # If access key and secret are provided, use them for authentication

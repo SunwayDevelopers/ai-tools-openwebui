@@ -119,7 +119,7 @@
 
 	export let atSelectedModel: Model | undefined = undefined;
 	export let selectedModels: [''];
-
+	$: console.log('Selected models:', selectedModels, 'atSelectedModel:', atSelectedModel);
 	let selectedModelIds = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
 
@@ -776,7 +776,7 @@
 				const fallbackEnabled = $config?.file?.image_ocr_fallback ?? false;
 				const ocrFallback = fallbackEnabled && !$temporaryChatEnabled;
 				const useOcr = ocrFallback && someModelLacksVision;
-
+				console.log('Image file detected. Vision capable models:', visionCapableModels, 'OCR fallback enabled:', ocrFallback, 'Use OCR:', useOcr, "someModelLacksVision", someModelLacksVision);
 				if (visionCapableModels.length === 0 && !ocrFallback) {
 					if (fallbackEnabled && $temporaryChatEnabled) {
 						// The model is irrelevant here: a temporary chat never persists the

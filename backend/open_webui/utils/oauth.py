@@ -72,6 +72,7 @@ from open_webui.env import (
     ENABLE_MULTI_TENANCY,
     ENABLE_OAUTH_EMAIL_FALLBACK,
     ENABLE_OAUTH_ID_TOKEN_COOKIE,
+    LANDING_PAGE_URL,
     OAUTH_CLIENT_INFO_ENCRYPTION_KEY,
     OAUTH_MAX_SESSIONS_PER_USER,
     REDIS_KEY_PREFIX,
@@ -1560,7 +1561,7 @@ class OAuthManager:
         log.info('MT sign-in complete for %s (%d tenant(s))', email, len(exchange.tenants))
         return redirect
 
-    async def handle_login(self, request, provider):
+    async def handle_login(self, request, provider, prompt: Optional[str] = None):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
         # If the provider has a custom redirect URL, use that, otherwise automatically generate one
@@ -1576,12 +1577,52 @@ class OAuthManager:
             kwargs['audience'] = auth_manager_config.OAUTH_AUDIENCE
         if OAUTH_AUTHORIZE_PARAMS:
             kwargs.update(OAUTH_AUTHORIZE_PARAMS)
+        if prompt:
+            # Set LAST so it wins over any `prompt` in OAUTH_AUTHORIZE_PARAMS: a
+            # configured `prompt=login` would otherwise force a visible prompt and
+            # defeat the whole point of the silent check.
+            kwargs['prompt'] = prompt
 
         return await client.authorize_redirect(request, redirect_uri, **kwargs)
 
     async def handle_callback(self, request, provider, response, db=None):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
+
+        # Silent-auth outcome, handled BEFORE anything tries to exchange a code —
+        # on these errors the IdP sends no code at all, so authorize_access_token()
+        # below would fail with a misleading "email or password incorrect".
+        #
+        # `login_required` / `interaction_required` are the standard OIDC answers to
+        # `prompt=none` when there is no usable upstream session. That is not a failure:
+        # it is the expected negative result of "are you already signed in?". Send the
+        # visitor to the catalogue, which owns signing them in.
+        # `account_selection_required` is included because it is a realistic corporate
+        # case, not an edge one: someone signed in to two Microsoft accounts cannot be
+        # resolved silently, so the IdP refuses rather than guessing. Same handling —
+        # the catalogue can prompt properly.
+        idp_error = request.query_params.get('error')
+        if idp_error in (
+            'login_required',
+            'interaction_required',
+            'consent_required',
+            'account_selection_required',
+        ):
+            if LANDING_PAGE_URL:
+                log.info(
+                    'Silent SSO found no upstream session (%s); redirecting to the '
+                    'catalogue landing page.',
+                    idp_error,
+                )
+                return RedirectResponse(url=LANDING_PAGE_URL, status_code=302)
+            # No landing page configured: fall through to the normal sign-in page so the
+            # visitor can authenticate here instead of hitting a dead end.
+            log.info(
+                'Silent SSO found no upstream session (%s) and LANDING_PAGE_URL is '
+                'unset; returning to the sign-in page.',
+                idp_error,
+            )
+            return RedirectResponse(url='/auth', status_code=302)
 
         error_message = None
         try:
