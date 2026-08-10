@@ -56,6 +56,34 @@
 	const signInHref = (provider: string) =>
 		$config?.features?.landing_page_url ?? `${WEBUI_BASE_URL}/oauth/${provider}/login`;
 
+	// The catalogue hands off by linking here with `?login_hint=<email>`, which is what
+	// lets the silent SSO probe be pinned to a WorkOS organization (see handle_login in
+	// backend/open_webui/utils/oauth.py — an unpinned probe renders the WorkOS hosted
+	// login page instead of failing cleanly).
+	//
+	// It has to be looked for in two places. The catalogue links to `/`, not `/auth`, so
+	// on a cold arrival +layout.svelte has already forwarded us to
+	// `/auth?redirect=<encoded original url>` and the hint is nested inside `redirect`
+	// rather than sitting at the top level. Reading only the top level would miss every
+	// real handoff and send the visitor back to the catalogue.
+	const resolveLoginHint = (url: URL): string | null => {
+		const direct = url.searchParams.get('login_hint');
+		if (direct) {
+			return direct;
+		}
+
+		const redirectParam = url.searchParams.get('redirect');
+		if (!redirectParam) {
+			return null;
+		}
+		try {
+			return new URL(redirectParam, url.origin).searchParams.get('login_hint');
+		} catch {
+			// A `redirect` that isn't a parseable URL is not a handoff; treat it as absent.
+			return null;
+		}
+	};
+
 	const setSessionUser = async (sessionUser, redirectPath: string | null = null) => {
 		if (sessionUser) {
 			console.log(sessionUser);
@@ -254,6 +282,7 @@
 		const hasTokenCookie = document.cookie.split('; ').some((c) => c.startsWith('token='));
 		const catalogueUrl = $config?.features?.landing_page_url ?? null;
 		const providers = Object.keys($config?.oauth?.providers ?? {});
+		const loginHint = resolveLoginHint($page.url);
 
 		// Is this deployment unambiguously SSO-only? A single provider, no password form,
 		// no LDAP, no trusted header, not mid-onboarding — i.e. redirecting to the IdP
@@ -272,39 +301,40 @@
 			!$config?.features?.auth_trusted_header &&
 			!$config?.onboarding;
 
-		// Attempt SSO. Gated on `auto_redirect` OR a configured catalogue — NOT on
-		// `auto_redirect` alone.
+		// Attempt SSO.
 		//
-		// The catalogue is the reason. Configuring one declares that this app does not own
-		// sign-in, which only makes sense for an SSO-only deployment; making the attempt
-		// additionally depend on OAUTH_AUTO_REDIRECT meant one unset env var turned the
-		// attempt off while leaving the bounce below on, so every anonymous visitor was
-		// sent to the catalogue without schat ever trying to log them in — an invisible
-		// infinite loop whose only symptom was a single /api/config request per hop.
-		// A toggle that silently disables authentication is not a toggle worth having.
+		// With a catalogue configured, the ONLY case worth attempting is an explicit
+		// handoff: the catalogue links here with `?login_hint=<email>`, and that hint is
+		// what lets the probe be pinned to a WorkOS organization. Unpinned, a `prompt=none`
+		// probe against the org-less `authkit` selector does not fail cleanly — WorkOS
+		// renders its hosted login page, so an anonymous visitor lands on an IdP screen
+		// instead of the catalogue. Probing unconditionally is therefore worse than not
+		// probing: no hint means fall straight through to the catalogue below.
+		//
+		// Without a catalogue (local dev), keep the old behaviour: a plain redirect that
+		// may prompt, gated on OAUTH_AUTO_REDIRECT as before.
 		if (!error && !localStorage.token && !hasTokenCookie && ssoOnly) {
-			if ($config?.oauth?.auto_redirect || catalogueUrl) {
-				// With a catalogue configured, ask the IdP to authenticate ONLY from an
-				// existing upstream session (`prompt=none`). Someone who signed in on the
-				// catalogue is logged in here invisibly — same upstream Microsoft session,
-				// even though the two apps use different WorkOS clients. Someone who is not
-				// signed in gets `error=login_required` back, and the callback sends them to
-				// the catalogue rather than showing them an IdP prompt they did not ask for.
-				// The callback also breaks the loop if that comes back negative twice.
-				//
-				// Without a catalogue, keep the old behaviour: a normal redirect, so the IdP
-				// may prompt and the user can sign in here.
-				const silent = catalogueUrl ? '?prompt=none' : '';
-				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login${silent}`;
+			if (catalogueUrl && loginHint) {
+				// A visitor who signed in on the catalogue is logged in here invisibly, off
+				// the same upstream Microsoft session, even though the two apps use different
+				// WorkOS clients. One who is not gets `login_required` back, and the callback
+				// returns them to the catalogue — breaking the loop if that happens twice.
+				const query = new URLSearchParams({ prompt: 'none', login_hint: loginHint });
+				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login?${query}`;
+				return;
+			}
+			if (!catalogueUrl && $config?.oauth?.auto_redirect) {
+				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login`;
 				return;
 			}
 		}
 
-		// No SSO attempt was possible (no provider configured, several providers, or the
-		// login form is enabled) and there is no session. If this app is listed in a
-		// catalogue, that is where an anonymous visitor belongs — the catalogue owns
-		// signing people in. Checked after the block above so a working silent SSO always
-		// wins: bouncing first would stop anyone who IS signed in upstream from getting in.
+		// No SSO attempt was made — no handoff hint, or the deployment is not SSO-only —
+		// and there is no session. If this app is listed in a catalogue, that is where an
+		// anonymous visitor belongs: the catalogue owns signing people in, and it is the
+		// normal destination here, not an error path. Checked after the block above so a
+		// pinned silent probe always wins; bouncing first would stop anyone arriving with
+		// a valid handoff from ever getting in.
 		//
 		// Three conditions keep this from firing on someone who is mid-sign-in:
 		//
