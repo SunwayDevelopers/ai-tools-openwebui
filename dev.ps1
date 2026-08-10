@@ -322,6 +322,29 @@ Set-EnvDefault RAG_IMAGE_VISION_LLM_MODEL    'google/gemma-4-E4B-it'   # e.g. 'g
 # model's chat template; confirm by curling the vLLM endpoint directly.
 # $env:RAG_IMAGE_VISION_LLM_EXTRA_BODY = '{"chat_template_kwargs": {"enable_thinking": false}}'
 
+# -- security response headers: ONE dev-only override ---------------------------
+#
+# The seven baseline headers are defaulted in code (env.py, "Sunway: security
+# response header defaults") and are left alone here on purpose -- dev should test
+# what deploys.
+#
+# CROSS_ORIGIN_RESOURCE_POLICY is the exception, and it is a DEV ARTIFACT, not a
+# disagreement with the deployed value. Prod serves the SPA and the API from ONE
+# origin, so 'same-origin' is correct there. Dev does not: vite serves the page on
+# :5173 while FastAPI serves the API on :8080, and different ports are different
+# ORIGINS -- so 'same-origin' makes the browser refuse every image the backend
+# sends. Measured 2026-08-11: the schat wordmark, the user avatar and all five
+# model avatars failed with net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin.
+#
+# 'same-site' fixes it because ports are NOT part of a site, so :5173 and :8080 are
+# the same site. It is still tighter than 'cross-origin'.
+#
+# WHY NOT THE DOCUMENTED "" OPT-OUT: on Windows, `$env:X = ''` DELETES the variable
+# rather than setting it empty, so os.environ.setdefault would then re-apply the
+# code default and nothing would change. The ""-disables-one-header trick works in
+# the Helm manifest (Linux) but not here.
+Set-EnvDefault CROSS_ORIGIN_RESOURCE_POLICY 'same-site'
+
 # -- deferred / hidden feature flags: NOT SET HERE ANY MORE (2026-07-31) -------
 #
 # ENABLE_VOICE, ENABLE_TEMPORARY_CHAT, ENABLE_CHAT_ARCHIVE, ENABLE_VERSION_UPDATE_CHECK,
