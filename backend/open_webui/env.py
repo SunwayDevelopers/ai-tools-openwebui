@@ -1583,3 +1583,88 @@ WORKOS_ORGANIZATION_ID_EDU = (os.environ.get('WORKOS_ORGANIZATION_ID_EDU') or ''
 # it is a fact about which AD org owns which domain, not a deployment choice, and
 # an env var here would just be a second place for the two apps to disagree.
 WORKOS_EDU_EMAIL_DOMAIN = 'sunway.edu.my'
+
+
+# --- Sunway: security response header defaults --------------------------------
+# Baseline security headers, defaulted IN CODE rather than left to each manifest.
+#
+# Why here and not the Helm values: upstream's utils/security_headers.py emits a
+# header only when its env var is set, so an unset var means NO header and no
+# warning. Every deployment surface (staging, a future production, and every dev
+# machine — dev.ps1 seeds no flags by design) would have to remember all eight.
+# That is the same failure mode as the 2026-07-31 feature-flag change recorded in
+# CLAUDE.md, and it is not hypothetical here: the manifest's values.yaml has
+# measurably drifted behind values.staging.yaml, and values.production.yaml is
+# still missing most of its configuration.
+#
+# HOW THIS WORKS, and why security_headers.py is untouched: setdefault only writes
+# when the key is absent, and set_security_headers() re-reads os.environ on every
+# request. So the value below is a floor, a real env var still wins, and upstream's
+# file keeps zero Sunway edits — nothing to reconcile on the next upstream-sync.
+#
+# ESCAPE HATCH: setting the var to an EMPTY string in a manifest disables that one
+# header (the key exists, so setdefault leaves it; security_headers.py then skips
+# the falsy value). That is the documented way to opt out per deployment.
+#
+# Deliberately NOT defaulted:
+#   CROSS_ORIGIN_EMBEDDER_POLICY - "require-corp" blocks any cross-origin
+#       subresource lacking its own CORP header, which includes MinIO presigned
+#       image URLs and external images pasted into chat. Its only real benefit is
+#       enabling SharedArrayBuffer, which schat does not use.
+#   CACHE_CONTROL - applies to EVERY response including immutable JS/CSS bundles.
+#   CONTENT_SECURITY_POLICY / _REPORT_ONLY - the only two that can break the app
+#       outright (SvelteKit inline styles, wss:, MinIO + external images, srcdoc
+#       artifact iframes) and the ones needing per-deployment tuning. Keep them in
+#       the manifest, report-only first, and promote once the reports are quiet.
+_SECURITY_HEADER_DEFAULTS = {
+    'XCONTENT_TYPE': 'nosniff',
+    # SAMEORIGIN, one of the two values the security brief names. DENY is also safe
+    # today (nothing frames schat — the prompt=none silent SSO probe is a full-page
+    # redirect, not a hidden iframe) but SAMEORIGIN leaves room for an
+    # intranet-portal embed without another image build.
+    'XFRAME_OPTIONS': 'SAMEORIGIN',
+    'REFERRER_POLICY': 'strict-origin-when-cross-origin',
+    # geolocation=(self) per the security brief's own example. NO SPACES AFTER THE
+    # COMMAS — the regex in security_headers.py rejects "geolocation=(self),
+    # microphone=()" and the failure is SILENT: it falls back to the literal string
+    # "none", which is not a valid Permissions-Policy value, so browsers ignore the
+    # header entirely while a scanner still reports it as present.
+    'PERMISSIONS_POLICY': (
+        'geolocation=(self),microphone=(),camera=(),payment=(),usb=(),midi=(),accelerometer=(),gyroscope=(),magnetometer=()'
+    ),
+    # same-origin is safe: there is no popup in any auth path — every branch of
+    # src/routes/auth/+page.svelte navigates via window.location.href. Revisit if a
+    # popup login or a Drive/OneDrive picker is ever enabled.
+    'CROSS_ORIGIN_OPENER_POLICY': 'same-origin',
+    'CROSS_ORIGIN_RESOURCE_POLICY': 'same-origin',
+    # COEP: set to the brief's value on request, AGAINST the recommendation above.
+    # require-corp blocks every cross-origin subresource that does not send its own
+    # CORP header. Same-origin traffic is unaffected (uploaded files and model
+    # avatars are proxied through /api/..., not fetched from MinIO directly), so the
+    # exposure is narrower than first assumed: external images pasted into chat, and
+    # any third-party thumbnail in web-search results. Test those two before
+    # promoting past staging; "credentialless" is the softer alternative.
+    'CROSS_ORIGIN_EMBEDDER_POLICY': 'require-corp',
+    # CSP: ENFORCING, per the brief. Passed through with no validation at all
+    # (security_headers.py:143). 'unsafe-inline' for style-src is not optional —
+    # SvelteKit and Tailwind emit inline styles; 'wasm-unsafe-eval' covers pyodide;
+    # wss: is the Socket.IO channel; blob:/data: are the srcdoc artifact iframes and
+    # generated images. If the app fails to boot, this is the first thing to revert
+    # to CONTENT_SECURITY_POLICY_REPORT_ONLY.
+    'CONTENT_SECURITY_POLICY': (
+        "default-src 'self'; "
+        "img-src 'self' data: blob: https:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'wasm-unsafe-eval'; "
+        "connect-src 'self' wss: https:; "
+        "frame-src 'self' blob: data:; "
+        "worker-src 'self' blob:; "
+        "font-src 'self' data:"
+    ),
+    # HSTS is NOT set: it is not on the security brief's list of eight, and adding
+    # unrequested headers to a CAB change only widens the review surface. Re-add
+    # 'HSTS': 'max-age=31536000;includeSubDomains' if the brief is extended.
+}
+
+for _header_var, _header_default in _SECURITY_HEADER_DEFAULTS.items():
+    os.environ.setdefault(_header_var, _header_default)

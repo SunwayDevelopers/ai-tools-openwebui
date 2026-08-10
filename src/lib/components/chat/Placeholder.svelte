@@ -149,8 +149,15 @@
 			{:else}
 				<div class="flex flex-row justify-center gap-2.5 @sm:gap-3 w-fit px-5 max-w-xl">
 					<div class="flex shrink-0 justify-center">
+						<!-- Sunway: one avatar, not one per selected model. Every schat model resolves to
+						     the same brand icon (the red S), so upstream's overlapping per-model stack
+						     rendered N identical icons as soon as a second model was added with "+".
+						     Deduping by image is impossible client-side: /api/models strips
+						     meta.profile_image_url (backend/open_webui/main.py), so the frontend only
+						     ever has a per-model-id URL. The fix is to stop stacking. Restore upstream
+						     by iterating `models` instead of its first entry. -->
 						<div class="flex -space-x-4 mb-0.5" in:fade={{ duration: 100 }}>
-							{#each models as model, modelIdx}
+							{#each models.slice(0, 1) as model, modelIdx}
 								<Tooltip
 									content={(models[modelIdx]?.info?.meta?.tags ?? [])
 										.map((tag) => tag.name.toUpperCase())
@@ -247,7 +254,7 @@
 				<MessageInput
 					bind:this={messageInput}
 					{history}
-					{selectedModels}
+					bind:selectedModels
 					bind:files
 					bind:prompt
 					bind:autoScroll

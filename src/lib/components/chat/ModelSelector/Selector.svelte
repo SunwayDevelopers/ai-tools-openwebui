@@ -76,14 +76,47 @@
 		};
 	};
 
-	const updatePosition = () => {
+	// Sunway: viewport-aware positioning. Upstream hard-set `left` to the trigger's left edge and
+	// always opened downward, which was fine while the selector lived in the top-left navbar. Now
+	// that it sits in the composer beside Send — near the right edge AND near the bottom — a
+	// left-anchored, downward-only panel gets clipped by the window edge. This is not a zoom or
+	// responsiveness bug: `on:resize` below already recomputes on zoom (browser zoom fires
+	// resize); the maths simply had no overflow handling. Two passes are required because the
+	// panel only exists once `show` renders it, so it cannot be measured on the first call.
+	const updatePosition = async () => {
 		if (!show || !triggerElement) return;
 		const rect = triggerElement.getBoundingClientRect();
-		dropdownPosition = {
-			top: rect.bottom + 2,
-			left: $mobile ? 8 : rect.left,
-			width: $mobile ? window.innerWidth - 16 : 0
-		};
+
+		if ($mobile) {
+			dropdownPosition = { top: rect.bottom + 2, left: 8, width: window.innerWidth - 16 };
+			return;
+		}
+
+		// Pass 1: anchor under the trigger so the panel renders and becomes measurable.
+		dropdownPosition = { top: rect.bottom + 2, left: rect.left, width: 0 };
+
+		await tick();
+		if (!show || !contentElement) return;
+
+		const MARGIN = 8;
+		const { width: panelWidth, height: panelHeight } = contentElement.getBoundingClientRect();
+
+		// Horizontal: keep it left-aligned to the trigger while it fits, otherwise right-align to
+		// the trigger, then clamp so the panel can never leave the viewport.
+		let left = rect.left;
+		if (left + panelWidth > window.innerWidth - MARGIN) {
+			left = Math.min(rect.right - panelWidth, window.innerWidth - MARGIN - panelWidth);
+		}
+		left = Math.max(MARGIN, left);
+
+		// Vertical: flip above the trigger when there is no room below it.
+		let top = rect.bottom + 2;
+		if (top + panelHeight > window.innerHeight - MARGIN) {
+			const above = rect.top - panelHeight - 2;
+			top = above >= MARGIN ? above : Math.max(MARGIN, window.innerHeight - MARGIN - panelHeight);
+		}
+
+		dropdownPosition = { top, left, width: 0 };
 	};
 
 	const toggleOpen = () => {
