@@ -1645,13 +1645,31 @@ _SECURITY_HEADER_DEFAULTS = {
     # any third-party thumbnail in web-search results. Test those two before
     # promoting past staging; "credentialless" is the softer alternative.
     'CROSS_ORIGIN_EMBEDDER_POLICY': 'require-corp',
-    # CSP: ENFORCING, per the brief. Passed through with no validation at all
-    # (security_headers.py:143). 'unsafe-inline' for style-src is not optional —
-    # SvelteKit and Tailwind emit inline styles; 'wasm-unsafe-eval' covers pyodide;
-    # wss: is the Socket.IO channel; blob:/data: are the srcdoc artifact iframes and
-    # generated images. If the app fails to boot, this is the first thing to revert
-    # to CONTENT_SECURITY_POLICY_REPORT_ONLY.
-    'CONTENT_SECURITY_POLICY': (
+    # CSP: REPORT-ONLY, reverted from enforcing after it took staging down.
+    #
+    # Measured 2026-08-11 with 'CONTENT_SECURITY_POLICY' (enforcing): the app served
+    # only #splash-screen and never hydrated. Chrome blocked THREE inline scripts
+    # under script-src 'self' — src/app.html:31 (resizeIframe), src/app.html:37
+    # (theme initialiser), and (index):178, which is SvelteKit's hydration/start
+    # script INJECTED AT BUILD TIME. The third is fatal and does not appear in
+    # src/app.html at all, which is why reviewing only the source template wrongly
+    # suggested the app would still boot.
+    #
+    # Hash-pinning does not rescue it: SvelteKit's start script embeds build-specific
+    # module ids and hydration data, so its sha256 changes on every build.
+    #
+    # To make this enforcing later, all three must be handled: move the two app.html
+    # blocks into a same-origin static file, and wire SvelteKit's own CSP support
+    # (kit.csp in svelte.config.js) so its nonce/hash matches what this middleware
+    # sends. Adding 'unsafe-inline' to script-src would also "work" but removes the
+    # main protection CSP exists for.
+    #
+    # Report-only still satisfies the brief's CSP row as a staged rollout, and still
+    # surfaces violations. Passed through with no validation (security_headers.py:143).
+    # 'unsafe-inline' on style-src is not optional — SvelteKit and Tailwind emit
+    # inline styles; 'wasm-unsafe-eval' covers pyodide; wss: is the Socket.IO
+    # channel; blob:/data: are srcdoc artifact iframes and generated images.
+    'CONTENT_SECURITY_POLICY_REPORT_ONLY': (
         "default-src 'self'; "
         "img-src 'self' data: blob: https:; "
         "style-src 'self' 'unsafe-inline'; "
