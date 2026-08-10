@@ -68,6 +68,7 @@
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
+	import ModelSelector from './ModelSelector.svelte';
 	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
 
 	import ToolServersModal from './ToolServersModal.svelte';
@@ -419,11 +420,13 @@
 
 	let command = '';
 	export let showCommands = false;
-	// Sunway: '/' removed — the "Add Custom Prompt" palette is deferred and its suggestion
-	// renderer is no longer registered (see onMount below), so '/' must not be reported as an
-	// open command popup either. Original list: ['/', '#', '@', '$', ':']
-	$: showCommands =
-		['#', '@', '$', ':'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
+	// Sunway: '/' and '@' removed — the "Add Custom Prompt" palette is deferred, and the '@'
+	// model-mention palette is superseded by the composer model selector: it was a second, less
+	// discoverable way to switch model, and it sets `atSelectedModel`, which overrides the
+	// selection for one message only. Neither renderer is registered any more (see onMount
+	// below), so neither char may be reported as an open command popup either.
+	// Original list: ['/', '#', '@', '$', ':']
+	$: showCommands = ['#', '$', ':'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
 	let suggestions = null;
 
 	let showTools = false;
@@ -776,7 +779,16 @@
 				const fallbackEnabled = $config?.file?.image_ocr_fallback ?? false;
 				const ocrFallback = fallbackEnabled && !$temporaryChatEnabled;
 				const useOcr = ocrFallback && someModelLacksVision;
-				console.log('Image file detected. Vision capable models:', visionCapableModels, 'OCR fallback enabled:', ocrFallback, 'Use OCR:', useOcr, "someModelLacksVision", someModelLacksVision);
+				console.log(
+					'Image file detected. Vision capable models:',
+					visionCapableModels,
+					'OCR fallback enabled:',
+					ocrFallback,
+					'Use OCR:',
+					useOcr,
+					'someModelLacksVision',
+					someModelLacksVision
+				);
 				if (visionCapableModels.length === 0 && !ocrFallback) {
 					if (fallbackEnabled && $temporaryChatEnabled) {
 						// The model is irrelevant here: a temporary chat never persists the
@@ -1139,7 +1151,16 @@
 		// label is a misnomer: `/` inserts an EXISTING prompt, it never creates one — Prompts stay
 		// admin-curated in Workspace → Prompts. See CLAUDE.md → "Deferred / hidden features".
 		// Reverse by deleting this filter (and un-hiding 'addPrompt' in ShortcutsModal.svelte).
-		suggestions = suggestions.filter((suggestion: { char: string }) => suggestion.char !== '/');
+		//
+		// '@' (model mention) is filtered for a different reason: the model selector now lives in
+		// the composer next to Send, so '@' became a second, less discoverable way to do the same
+		// thing. Its renderer block above is left intact for clean upstream syncs. Disabling it is
+		// inert rather than breaking: every consumer reads
+		// `atSelectedModel?.id ? [atSelectedModel.id] : selectedModels`, so a permanently-undefined
+		// `atSelectedModel` simply falls through to the selected model.
+		suggestions = suggestions.filter(
+			(suggestion: { char: string }) => !['/', '@'].includes(suggestion.char)
+		);
 
 		loaded = true;
 
@@ -2004,6 +2025,16 @@
 								</div>
 
 								<div class="self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
+									<!-- Sunway: model selector relocated here from the chat navbar, beside Send —
+									     the SOTA pattern (Claude/ChatGPT/Gemini put the picker in the composer, not
+									     the page header). It lives inside MessageInput so BOTH input instances get
+									     it: the bottom composer and the new-chat centred one (chat/Placeholder).
+									     Bound to the same `selectedModels` the navbar used, now passed two-way from
+									     Chat.svelte. See CLAUDE.md → "Deferred / hidden features". -->
+									<div class="self-center flex items-center max-w-[45vw] md:max-w-[16rem]">
+										<ModelSelector bind:selectedModels compact={true} showSetDefault={false} />
+									</div>
+
 									{#if isActive && prompt === '' && files.length === 0}
 										<div class=" flex items-center">
 											<Tooltip content={$i18n.t('Stop')}>

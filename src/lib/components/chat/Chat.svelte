@@ -3158,8 +3158,14 @@
 			<PaneGroup direction="horizontal" class="w-full h-full">
 				<Pane defaultSize={50} minSize={30} class="h-full flex relative max-w-full flex-col">
 					<FilesOverlay show={dragged} />
+					<!-- Sunway: navbar model selector hidden — the selector moved into the composer,
+					     beside Send (chat/MessageInput.svelte). Both bind the same `selectedModels`,
+					     so this is a relocation, not a behaviour change; keeping two pickers for one
+					     piece of state only raises "which one wins?". `showModelSelector` is an
+					     existing upstream prop, so reverse by dropping this one attribute. -->
 					<Navbar
 						bind:this={navbarElement}
+						showModelSelector={false}
 						chat={{
 							id: $chatId,
 							chat: {
@@ -3264,7 +3270,7 @@
 									bind:this={messageInput}
 									{history}
 									{taskIds}
-									{selectedModels}
+									bind:selectedModels
 									bind:files
 									bind:prompt
 									bind:autoScroll
@@ -3345,7 +3351,7 @@
 							<div class="flex items-center h-full">
 								<Placeholder
 									{history}
-									{selectedModels}
+									bind:selectedModels
 									bind:messageInput
 									bind:files
 									bind:prompt
