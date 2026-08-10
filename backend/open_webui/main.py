@@ -2899,8 +2899,15 @@ async def oauth_login(provider: str, request: Request):
     # Allowlisted rather than passed through: `prompt` is forwarded into the authorize
     # URL, so accepting arbitrary values would let a caller shape the IdP request.
     prompt = request.query_params.get('prompt')
+    # The landing page forwards the signed-in user's email as `login_hint`. It is what
+    # lets a silent probe be pinned to a WorkOS organization; without it the probe
+    # cannot be made silently at all (see handle_login). Validated there, not here.
+    login_hint = request.query_params.get('login_hint')
     return await oauth_manager.handle_login(
-        request, provider, prompt='none' if prompt == 'none' else None
+        request,
+        provider,
+        prompt='none' if prompt == 'none' else None,
+        login_hint=login_hint,
     )
 
 
