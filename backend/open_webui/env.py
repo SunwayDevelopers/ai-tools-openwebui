@@ -1565,3 +1565,21 @@ WORKOS_CLAIM_USER_ID = os.getenv('WORKOS_CLAIM_USER_ID', 'sub')
 WORKOS_CLAIM_ORG_ID = os.getenv('WORKOS_CLAIM_ORG_ID', 'org_id')
 WORKOS_CLAIM_EMAIL = os.getenv('WORKOS_CLAIM_EMAIL', 'email')
 WORKOS_CLAIM_NAME = os.getenv('WORKOS_CLAIM_NAME', 'name')
+
+# --- WorkOS organizations, for pinning the silent sign-in probe ----------------
+# A `prompt=none` probe only works if WorkOS can tell WHICH connection to check.
+# Against the org-less `authkit` selector (our OAUTH_AUTHORIZE_PARAMS default) it
+# cannot, so instead of failing cleanly with login_required it renders the WorkOS
+# hosted login page — a visible prompt the user never asked for. Pinning
+# `organization_id` routes the probe straight at the Microsoft AD connection,
+# which either answers from the live session or errors.
+#
+# Same names and same domain split as the presenton deployment, so the two apps
+# can be configured from one place.
+WORKOS_ORGANIZATION_ID = (os.environ.get('WORKOS_ORGANIZATION_ID') or '').strip() or None
+WORKOS_ORGANIZATION_ID_EDU = (os.environ.get('WORKOS_ORGANIZATION_ID_EDU') or '').strip() or None
+
+# Email domain routed to the education tenant. Hardcoded rather than configurable:
+# it is a fact about which AD org owns which domain, not a deployment choice, and
+# an env var here would just be a second place for the two apps to disagree.
+WORKOS_EDU_EMAIL_DOMAIN = 'sunway.edu.my'
