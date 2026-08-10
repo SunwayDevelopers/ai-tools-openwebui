@@ -246,56 +246,80 @@
 
 		await oauthCallbackHandler();
 
-		// Auto-redirect to SSO when OAUTH_AUTO_REDIRECT is enabled and the
-		// deployment is unambiguously SSO-only (single provider, no login form,
-		// no LDAP). Suppressed by ?error=, onboarding, trusted-header auth, or an
-		// existing session/token.
+		// A `token` cookie means the OAuth callback COMPLETED and handed us a session —
+		// this visitor is not anonymous, even if oauthCallbackHandler above bailed before
+		// promoting it to localStorage (a tenant-gate 401/403, say). Both redirects below
+		// must respect it, or a post-login failure is silently swallowed. See the comment
+		// on the catalogue bounce for why that matters.
+		const hasTokenCookie = document.cookie.split('; ').some((c) => c.startsWith('token='));
+		const catalogueUrl = $config?.features?.landing_page_url ?? null;
+		const providers = Object.keys($config?.oauth?.providers ?? {});
+
+		// Is this deployment unambiguously SSO-only? A single provider, no password form,
+		// no LDAP, no trusted header, not mid-onboarding — i.e. redirecting to the IdP
+		// cannot deprive anyone of a sign-in route they would otherwise have used.
 		//
-		// Upstream also honoured a `?form=` query parameter here, which both
-		// suppressed this redirect AND unhid the password/LDAP form below. schat is
-		// SSO-only, so that parameter was a client-controlled way to surface a
-		// sign-in path the deployment does not use — it has been removed. Do not
-		// reintroduce it: the form's visibility must derive from server config
-		// alone.
-		if ($config?.oauth?.auto_redirect && !error) {
-			const providers = Object.keys($config?.oauth?.providers ?? {});
-			if (
-				providers.length === 1 &&
-				$config?.features?.auth !== false &&
-				$config?.features?.enable_login_form === false &&
-				!$config?.features?.enable_ldap &&
-				!$config?.features?.auth_trusted_header &&
-				!$config?.onboarding &&
-				!localStorage.token &&
-				!document.cookie.split('; ').some((c) => c.startsWith('token='))
-			) {
+		// Upstream also honoured a `?form=` query parameter here, which both suppressed
+		// the redirect AND unhid the password/LDAP form below. schat is SSO-only, so that
+		// parameter was a client-controlled way to surface a sign-in path the deployment
+		// does not use — it has been removed. Do not reintroduce it: the form's visibility
+		// must derive from server config alone.
+		const ssoOnly =
+			providers.length === 1 &&
+			$config?.features?.auth !== false &&
+			$config?.features?.enable_login_form === false &&
+			!$config?.features?.enable_ldap &&
+			!$config?.features?.auth_trusted_header &&
+			!$config?.onboarding;
+
+		// Attempt SSO. Gated on `auto_redirect` OR a configured catalogue — NOT on
+		// `auto_redirect` alone.
+		//
+		// The catalogue is the reason. Configuring one declares that this app does not own
+		// sign-in, which only makes sense for an SSO-only deployment; making the attempt
+		// additionally depend on OAUTH_AUTO_REDIRECT meant one unset env var turned the
+		// attempt off while leaving the bounce below on, so every anonymous visitor was
+		// sent to the catalogue without schat ever trying to log them in — an invisible
+		// infinite loop whose only symptom was a single /api/config request per hop.
+		// A toggle that silently disables authentication is not a toggle worth having.
+		if (!error && !localStorage.token && !hasTokenCookie && ssoOnly) {
+			if ($config?.oauth?.auto_redirect || catalogueUrl) {
 				// With a catalogue configured, ask the IdP to authenticate ONLY from an
 				// existing upstream session (`prompt=none`). Someone who signed in on the
 				// catalogue is logged in here invisibly — same upstream Microsoft session,
 				// even though the two apps use different WorkOS clients. Someone who is not
 				// signed in gets `error=login_required` back, and the callback sends them to
 				// the catalogue rather than showing them an IdP prompt they did not ask for.
+				// The callback also breaks the loop if that comes back negative twice.
 				//
 				// Without a catalogue, keep the old behaviour: a normal redirect, so the IdP
 				// may prompt and the user can sign in here.
-				const silent = $config?.features?.landing_page_url ? '?prompt=none' : '';
+				const silent = catalogueUrl ? '?prompt=none' : '';
 				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login${silent}`;
 				return;
 			}
 		}
 
-		// No SSO redirect was possible (no provider configured, several providers, or the
+		// No SSO attempt was possible (no provider configured, several providers, or the
 		// login form is enabled) and there is no session. If this app is listed in a
 		// catalogue, that is where an anonymous visitor belongs — the catalogue owns
 		// signing people in. Checked after the block above so a working silent SSO always
 		// wins: bouncing first would stop anyone who IS signed in upstream from getting in.
 		//
-		// `!error` is load-bearing. Without it a genuine OAuth failure — a bad client
-		// secret, an unreachable IdP, a rejected token — would be bounced to the catalogue
-		// instead of displayed, so the deployment would look like a redirect loop with no
-		// diagnosis anywhere. An error must always be shown.
-		if ($config?.features?.landing_page_url && !localStorage.token && !error) {
-			window.location.href = $config.features.landing_page_url;
+		// Three conditions keep this from firing on someone who is mid-sign-in:
+		//
+		// `!error` — without it a genuine OAuth failure (bad client secret, unreachable
+		// IdP, rejected token) would be bounced to the catalogue instead of displayed, so
+		// the deployment would look like a redirect loop with no diagnosis anywhere.
+		//
+		// `!hasTokenCookie` — without it a visitor who signed in successfully but failed
+		// the tenant gate is bounced back to the catalogue in the same tick the error
+		// toast is queued, so the toast never renders. The catalogue sees a signed-in
+		// user, links back here, and it repeats: an infinite loop that looks identical to
+		// "not logged in" while actually meaning "IAM rejected your session" or "you have
+		// no tenant membership". Those need an error on screen, not another redirect.
+		if (catalogueUrl && !localStorage.token && !hasTokenCookie && !error) {
+			window.location.href = catalogueUrl;
 			return;
 		}
 

@@ -146,6 +146,42 @@ auth_manager_config.OAUTH_AUDIENCE = OAUTH_AUDIENCE
 DEFAULT_TOKEN_EXPIRY_SECONDS = 3600
 
 
+# Loop breaker for the silent-SSO ↔ landing-page bounce.
+#
+# A silent check that comes back negative sends the visitor to the landing page, which
+# links back here, which checks silently again. When the upstream session genuinely
+# cannot be established — misconfigured IdP, unshared session, WorkOS answering with an
+# error we treat as "not signed in" — that is an infinite, invisible loop: no error is
+# ever rendered, because every hop is a 302.
+#
+# So: the FIRST silent failure sets this cookie and bounces as normal. A SECOND
+# consecutive silent failure while it is still set stops bouncing and shows the sign-in
+# page with an error instead.
+#
+# Why "second failure" and not "second attempt": the guard is only consulted on the
+# failure path. The legitimate journey is fail → landing → sign in → return → SUCCEED,
+# and a success never reads this cookie, it clears it. So the normal flow cannot trip
+# the guard no matter how fast the user is. Only a real loop produces two failures in a
+# row, and it produces them seconds apart.
+SILENT_SSO_GUARD_COOKIE = 'sso_silent_failed'
+
+# Long enough to outlive a genuine loop (which cycles in seconds), short enough that a
+# visitor who wandered off to the landing page, did not sign in, and came back ten
+# minutes later gets a fresh silent attempt rather than a stale error page.
+SILENT_SSO_GUARD_MAX_AGE = 300
+
+
+def _clear_silent_sso_guard(response) -> None:
+    """Drop the loop-breaker cookie after a sign-in that got far enough to prove the
+    bounce is not looping. Called on every success path so the next genuine silent
+    failure starts from a clean slate rather than tripping the guard immediately."""
+    response.delete_cookie(
+        SILENT_SSO_GUARD_COOKIE,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+
+
 def _normalize_token_expiry(token: dict) -> dict:
     """Ensure a token dict always has a numeric ``expires_at``.
 
@@ -1558,6 +1594,8 @@ class OAuthManager:
                 email,
                 exchange.expires_in,
             )
+        # Sign-in got all the way through, so any earlier silent failure is stale.
+        _clear_silent_sso_guard(redirect)
         log.info('MT sign-in complete for %s (%d tenant(s))', email, len(exchange.tenants))
         return redirect
 
@@ -1609,12 +1647,43 @@ class OAuthManager:
             'account_selection_required',
         ):
             if LANDING_PAGE_URL:
+                # Second consecutive silent failure: the bounce is not making progress,
+                # so stop bouncing. Without this the visitor ping-pongs between the two
+                # apps forever and never sees a single error, because every hop is a 302
+                # — the exact failure this deployment hit.
+                if request.cookies.get(SILENT_SSO_GUARD_COOKIE):
+                    log.warning(
+                        'Silent SSO failed twice in a row (%s) — the upstream session is '
+                        'not shared with the landing page, or the IdP is rejecting '
+                        'prompt=none. Showing the sign-in page instead of bouncing again.',
+                        idp_error,
+                    )
+                    message = (
+                        'Could not sign you in automatically from the landing page. '
+                        'Please try signing in again.'
+                    )
+                    stop = RedirectResponse(
+                        url=f'/auth?error={urllib.parse.quote_plus(message)}',
+                        status_code=302,
+                    )
+                    _clear_silent_sso_guard(stop)
+                    return stop
+
                 log.info(
                     'Silent SSO found no upstream session (%s); redirecting to the '
                     'catalogue landing page.',
                     idp_error,
                 )
-                return RedirectResponse(url=LANDING_PAGE_URL, status_code=302)
+                bounce = RedirectResponse(url=LANDING_PAGE_URL, status_code=302)
+                bounce.set_cookie(
+                    key=SILENT_SSO_GUARD_COOKIE,
+                    value='1',
+                    httponly=True,
+                    max_age=SILENT_SSO_GUARD_MAX_AGE,
+                    samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+                    secure=WEBUI_AUTH_COOKIE_SECURE,
+                )
+                return bounce
             # No landing page configured: fall through to the normal sign-in page so the
             # visitor can authenticate here instead of hitting a dead end.
             log.info(
@@ -1942,6 +2011,9 @@ class OAuthManager:
             return RedirectResponse(url=redirect_url, headers=response.headers)
 
         response = RedirectResponse(url=redirect_url, headers=response.headers)
+
+        # Sign-in got all the way through, so any earlier silent failure is stale.
+        _clear_silent_sso_guard(response)
 
         # Compute cookie expiry from JWT lifetime
         expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)
