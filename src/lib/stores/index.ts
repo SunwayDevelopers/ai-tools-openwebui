@@ -319,6 +319,9 @@ type Config = {
 		enable_signup: boolean;
 		enable_login_form: boolean;
 		enable_multi_tenancy?: boolean;
+		// Public URL of the catalogue this app is listed in. Null when unset, in which
+		// case the built-in sign-in page is used instead of bouncing anonymous visitors.
+		landing_page_url?: string | null;
 		enable_web_search?: boolean;
 		enable_google_drive_integration: boolean;
 		enable_onedrive_integration: boolean;
