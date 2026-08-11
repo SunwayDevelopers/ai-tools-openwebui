@@ -17,6 +17,11 @@
 	let themes = ['dark', 'light', 'oled-dark'];
 	let selectedTheme = 'system';
 
+	// Sunway: the only locales offered in the language picker (see the filter in onMount).
+	// en-GB rather than en-US — Malaysian business English uses British spelling.
+	// Locale files for every other language are kept; add a code here to re-offer one.
+	const ALLOWED_LANGUAGE_CODES = ['en-GB', 'ms-MY', 'zh-CN'];
+
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
 	let notificationEnabled = false;
@@ -127,6 +132,13 @@
 			languages = languages.filter((l) => l.code !== 'dg-DG');
 		}
 
+		// Sunway: the picker offers ~60 locales, almost all irrelevant to a Malaysian
+		// workforce and most only partially translated. Narrowed to the three that matter.
+		// Nothing is deleted — every locale file stays in src/lib/i18n/locales and the
+		// switcher is unchanged, so widening this list is the only step to restore one.
+		// en-GB over en-US: Malaysian business English follows British spelling.
+		languages = languages.filter((l) => ALLOWED_LANGUAGE_CODES.includes(l.code));
+
 		notificationEnabled = $settings.notificationEnabled ?? false;
 		system = $settings.system ?? '';
 
@@ -221,12 +233,19 @@
 						placeholder={$i18n.t('Select a theme')}
 						on:change={() => themeChangeHandler(selectedTheme)}
 					>
+						<!-- Sunway: theme choices trimmed to System + Dark. OLED Dark, Light and the
+						     "Her" easter egg are hidden, not deleted — the themeChangeHandler and the
+						     CSS for all of them are untouched, so restoring an option here brings it
+						     back working. Note "System" still resolves to light when the OS is light;
+						     this only removes the manual pickers. -->
 						<option value="system">⚙️ {$i18n.t('System')}</option>
 						<option value="dark">🌑 {$i18n.t('Dark')}</option>
-						<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
-						<option value="light">☀️ {$i18n.t('Light')}</option>
-						{#if $config?.features?.enable_easter_eggs}
-							<option value="her">🌷 Her</option>
+						{#if false}
+							<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
+							<option value="light">☀️ {$i18n.t('Light')}</option>
+							{#if $config?.features?.enable_easter_eggs}
+								<option value="her">🌷 Her</option>
+							{/if}
 						{/if}
 					</select>
 				</div>

@@ -193,6 +193,35 @@ class QdrantClient(VectorDBBase):
         """
         if not self.client.collection_exists(collection_name=mt_collection_name):
             self._create_multi_tenant_collection(mt_collection_name, dimension)
+            return
+
+        # Sunway: an EXISTING collection's vector size was never checked, and changing the
+        # embedding model silently broke every write from then on. Seen in staging 2026-08-07:
+        # the collection had been created at 384 (upstream's default all-MiniLM-L6-v2) by an
+        # early upload, then RAG_EMBEDDING_MODEL moved to bge-m3 at 1024. Qdrant rejects the
+        # mismatched points ASYNCHRONOUSLY — and because upload_points posts with wait=false,
+        # the HTTP call still returns 200, the caller logs "added 542 items", and retrieval
+        # returns nothing for those files forever. No error surfaces anywhere.
+        # Fail loudly instead: a wrong-size collection cannot be written to, and the operator
+        # needs to recreate it (which re-embeds on next upload).
+        try:
+            info = self.client.get_collection(collection_name=mt_collection_name)
+            vectors = info.config.params.vectors
+            existing = getattr(vectors, 'size', None)
+            if existing is None and isinstance(vectors, dict):
+                existing = next((getattr(v, 'size', None) for v in vectors.values()), None)
+        except Exception as e:
+            log.warning(f'Could not read vector size for {mt_collection_name}: {e}')
+            return
+
+        if existing is not None and existing != dimension:
+            raise ValueError(
+                f"Vector dimension mismatch for collection '{mt_collection_name}': it was created "
+                f'with size {existing} but the current embedding model produces {dimension}. '
+                f'Qdrant will silently reject every write until this is resolved. Delete the '
+                f'collection so it is recreated at the correct size (all vectors in it must be '
+                f're-embedded), or point the embedding config back at a {existing}-dimension model.'
+            )
 
     def has_collection(self, collection_name: str) -> bool:
         """

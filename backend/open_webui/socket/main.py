@@ -455,7 +455,16 @@ async def connect(sid, environ, auth):
         try:
             ctx = await _resolve_socket_tenant(environ, auth)
         except Exception as e:
-            log.warning('Socket tenant resolution failed, rejecting connection: %s', type(e).__name__)
+            # Log the MESSAGE, not just the type. Logging only `type(e).__name__` made this
+            # a bare "RuntimeError" in the pod output, which is why a rejected handshake —
+            # and the permanently-spinning first chat it causes — was invisible.
+            # TenantResolutionError.__str__ is "<status>: <detail>"; safe to log. Do NOT
+            # widen this to `auth` or `environ`, which carry the iam_token cookie.
+            log.warning(
+                'Socket tenant resolution failed, rejecting connection: %s: %s',
+                type(e).__name__,
+                e,
+            )
             return False  # fail closed — reject the socket rather than run untenanted
         SOCKET_TENANT[sid] = ctx
         tenant_token = set_tenant_context(ctx)

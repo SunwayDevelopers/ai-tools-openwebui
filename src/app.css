@@ -732,7 +732,13 @@ input[type='number'] {
 	margin: 1.5rem 0;
 	padding: 0.75rem 1rem;
 
-	@apply dark:bg-gray-800 bg-gray-50;
+	/* Sunway: upstream used bg-gray-50, which is 1.05:1 against the white message
+	 * input — the block was effectively invisible, so pasted code read as loose
+	 * plain text with no boundary. Nudging the fill to gray-100 only reaches 1.1:1,
+	 * nowhere near enough on its own, so the BORDER is what actually delineates the
+	 * block; the fill just reinforces it. Same treatment in dark mode, where
+	 * gray-800 on the dark input had the identical problem. */
+	@apply border dark:border-gray-700 border-gray-300 dark:bg-gray-800 bg-gray-100;
 }
 
 .tiptap p code {
@@ -741,7 +747,36 @@ input[type='number'] {
 	@apply font-mono rounded-md text-gray-800 bg-gray-50 dark:text-gray-200 dark:bg-gray-800 mx-0.5;
 }
 
-/* Code styling */
+/* Code styling
+ *
+ * Sunway: TWO surfaces render highlighted code, and they have OPPOSITE backgrounds.
+ * Getting this wrong breaks one of them, so the split is scoped rather than global:
+ *
+ *   1. Rendered chat messages — Messages/CodeBlock.svelte imports
+ *      `highlight.js/styles/github-dark.min.css`, so the block is #0d1117 in BOTH
+ *      app themes. The pastel palette below is correct there (7.6–16.7:1) and is
+ *      left exactly as upstream had it. Do not darken these globally: measured on
+ *      #0d1117 a light-mode palette scores 2.6–2.9:1, i.e. unreadable.
+ *
+ *   2. The TipTap message input — `.tiptap pre` follows the app theme, so in light
+ *      mode the same pastels sat on a near-white fill and five of six token colours
+ *      failed WCAG AA outright:
+ *
+ *        title/section  #faf594  1.08:1  (effectively invisible)
+ *        string         #b9f18d  1.25:1
+ *        number/params  #fbbc88  1.59:1
+ *        keyword        #70cff8  1.68:1
+ *        variable/tag   #f98181  2.37:1
+ *        comment        #616161  5.93:1  (the only pass)
+ *
+ * So the darkened palette is scoped to `.tiptap` and applies in LIGHT theme only —
+ * all ≥5.4:1 on gray-100, and code stays colour-coded rather than flattened to one
+ * colour. `.dark .tiptap` restores the pastels, with one fix: the comment grey was
+ * the mirror-image bug at 2.37:1 on gray-800, so it is lightened for dark only.
+ * `darkMode: 'class'` (tailwind.config.js) makes `.dark` the switch.
+ */
+
+/* --- global: rendered message blocks on github-dark. Upstream palette, unchanged. --- */
 .hljs-comment,
 .hljs-quote {
 	color: #616161;
@@ -782,6 +817,94 @@ input[type='number'] {
 
 .hljs-keyword,
 .hljs-selector-tag {
+	color: #70cff8;
+}
+
+/* --- editor only, LIGHT theme: darkened for the light `.tiptap pre` fill --- */
+.tiptap .hljs-comment,
+.tiptap .hljs-quote {
+	color: #5c6370;
+}
+
+.tiptap .hljs-variable,
+.tiptap .hljs-template-variable,
+.tiptap .hljs-attribute,
+.tiptap .hljs-tag,
+.tiptap .hljs-regexp,
+.tiptap .hljs-link,
+.tiptap .hljs-name,
+.tiptap .hljs-selector-id,
+.tiptap .hljs-selector-class {
+	color: #b42318;
+}
+
+.tiptap .hljs-number,
+.tiptap .hljs-meta,
+.tiptap .hljs-built_in,
+.tiptap .hljs-builtin-name,
+.tiptap .hljs-literal,
+.tiptap .hljs-type,
+.tiptap .hljs-params {
+	color: #8a4b00;
+}
+
+.tiptap .hljs-string,
+.tiptap .hljs-symbol,
+.tiptap .hljs-bullet {
+	color: #0a6640;
+}
+
+.tiptap .hljs-title,
+.tiptap .hljs-section {
+	color: #7a4d05;
+}
+
+.tiptap .hljs-keyword,
+.tiptap .hljs-selector-tag {
+	color: #0b5cad;
+}
+
+/* --- editor, DARK theme: back to the pastels (the fill is gray-800 again) --- */
+.dark .tiptap .hljs-comment,
+.dark .tiptap .hljs-quote {
+	color: #9ca3af;
+}
+
+.dark .tiptap .hljs-variable,
+.dark .tiptap .hljs-template-variable,
+.dark .tiptap .hljs-attribute,
+.dark .tiptap .hljs-tag,
+.dark .tiptap .hljs-regexp,
+.dark .tiptap .hljs-link,
+.dark .tiptap .hljs-name,
+.dark .tiptap .hljs-selector-id,
+.dark .tiptap .hljs-selector-class {
+	color: #f98181;
+}
+
+.dark .tiptap .hljs-number,
+.dark .tiptap .hljs-meta,
+.dark .tiptap .hljs-built_in,
+.dark .tiptap .hljs-builtin-name,
+.dark .tiptap .hljs-literal,
+.dark .tiptap .hljs-type,
+.dark .tiptap .hljs-params {
+	color: #fbbc88;
+}
+
+.dark .tiptap .hljs-string,
+.dark .tiptap .hljs-symbol,
+.dark .tiptap .hljs-bullet {
+	color: #b9f18d;
+}
+
+.dark .tiptap .hljs-title,
+.dark .tiptap .hljs-section {
+	color: #faf594;
+}
+
+.dark .tiptap .hljs-keyword,
+.dark .tiptap .hljs-selector-tag {
 	color: #70cff8;
 }
 

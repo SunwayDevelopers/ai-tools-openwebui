@@ -14,6 +14,11 @@
 
 	export let showSetDefault = true;
 
+	// Sunway: `compact` renders the selector for the composer (beside Send) rather than the chat
+	// navbar — it shrinks to its content so it sits in the button row without stretching it.
+	// Behaviour is otherwise identical. See CLAUDE.md → "Deferred / hidden features".
+	export let compact = false;
+
 	const saveDefaultModel = async () => {
 		const hasEmptyModel = selectedModels.filter((it) => it === '');
 		if (hasEmptyModel.length) {
@@ -50,7 +55,7 @@
 	}
 </script>
 
-<div class="flex flex-col w-full items-start">
+<div class="flex flex-col items-start {compact ? 'w-fit' : 'w-full'}">
 	{#each selectedModels as selectedModel, selectedModelIdx}
 		<div class="flex w-full max-w-fit">
 			<div class="overflow-hidden w-full">

@@ -208,7 +208,12 @@
 					</Tooltip>
 				{/if}
 
-				{#if item.model?.info?.meta?.description}
+				<!-- Sunway: the description is now rendered inline as a second line under the model
+				     name (see below). A hover-only ⓘ is not discoverable enough for a 10K-staff
+				     rollout, and the tier labels (Quick / Coding / Deepthink) are meaningless
+				     without their description visible. Block left intact — unwrap this guard to
+				     restore the hover-only behaviour. -->
+				{#if false && item.model?.info?.meta?.description}
 					<Tooltip
 						content={`${marked.parse(
 							sanitizeResponseContent(item.model?.info?.meta?.description).replaceAll('\n', '<br>')
@@ -234,6 +239,17 @@
 				{/if}
 			</div>
 		</div>
+
+		<!-- Sunway: description rendered inline (SOTA style) so the tier labels carry their
+		     explanation without anyone having to hover. Replaces the ⓘ tooltip guarded off
+		     above; plain text rather than markdown — these are one-liners. -->
+		{#if item.model?.info?.meta?.description}
+			<div
+				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-500 dark:text-gray-400 line-clamp-2"
+			>
+				{item.model.info.meta.description}
+			</div>
+		{/if}
 	</div>
 
 	<div class="ml-auto pl-2 pr-1 flex items-center gap-1.5 shrink-0">

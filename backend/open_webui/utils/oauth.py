@@ -72,12 +72,16 @@ from open_webui.env import (
     ENABLE_MULTI_TENANCY,
     ENABLE_OAUTH_EMAIL_FALLBACK,
     ENABLE_OAUTH_ID_TOKEN_COOKIE,
+    LANDING_PAGE_URL,
     OAUTH_CLIENT_INFO_ENCRYPTION_KEY,
     OAUTH_MAX_SESSIONS_PER_USER,
     REDIS_KEY_PREFIX,
     WEBUI_AUTH_COOKIE_SAME_SITE,
     WEBUI_AUTH_COOKIE_SECURE,
     WEBUI_NAME,
+    WORKOS_EDU_EMAIL_DOMAIN,
+    WORKOS_ORGANIZATION_ID,
+    WORKOS_ORGANIZATION_ID_EDU,
 )
 from open_webui.models.auths import Auths
 from open_webui.models.groups import GroupForm, GroupModel, Groups, GroupUpdateForm
@@ -143,6 +147,124 @@ auth_manager_config.OAUTH_AUDIENCE = OAUTH_AUDIENCE
 # Conservative default when the provider omits both expires_in and expires_at.
 # Matches the value recommended by Authlib's compliance_fix documentation.
 DEFAULT_TOKEN_EXPIRY_SECONDS = 3600
+
+
+# Loop breaker for the silent-SSO ↔ landing-page bounce.
+#
+# A silent check that comes back negative sends the visitor to the landing page, which
+# links back here, which checks silently again. When the upstream session genuinely
+# cannot be established — misconfigured IdP, unshared session, WorkOS answering with an
+# error we treat as "not signed in" — that is an infinite, invisible loop: no error is
+# ever rendered, because every hop is a 302.
+#
+# So: the FIRST silent failure sets this cookie and bounces as normal. A SECOND
+# consecutive silent failure while it is still set stops bouncing and shows the sign-in
+# page with an error instead.
+#
+# Why "second failure" and not "second attempt": the guard is only consulted on the
+# failure path. The legitimate journey is fail → landing → sign in → return → SUCCEED,
+# and a success never reads this cookie, it clears it. So the normal flow cannot trip
+# the guard no matter how fast the user is. Only a real loop produces two failures in a
+# row, and it produces them seconds apart.
+SILENT_SSO_GUARD_COOKIE = 'sso_silent_failed'
+
+# Long enough to outlive a genuine loop (which cycles in seconds), short enough that a
+# visitor who wandered off to the landing page, did not sign in, and came back ten
+# minutes later gets a fresh silent attempt rather than a stale error page.
+SILENT_SSO_GUARD_MAX_AGE = 300
+
+
+def _sanitize_login_hint(raw: Optional[str]) -> Optional[str]:
+    """Validate a `login_hint` before it is forwarded into the IdP authorize URL.
+
+    The hint arrives as a query parameter, so it is untrusted input that ends up in
+    a URL we construct. Anything that is not plausibly a single email address is
+    dropped rather than corrected — a malformed hint has no useful meaning, and the
+    caller treats "no hint" as "send them to the landing page", which is safe."""
+    if not raw:
+        return None
+    hint = raw.strip()
+    # 320 = RFC 3696 practical maximum (64 local + @ + 255 domain).
+    if len(hint) > 320:
+        return None
+    if '@' not in hint:
+        return None
+    # Whitespace and control characters cannot appear in an address and are the
+    # shapes worth refusing outright rather than percent-encoding onward.
+    if any(char.isspace() or ord(char) < 0x20 for char in hint):
+        return None
+    return hint
+
+
+def _workos_organization_for(login_hint: Optional[str]) -> Optional[str]:
+    """Resolve the WorkOS organization that owns a signed-in user's email domain.
+
+    Returns None when no hint is available or no organization is configured, which
+    the caller reads as "a silent probe cannot be pinned" — see the comment on
+    WORKOS_ORGANIZATION_ID in env.py for why an unpinned probe is unusable."""
+    if not login_hint or '@' not in login_hint:
+        return None
+    domain = login_hint.rsplit('@', 1)[1].lower()
+    if domain == WORKOS_EDU_EMAIL_DOMAIN:
+        return WORKOS_ORGANIZATION_ID_EDU
+    return WORKOS_ORGANIZATION_ID
+
+
+def _clear_silent_sso_guard(response) -> None:
+    """Drop the loop-breaker cookie after a sign-in that got far enough to prove the
+    bounce is not looping. Called on every success path so the next genuine silent
+    failure starts from a clean slate rather than tripping the guard immediately."""
+    response.delete_cookie(
+        SILENT_SSO_GUARD_COOKIE,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+
+
+def _bounce_to_landing_or_stop(request, reason: str):
+    """Send an unauthenticated visitor to the landing page, which owns signing people
+    in — unless we already sent them there once without progress, in which case show
+    the sign-in page with an error instead of bouncing again.
+
+    Every path that gives up on automatic sign-in must come through here. There are two
+    of them (an unpinnable silent probe, and a probe the IdP answered negatively) and
+    they are reached in different requests, so a guard on only one of them still loops."""
+    if not LANDING_PAGE_URL:
+        # Nothing to bounce to: let the visitor land on the sign-in page rather than a
+        # dead end.
+        log.info('Automatic sign-in not possible (%s) and LANDING_PAGE_URL is unset.', reason)
+        return RedirectResponse(url='/auth', status_code=302)
+
+    if request.cookies.get(SILENT_SSO_GUARD_COOKIE):
+        log.warning(
+            'Automatic sign-in failed twice in a row (%s) — the upstream session is not '
+            'shared with the landing page, the WorkOS organization is misconfigured, or '
+            'the IdP is refusing prompt=none. Showing the sign-in page instead of '
+            'bouncing again.',
+            reason,
+        )
+        message = (
+            'Could not sign you in automatically from the landing page. '
+            'Please try signing in again.'
+        )
+        stop = RedirectResponse(
+            url=f'/auth?error={urllib.parse.quote_plus(message)}',
+            status_code=302,
+        )
+        _clear_silent_sso_guard(stop)
+        return stop
+
+    log.info('Automatic sign-in not possible (%s); redirecting to the landing page.', reason)
+    bounce = RedirectResponse(url=LANDING_PAGE_URL, status_code=302)
+    bounce.set_cookie(
+        key=SILENT_SSO_GUARD_COOKIE,
+        value='1',
+        httponly=True,
+        max_age=SILENT_SSO_GUARD_MAX_AGE,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+    return bounce
 
 
 def _normalize_token_expiry(token: dict) -> dict:
@@ -1557,10 +1679,18 @@ class OAuthManager:
                 email,
                 exchange.expires_in,
             )
+        # Sign-in got all the way through, so any earlier silent failure is stale.
+        _clear_silent_sso_guard(redirect)
         log.info('MT sign-in complete for %s (%d tenant(s))', email, len(exchange.tenants))
         return redirect
 
-    async def handle_login(self, request, provider):
+    async def handle_login(
+        self,
+        request,
+        provider,
+        prompt: Optional[str] = None,
+        login_hint: Optional[str] = None,
+    ):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
         # If the provider has a custom redirect URL, use that, otherwise automatically generate one
@@ -1577,11 +1707,82 @@ class OAuthManager:
         if OAUTH_AUTHORIZE_PARAMS:
             kwargs.update(OAUTH_AUTHORIZE_PARAMS)
 
+        login_hint = _sanitize_login_hint(login_hint)
+        organization_id = _workos_organization_for(login_hint)
+
+        if prompt == 'none' and not organization_id:
+            # A silent probe we cannot pin to an organization does NOT come back as
+            # login_required — WorkOS renders its hosted login page instead, which is
+            # a visible prompt the visitor never asked for and the one thing this flow
+            # exists to avoid. So don't make the request at all.
+            return _bounce_to_landing_or_stop(
+                request,
+                'silent probe has no WorkOS organization to pin to '
+                f'(login_hint {"present" if login_hint else "absent"})',
+            )
+
+        if login_hint:
+            kwargs['login_hint'] = login_hint
+        if organization_id:
+            kwargs['organization_id'] = organization_id
+            # WorkOS accepts exactly ONE connection selector. Leaving the configured
+            # `provider=authkit` alongside organization_id makes the authorize call
+            # fail with invalid_connection_selector, so the more specific selector
+            # replaces it.
+            kwargs.pop('provider', None)
+
+        if prompt:
+            # Set LAST so it wins over any `prompt` in OAUTH_AUTHORIZE_PARAMS: a
+            # configured `prompt=login` would otherwise force a visible prompt and
+            # defeat the whole point of the silent check.
+            kwargs['prompt'] = prompt
+
         return await client.authorize_redirect(request, redirect_uri, **kwargs)
 
     async def handle_callback(self, request, provider, response, db=None):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
+
+        # Silent-auth outcome, handled BEFORE anything tries to exchange a code —
+        # on these errors the IdP sends no code at all, so authorize_access_token()
+        # below would fail with a misleading "email or password incorrect".
+        #
+        # `login_required` / `interaction_required` are the standard OIDC answers to
+        # `prompt=none` when there is no usable upstream session. That is not a failure:
+        # it is the expected negative result of "are you already signed in?". Send the
+        # visitor to the catalogue, which owns signing them in.
+        # `account_selection_required` is included because it is a realistic corporate
+        # case, not an edge one: someone signed in to two Microsoft accounts cannot be
+        # resolved silently, so the IdP refuses rather than guessing. Same handling —
+        # the catalogue can prompt properly.
+        idp_error = request.query_params.get('error')
+        if idp_error in (
+            'login_required',
+            'interaction_required',
+            'consent_required',
+            'account_selection_required',
+        ):
+            return _bounce_to_landing_or_stop(
+                request, f'IdP answered the silent probe with {idp_error}'
+            )
+
+        # A bad connection selector means WORKOS_ORGANIZATION_ID / _EDU is wrong or does
+        # not match the WorkOS environment — a deployment bug, not a session state, so
+        # bouncing to the landing page would loop on something no user action can fix.
+        # Called out separately because falling through would report it as
+        # "email or password is incorrect", which sends whoever debugs it nowhere.
+        if idp_error in ('invalid_connection_selector', 'ambiguous_connection_selector'):
+            log.error(
+                'WorkOS rejected the connection selector (%s): check WORKOS_ORGANIZATION_ID '
+                'and WORKOS_ORGANIZATION_ID_EDU against this WorkOS environment. '
+                'error_description=%s',
+                idp_error,
+                request.query_params.get('error_description'),
+            )
+            message = 'Sign-in is misconfigured for your organization. Please contact support.'
+            return RedirectResponse(
+                url=f'/auth?error={urllib.parse.quote_plus(message)}', status_code=302
+            )
 
         error_message = None
         try:
@@ -1901,6 +2102,9 @@ class OAuthManager:
             return RedirectResponse(url=redirect_url, headers=response.headers)
 
         response = RedirectResponse(url=redirect_url, headers=response.headers)
+
+        # Sign-in got all the way through, so any earlier silent failure is stale.
+        _clear_silent_sso_guard(response)
 
         # Compute cookie expiry from JWT lifetime
         expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)

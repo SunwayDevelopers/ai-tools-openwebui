@@ -430,6 +430,8 @@ from open_webui.env import (
     CHANGELOG,
     CHAT_RETENTION_DAYS,
     CHAT_SYSTEM_PROMPT_MAX_CHARS,
+    ENABLE_ADMIN_FUNCTIONS_UI,
+    ENABLE_ADMIN_SETTINGS_UI,
     ENABLE_CHAT_ARCHIVE,
     ENABLE_IMAGE_OCR_FALLBACK,
     ENABLE_TEMPORARY_CHAT,
@@ -454,6 +456,7 @@ from open_webui.env import (
     EXTERNAL_PWA_MANIFEST_URL,
     GLOBAL_LOG_LEVEL,
     INSTANCE_ID,
+    LANDING_PAGE_URL,
     LICENSE_KEY,
     LOG_FORMAT,
     MAX_BODY_LOG_SIZE,
@@ -2475,6 +2478,11 @@ async def get_app_config(request: Request):
             'enable_login_form': app.state.config.ENABLE_LOGIN_FORM,
             'enable_websocket': ENABLE_WEBSOCKET_SUPPORT,
             'enable_multi_tenancy': ENABLE_MULTI_TENANCY,
+            # Public by nature — it is the catalogue's own public URL, and the sign-in
+            # page needs it before any session exists in order to bounce anonymous
+            # visitors there. Null when unset, in which case the built-in sign-in page
+            # is shown instead (previous behaviour).
+            'landing_page_url': LANDING_PAGE_URL,
             # --- Authenticated: only consumed by logged-in frontend ---
             **(
                 {
@@ -2502,6 +2510,8 @@ async def get_app_config(request: Request):
                     'enable_admin_export': ENABLE_ADMIN_EXPORT,
                     'enable_admin_chat_access': ENABLE_ADMIN_CHAT_ACCESS,
                     'enable_admin_analytics': ENABLE_ADMIN_ANALYTICS,
+                    'enable_admin_settings_ui': ENABLE_ADMIN_SETTINGS_UI,
+                    'enable_admin_functions_ui': ENABLE_ADMIN_FUNCTIONS_UI,
                     'enable_google_drive_integration': app.state.config.ENABLE_GOOGLE_DRIVE_INTEGRATION,
                     'enable_onedrive_integration': app.state.config.ENABLE_ONEDRIVE_INTEGRATION,
                     'enable_memories': app.state.config.ENABLE_MEMORIES,
@@ -2884,7 +2894,25 @@ async def oauth_client_callback(
 
 @app.get('/oauth/{provider}/login')
 async def oauth_login(provider: str, request: Request):
-    return await oauth_manager.handle_login(request, provider)
+    # `?prompt=none` asks the IdP to authenticate ONLY from an existing upstream
+    # session and to return an error rather than showing a login screen. Used for the
+    # silent check when LANDING_PAGE_URL is configured: a visitor already signed in to
+    # the catalogue is logged in invisibly, and one who is not gets bounced to the
+    # catalogue instead of being shown an IdP prompt they did not ask for.
+    #
+    # Allowlisted rather than passed through: `prompt` is forwarded into the authorize
+    # URL, so accepting arbitrary values would let a caller shape the IdP request.
+    prompt = request.query_params.get('prompt')
+    # The landing page forwards the signed-in user's email as `login_hint`. It is what
+    # lets a silent probe be pinned to a WorkOS organization; without it the probe
+    # cannot be made silently at all (see handle_login). Validated there, not here.
+    login_hint = request.query_params.get('login_hint')
+    return await oauth_manager.handle_login(
+        request,
+        provider,
+        prompt='none' if prompt == 'none' else None,
+        login_hint=login_hint,
+    )
 
 
 @app.get('/oauth/{provider}/login/callback')

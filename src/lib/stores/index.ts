@@ -319,6 +319,9 @@ type Config = {
 		enable_signup: boolean;
 		enable_login_form: boolean;
 		enable_multi_tenancy?: boolean;
+		// Public URL of the catalogue this app is listed in. Null when unset, in which
+		// case the built-in sign-in page is used instead of bouncing anonymous visitors.
+		landing_page_url?: string | null;
 		enable_web_search?: boolean;
 		enable_google_drive_integration: boolean;
 		enable_onedrive_integration: boolean;
@@ -326,6 +329,11 @@ type Config = {
 		enable_admin_export: boolean;
 		enable_admin_chat_access: boolean;
 		enable_admin_analytics: boolean;
+		// Sunway: hide the Admin panel's Settings / Functions tabs (plain env, so a
+		// restart applies them). Optional because an older backend simply omits them,
+		// and the consuming gates treat "absent" as visible.
+		enable_admin_settings_ui?: boolean;
+		enable_admin_functions_ui?: boolean;
 		enable_community_sharing: boolean;
 		enable_memories: boolean;
 		enable_autocomplete_generation: boolean;

@@ -3,7 +3,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS
+from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.chat_messages import ChatMessageModel, ChatMessages
 from open_webui.models.chats import Chats
@@ -125,6 +127,17 @@ async def get_messages(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Query messages with filters."""
+    # Sunway: this returns ChatMessageModel, which carries `content` (the full message
+    # text) plus files/sources/output — i.e. other users' chat CONTENT, not just usage
+    # metadata like the rest of this router. It was gated on get_admin_user alone, so
+    # turning ENABLE_ADMIN_CHAT_ACCESS off closed the /api/v1/chats/* paths while
+    # /api/v1/analytics/messages?user_id=... (or ?model_id=..., which returns every
+    # user's messages to a model) stayed wide open. Gated here so the flag means what
+    # it says. Under multi-tenancy `admin` is a per-tenant IAM role, so this was
+    # readable by any BU admin for every user in their tenant.
+    if not ENABLE_ADMIN_CHAT_ACCESS:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+
     if chat_id:
         return await ChatMessages.get_messages_by_chat_id(chat_id=chat_id, db=db)
     elif model_id:

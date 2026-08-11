@@ -18,7 +18,7 @@
 	} from '$lib/apis/auths';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
-	import { WEBUI_NAME, config, user, socket, tenants, activeTenant } from '$lib/stores';
+	import { WEBUI_NAME, config, user, tenants, activeTenant } from '$lib/stores';
 	import {
 		getMyTenantsWithRetry,
 		TenantGateError,
@@ -46,6 +46,44 @@
 
 	let ldapUsername = '';
 
+	// Where a sign-in affordance on THIS page should lead.
+	//
+	// When a catalogue is configured it owns signing people in, so every button here
+	// must point there rather than at the IdP — otherwise a user who reaches this page
+	// (only possible when an OAuth error is being shown, or when auto-redirect is off)
+	// is sent to a hosted IdP login screen instead of the front door, and signs in
+	// against this app in isolation.
+	const signInHref = (provider: string) =>
+		$config?.features?.landing_page_url ?? `${WEBUI_BASE_URL}/oauth/${provider}/login`;
+
+	// The catalogue hands off by linking here with `?login_hint=<email>`, which is what
+	// lets the silent SSO probe be pinned to a WorkOS organization (see handle_login in
+	// backend/open_webui/utils/oauth.py — an unpinned probe renders the WorkOS hosted
+	// login page instead of failing cleanly).
+	//
+	// It has to be looked for in two places. The catalogue links to `/`, not `/auth`, so
+	// on a cold arrival +layout.svelte has already forwarded us to
+	// `/auth?redirect=<encoded original url>` and the hint is nested inside `redirect`
+	// rather than sitting at the top level. Reading only the top level would miss every
+	// real handoff and send the visitor back to the catalogue.
+	const resolveLoginHint = (url: URL): string | null => {
+		const direct = url.searchParams.get('login_hint');
+		if (direct) {
+			return direct;
+		}
+
+		const redirectParam = url.searchParams.get('redirect');
+		if (!redirectParam) {
+			return null;
+		}
+		try {
+			return new URL(redirectParam, url.origin).searchParams.get('login_hint');
+		} catch {
+			// A `redirect` that isn't a parseable URL is not a handoff; treat it as absent.
+			return null;
+		}
+	};
+
 	const setSessionUser = async (sessionUser, redirectPath: string | null = null) => {
 		if (sessionUser) {
 			console.log(sessionUser);
@@ -53,7 +91,6 @@
 			if (sessionUser.token) {
 				localStorage.token = sessionUser.token;
 			}
-			$socket.emit('user-join', { auth: { token: sessionUser.token } });
 			await user.set(sessionUser);
 			await config.set(await getBackendConfig());
 
@@ -67,8 +104,23 @@
 				redirectPath = $page.url.searchParams.get('redirect') || '/';
 			}
 
-			goto(redirectPath);
+			// Cleared BEFORE navigating: nothing after a location.href assignment is
+			// guaranteed to run.
 			localStorage.removeItem('redirectPath');
+
+			// Full page load, NOT goto(). +layout.svelte creates the Socket.IO connection on
+			// mount, and this page was mounted while signed out — no schat token, no
+			// iam_token cookie, and under multi-tenancy no tenant slug — so connect()
+			// rejected that handshake fail-closed (socket/main.py). socket.io does not retry
+			// a server rejection, and a client-side goto() keeps the same dead socket, which
+			// never joins the `user:{id}` room. Chat completions are delivered ONLY as socket
+			// events, so the first message then generated and saved but never reported as
+			// done: the spinner ran forever until the user refreshed by hand.
+			//
+			// Reloading rebuilds the socket with the token, cookie and slug all in place
+			// (setActiveTenant runs in oauthCallbackHandler before this). Consistent with
+			// signout, tenant switch and no-access, which already use location.href.
+			window.location.href = redirectPath;
 		}
 	};
 
@@ -222,32 +274,83 @@
 
 		await oauthCallbackHandler();
 
-		// Auto-redirect to SSO when OAUTH_AUTO_REDIRECT is enabled and the
-		// deployment is unambiguously SSO-only (single provider, no login form,
-		// no LDAP). Suppressed by ?error=, onboarding, trusted-header auth, or an
-		// existing session/token.
+		// A `token` cookie means the OAuth callback COMPLETED and handed us a session —
+		// this visitor is not anonymous, even if oauthCallbackHandler above bailed before
+		// promoting it to localStorage (a tenant-gate 401/403, say). Both redirects below
+		// must respect it, or a post-login failure is silently swallowed. See the comment
+		// on the catalogue bounce for why that matters.
+		const hasTokenCookie = document.cookie.split('; ').some((c) => c.startsWith('token='));
+		const catalogueUrl = $config?.features?.landing_page_url ?? null;
+		const providers = Object.keys($config?.oauth?.providers ?? {});
+		const loginHint = resolveLoginHint($page.url);
+
+		// Is this deployment unambiguously SSO-only? A single provider, no password form,
+		// no LDAP, no trusted header, not mid-onboarding — i.e. redirecting to the IdP
+		// cannot deprive anyone of a sign-in route they would otherwise have used.
 		//
-		// Upstream also honoured a `?form=` query parameter here, which both
-		// suppressed this redirect AND unhid the password/LDAP form below. schat is
-		// SSO-only, so that parameter was a client-controlled way to surface a
-		// sign-in path the deployment does not use — it has been removed. Do not
-		// reintroduce it: the form's visibility must derive from server config
-		// alone.
-		if ($config?.oauth?.auto_redirect && !error) {
-			const providers = Object.keys($config?.oauth?.providers ?? {});
-			if (
-				providers.length === 1 &&
-				$config?.features?.auth !== false &&
-				$config?.features?.enable_login_form === false &&
-				!$config?.features?.enable_ldap &&
-				!$config?.features?.auth_trusted_header &&
-				!$config?.onboarding &&
-				!localStorage.token &&
-				!document.cookie.split('; ').some((c) => c.startsWith('token='))
-			) {
+		// Upstream also honoured a `?form=` query parameter here, which both suppressed
+		// the redirect AND unhid the password/LDAP form below. schat is SSO-only, so that
+		// parameter was a client-controlled way to surface a sign-in path the deployment
+		// does not use — it has been removed. Do not reintroduce it: the form's visibility
+		// must derive from server config alone.
+		const ssoOnly =
+			providers.length === 1 &&
+			$config?.features?.auth !== false &&
+			$config?.features?.enable_login_form === false &&
+			!$config?.features?.enable_ldap &&
+			!$config?.features?.auth_trusted_header &&
+			!$config?.onboarding;
+
+		// Attempt SSO.
+		//
+		// With a catalogue configured, the ONLY case worth attempting is an explicit
+		// handoff: the catalogue links here with `?login_hint=<email>`, and that hint is
+		// what lets the probe be pinned to a WorkOS organization. Unpinned, a `prompt=none`
+		// probe against the org-less `authkit` selector does not fail cleanly — WorkOS
+		// renders its hosted login page, so an anonymous visitor lands on an IdP screen
+		// instead of the catalogue. Probing unconditionally is therefore worse than not
+		// probing: no hint means fall straight through to the catalogue below.
+		//
+		// Without a catalogue (local dev), keep the old behaviour: a plain redirect that
+		// may prompt, gated on OAUTH_AUTO_REDIRECT as before.
+		if (!error && !localStorage.token && !hasTokenCookie && ssoOnly) {
+			if (catalogueUrl && loginHint) {
+				// A visitor who signed in on the catalogue is logged in here invisibly, off
+				// the same upstream Microsoft session, even though the two apps use different
+				// WorkOS clients. One who is not gets `login_required` back, and the callback
+				// returns them to the catalogue — breaking the loop if that happens twice.
+				const query = new URLSearchParams({ prompt: 'none', login_hint: loginHint });
+				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login?${query}`;
+				return;
+			}
+			if (!catalogueUrl && $config?.oauth?.auto_redirect) {
 				window.location.href = `${WEBUI_BASE_URL}/oauth/${providers[0]}/login`;
 				return;
 			}
+		}
+
+		// No SSO attempt was made — no handoff hint, or the deployment is not SSO-only —
+		// and there is no session. If this app is listed in a catalogue, that is where an
+		// anonymous visitor belongs: the catalogue owns signing people in, and it is the
+		// normal destination here, not an error path. Checked after the block above so a
+		// pinned silent probe always wins; bouncing first would stop anyone arriving with
+		// a valid handoff from ever getting in.
+		//
+		// Three conditions keep this from firing on someone who is mid-sign-in:
+		//
+		// `!error` — without it a genuine OAuth failure (bad client secret, unreachable
+		// IdP, rejected token) would be bounced to the catalogue instead of displayed, so
+		// the deployment would look like a redirect loop with no diagnosis anywhere.
+		//
+		// `!hasTokenCookie` — without it a visitor who signed in successfully but failed
+		// the tenant gate is bounced back to the catalogue in the same tick the error
+		// toast is queued, so the toast never renders. The catalogue sees a signed-in
+		// user, links back here, and it repeats: an infinite loop that looks identical to
+		// "not logged in" while actually meaning "IAM rejected your session" or "you have
+		// no tenant membership". Those need an error on screen, not another redirect.
+		if (catalogueUrl && !localStorage.token && !hasTokenCookie && !error) {
+			window.location.href = catalogueUrl;
+			return;
 		}
 
 		loaded = true;
@@ -500,7 +603,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/google/login`;
+												window.location.href = signInHref('google');
 											}}
 										>
 											<svg
@@ -530,7 +633,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/microsoft/login`;
+												window.location.href = signInHref('microsoft');
 											}}
 										>
 											<svg
@@ -561,7 +664,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/github/login`;
+												window.location.href = signInHref('github');
 											}}
 										>
 											<svg
@@ -582,7 +685,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/oidc/login`;
+												window.location.href = signInHref('oidc');
 											}}
 										>
 											<svg
@@ -612,7 +715,7 @@
 										<button
 											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
-												window.location.href = `${WEBUI_BASE_URL}/oauth/feishu/login`;
+												window.location.href = signInHref('feishu');
 											}}
 										>
 											<span>{$i18n.t('Continue with {{provider}}', { provider: 'Feishu' })}</span>

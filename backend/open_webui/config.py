@@ -219,6 +219,22 @@ S3_USE_ACCELERATE_ENDPOINT = os.getenv('S3_USE_ACCELERATE_ENDPOINT', 'false').lo
 S3_ADDRESSING_STYLE = os.getenv('S3_ADDRESSING_STYLE', None)
 S3_ENABLE_TAGGING = os.getenv('S3_ENABLE_TAGGING', 'false').lower() == 'true'
 
+# Timeouts + retry budget for the S3/MinIO client. Set explicitly because botocore's
+# defaults turn a misconfigured endpoint into a FIVE MINUTE hang: 60s connect x 5
+# attempts. The request never returns, the browser spins, and because the DB write
+# has usually already happened the record shows up on refresh while the original
+# upload is still stalled — which reads as "loads forever" rather than as an error.
+#
+# connect_timeout is short: failing to reach the endpoint at all is a configuration
+# error (wrong host, missing port, blocked route) and should surface in seconds.
+S3_CONNECT_TIMEOUT = int(os.getenv('S3_CONNECT_TIMEOUT', '5'))
+# read_timeout is per-read, NOT for the whole transfer, so this does not cap large
+# uploads. Keep it generous enough for a slow link to deliver the next chunk.
+S3_READ_TIMEOUT = int(os.getenv('S3_READ_TIMEOUT', '60'))
+# Total attempts including the first. 5 (the botocore default) multiplies every
+# timeout by five; 2 still rides out a transient blip without a 5-minute worst case.
+S3_MAX_ATTEMPTS = int(os.getenv('S3_MAX_ATTEMPTS', '2'))
+
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', None)
 GOOGLE_APPLICATION_CREDENTIALS_JSON = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON', None)
 
@@ -2980,7 +2996,7 @@ DEFAULT_ARENA_MODEL = {
 
 WEBHOOK_URL = ConfigVar('WEBHOOK_URL', 'webhook_url', os.getenv('WEBHOOK_URL', ''))
 
-ENABLE_ADMIN_EXPORT = os.getenv('ENABLE_ADMIN_EXPORT', 'True').lower() == 'true'
+ENABLE_ADMIN_EXPORT = os.getenv('ENABLE_ADMIN_EXPORT', 'False').lower() == 'true'
 
 ENABLE_ADMIN_WORKSPACE_CONTENT_ACCESS = os.getenv('ENABLE_ADMIN_WORKSPACE_CONTENT_ACCESS', 'True').lower() == 'true'
 
@@ -2992,7 +3008,7 @@ BYPASS_ADMIN_ACCESS_CONTROL = (
     == 'true'
 )
 
-ENABLE_ADMIN_CHAT_ACCESS = os.getenv('ENABLE_ADMIN_CHAT_ACCESS', 'True').lower() == 'true'
+ENABLE_ADMIN_CHAT_ACCESS = os.getenv('ENABLE_ADMIN_CHAT_ACCESS', 'False').lower() == 'true'
 
 ENABLE_ADMIN_ANALYTICS = os.getenv('ENABLE_ADMIN_ANALYTICS', 'True').lower() == 'true'
 
