@@ -49,6 +49,7 @@ from open_webui.utils.payload import (
     apply_model_params_to_body_openai,
     apply_system_prompt_to_body,
 )
+from open_webui.utils.secret_masking import mask_secrets, unmask_secret
 from open_webui.utils.session_pool import (
     cleanup_response,
     get_session,
@@ -239,12 +240,14 @@ router = APIRouter()
 
 @router.get('/config')
 async def get_config(request: Request, user=Depends(get_admin_user)):
-    return {
+    config_payload = {
         'ENABLE_OPENAI_API': request.app.state.config.ENABLE_OPENAI_API,
         'OPENAI_API_BASE_URLS': request.app.state.config.OPENAI_API_BASE_URLS,
         'OPENAI_API_KEYS': request.app.state.config.OPENAI_API_KEYS,
         'OPENAI_API_CONFIGS': request.app.state.config.OPENAI_API_CONFIGS,
     }
+    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
+    return mask_secrets(config_payload)
 
 
 class OpenAIConfigForm(BaseModel):
@@ -257,8 +260,12 @@ class OpenAIConfigForm(BaseModel):
 @router.post('/config/update')
 async def update_config(request: Request, form_data: OpenAIConfigForm, user=Depends(get_admin_user)):
     request.app.state.config.ENABLE_OPENAI_API = form_data.ENABLE_OPENAI_API
+    # Sunway: get_config() masked these, so the form returns SECRET_PLACEHOLDER for any key
+    # the admin did not retype. Resolve BEFORE the assignment below overwrites the stored
+    # list, or saving an unrelated field would wipe every key.
+    resolved_keys = unmask_secret(form_data.OPENAI_API_KEYS, request.app.state.config.OPENAI_API_KEYS)
     request.app.state.config.OPENAI_API_BASE_URLS = form_data.OPENAI_API_BASE_URLS
-    request.app.state.config.OPENAI_API_KEYS = form_data.OPENAI_API_KEYS
+    request.app.state.config.OPENAI_API_KEYS = resolved_keys
 
     # Check if API KEYS length is same than API URLS length
     if len(request.app.state.config.OPENAI_API_KEYS) != len(request.app.state.config.OPENAI_API_BASE_URLS):
@@ -279,12 +286,14 @@ async def update_config(request: Request, form_data: OpenAIConfigForm, user=Depe
         key: value for key, value in request.app.state.config.OPENAI_API_CONFIGS.items() if key in keys
     }
 
-    return {
+    config_payload = {
         'ENABLE_OPENAI_API': request.app.state.config.ENABLE_OPENAI_API,
         'OPENAI_API_BASE_URLS': request.app.state.config.OPENAI_API_BASE_URLS,
         'OPENAI_API_KEYS': request.app.state.config.OPENAI_API_KEYS,
         'OPENAI_API_CONFIGS': request.app.state.config.OPENAI_API_CONFIGS,
     }
+    # Sunway: the update response echoes the config back, so it needs masking too.
+    return mask_secrets(config_payload)
 
 
 @router.post('/audio/speech')

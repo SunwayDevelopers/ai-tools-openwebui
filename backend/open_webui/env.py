@@ -131,6 +131,19 @@ SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 
 ENV = os.getenv('ENV', 'dev')
 
+# Sunway: loguru's `diagnose` prints the VALUE of every local variable in an exception
+# traceback, and loguru defaults it to True. That dumped session JWTs to stdout — a
+# socket `user-join` handler takes `data['auth']['token']`, so any unhandled error in
+# that path wrote a live bearer token into the cluster log stack, where it is retained
+# and readable by anyone with log access. Same disclosure class as a secret in an API
+# response, with a wider audience.
+#
+# Off in prod (the image sets ENV=prod; dev.ps1 leaves it unset so local debugging keeps
+# the variable dumps). `backtrace` stays on either way: it adds the surrounding frames,
+# which is the useful half, and it does not print values. Set LOG_DIAGNOSE=true to force
+# it on for a deliberate debugging window — expect secrets in the log if you do.
+LOG_DIAGNOSE = os.getenv('LOG_DIAGNOSE', 'true' if ENV == 'dev' else 'false').lower() == 'true'
+
 FROM_INIT_PY = os.getenv('FROM_INIT_PY', 'False').lower() == 'true'
 
 if FROM_INIT_PY:

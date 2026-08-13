@@ -37,6 +37,7 @@ from open_webui.utils.images.comfyui import (
     comfyui_edit_image,
     comfyui_upload_image,
 )
+from open_webui.utils.secret_masking import mask_secrets, unmask_form_secrets
 from open_webui.utils.session_pool import get_session
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,7 +160,7 @@ class ImagesConfig(BaseModel):
 
 @router.get('/config', response_model=ImagesConfig)
 async def get_config(request: Request, user=Depends(get_admin_user)):
-    return {
+    config_payload = {
         'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
         'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
         'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
@@ -194,10 +195,16 @@ async def get_config(request: Request, user=Depends(get_admin_user)):
         'IMAGES_EDIT_COMFYUI_WORKFLOW': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW,
         'IMAGES_EDIT_COMFYUI_WORKFLOW_NODES': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES,
     }
+    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
+    return mask_secrets(config_payload)
 
 
 @router.post('/config/update')
 async def update_config(request: Request, form_data: ImagesConfig, user=Depends(get_admin_user)):
+    # Sunway: resolve any credential the admin did not retype back to its stored value
+    # before the assignments below. Form field names match the config attribute names.
+    unmask_form_secrets(form_data, request.app.state.config)
+
     request.app.state.config.ENABLE_IMAGE_GENERATION = form_data.ENABLE_IMAGE_GENERATION
 
     # Create Image
@@ -268,7 +275,7 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
     request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW
     request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES
 
-    return {
+    config_payload = {
         'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
         'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
         'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
@@ -303,6 +310,8 @@ async def update_config(request: Request, form_data: ImagesConfig, user=Depends(
         'IMAGES_EDIT_COMFYUI_WORKFLOW': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW,
         'IMAGES_EDIT_COMFYUI_WORKFLOW_NODES': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES,
     }
+    # Sunway: the update response echoes the config back, so it needs masking too.
+    return mask_secrets(config_payload)
 
 
 def get_automatic1111_api_auth(request: Request):

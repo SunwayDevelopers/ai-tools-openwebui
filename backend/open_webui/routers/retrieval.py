@@ -120,6 +120,7 @@ from open_webui.utils.misc import (
     calculate_sha256_string,
     sanitize_text_for_db,
 )
+from open_webui.utils.secret_masking import mask_secrets, unmask_form_secrets, unmask_secret
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -290,7 +291,7 @@ class SearchForm(BaseModel):
 
 @router.get('/embedding')
 async def get_embedding_config(request: Request, user=Depends(get_admin_user)):
-    return {
+    config_payload = {
         'status': True,
         'RAG_EMBEDDING_ENGINE': request.app.state.config.RAG_EMBEDDING_ENGINE,
         'RAG_EMBEDDING_MODEL': request.app.state.config.RAG_EMBEDDING_MODEL,
@@ -311,6 +312,8 @@ async def get_embedding_config(request: Request, user=Depends(get_admin_user)):
             'version': request.app.state.config.RAG_AZURE_OPENAI_API_VERSION,
         },
     }
+    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
+    return mask_secrets(config_payload)
 
 
 class OpenAIConfigForm(BaseModel):
@@ -373,17 +376,26 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
             'openai',
             'azure_openai',
         ]:
+            # Sunway: these nested forms use a bare `key`, so resolve them explicitly.
+            # Load-bearing, not cosmetic: storing the placeholder would hand `__MASKED__`
+            # to get_ef() below and break embedding outright.
             if form_data.openai_config is not None:
                 request.app.state.config.RAG_OPENAI_API_BASE_URL = form_data.openai_config.url
-                request.app.state.config.RAG_OPENAI_API_KEY = form_data.openai_config.key
+                request.app.state.config.RAG_OPENAI_API_KEY = unmask_secret(
+                    form_data.openai_config.key, request.app.state.config.RAG_OPENAI_API_KEY
+                )
 
             if form_data.ollama_config is not None:
                 request.app.state.config.RAG_OLLAMA_BASE_URL = form_data.ollama_config.url
-                request.app.state.config.RAG_OLLAMA_API_KEY = form_data.ollama_config.key
+                request.app.state.config.RAG_OLLAMA_API_KEY = unmask_secret(
+                    form_data.ollama_config.key, request.app.state.config.RAG_OLLAMA_API_KEY
+                )
 
             if form_data.azure_openai_config is not None:
                 request.app.state.config.RAG_AZURE_OPENAI_BASE_URL = form_data.azure_openai_config.url
-                request.app.state.config.RAG_AZURE_OPENAI_API_KEY = form_data.azure_openai_config.key
+                request.app.state.config.RAG_AZURE_OPENAI_API_KEY = unmask_secret(
+                    form_data.azure_openai_config.key, request.app.state.config.RAG_AZURE_OPENAI_API_KEY
+                )
                 request.app.state.config.RAG_AZURE_OPENAI_API_VERSION = form_data.azure_openai_config.version
 
         request.app.state.ef = get_ef(
@@ -423,7 +435,7 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
             concurrent_requests=request.app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS,
         )
 
-        return {
+        config_payload = {
             'status': True,
             'RAG_EMBEDDING_ENGINE': request.app.state.config.RAG_EMBEDDING_ENGINE,
             'RAG_EMBEDDING_MODEL': request.app.state.config.RAG_EMBEDDING_MODEL,
@@ -444,6 +456,8 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
                 'version': request.app.state.config.RAG_AZURE_OPENAI_API_VERSION,
             },
         }
+        # Sunway: the update response echoes the config back, so it needs masking too.
+        return mask_secrets(config_payload)
     except Exception as e:
         log.exception(f'Problem updating embedding model: {e}')
         raise HTTPException(
@@ -454,7 +468,7 @@ async def update_embedding_config(request: Request, form_data: EmbeddingModelUpd
 
 @router.get('/config')
 async def get_rag_config(request: Request, user=Depends(get_admin_user)):
-    return {
+    config_payload = {
         'status': True,
         # RAG settings
         'RAG_TEMPLATE': request.app.state.config.RAG_TEMPLATE,
@@ -594,6 +608,8 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             'LINKUP_SEARCH_PARAMS': request.app.state.config.LINKUP_SEARCH_PARAMS,
         },
     }
+    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
+    return mask_secrets(config_payload)
 
 
 class WebConfig(BaseModel):
@@ -751,6 +767,11 @@ class ConfigForm(BaseModel):
 
 @router.post('/config/update')
 async def update_rag_config(request: Request, form_data: ConfigForm, user=Depends(get_admin_user)):
+    # Sunway: get_rag_config() masks ~31 credentials in this form, so resolve any the admin
+    # did not retype back to their stored values before the assignments below. One pass
+    # instead of 31 wrapped assignments, and it covers whatever upstream adds next.
+    unmask_form_secrets(form_data, request.app.state.config)
+
     # RAG settings
     request.app.state.config.RAG_TEMPLATE = (
         form_data.RAG_TEMPLATE if form_data.RAG_TEMPLATE is not None else request.app.state.config.RAG_TEMPLATE
@@ -1159,7 +1180,7 @@ async def update_rag_config(request: Request, form_data: ConfigForm, user=Depend
         request.app.state.config.LINKUP_API_KEY = form_data.web.LINKUP_API_KEY
         request.app.state.config.LINKUP_SEARCH_PARAMS = form_data.web.LINKUP_SEARCH_PARAMS
 
-    return {
+    config_payload = {
         'status': True,
         # RAG settings
         'RAG_TEMPLATE': request.app.state.config.RAG_TEMPLATE,
@@ -1294,6 +1315,8 @@ async def update_rag_config(request: Request, form_data: ConfigForm, user=Depend
             'LINKUP_SEARCH_PARAMS': request.app.state.config.LINKUP_SEARCH_PARAMS,
         },
     }
+    # Sunway: the update response echoes the config back, so it needs masking too.
+    return mask_secrets(config_payload)
 
 
 ####################################
