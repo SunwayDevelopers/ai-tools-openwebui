@@ -279,7 +279,7 @@
 			{/if}
 
 			<!-- Sunway: archive deferred (redundant w/ retention); hide the viewer for everyone incl. admins -->
-			{#if $config?.enable_chat_archive ?? true}
+			{#if $config?.enable_chat_archive ?? false}
 				<button
 					class="flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
 					type="button"

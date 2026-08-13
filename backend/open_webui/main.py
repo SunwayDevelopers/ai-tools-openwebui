@@ -154,8 +154,6 @@ from open_webui.config import (
     DOCUMENT_INTELLIGENCE_MODEL,
     ENABLE_ADMIN_ANALYTICS,
     # Admin
-    ENABLE_ADMIN_CHAT_ACCESS,
-    ENABLE_ADMIN_EXPORT,
     ENABLE_API_KEYS,
     ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS,
     ENABLE_ASYNC_EMBEDDING,
@@ -192,9 +190,7 @@ from open_webui.config import (
     ENABLE_OAUTH_ROLE_MANAGEMENT,
     # Ollama
     ENABLE_OLLAMA_API,
-    ENABLE_ONEDRIVE_BUSINESS,
     ENABLE_ONEDRIVE_INTEGRATION,
-    ENABLE_ONEDRIVE_PERSONAL,
     # OpenAI
     ENABLE_OPENAI_API,
     ENABLE_PASSWORD_CHANGE_FORM,
@@ -230,11 +226,8 @@ from open_webui.config import (
     FOLDER_MAX_FILE_COUNT,
     FOLLOW_UP_GENERATION_PROMPT_TEMPLATE,
     FRONTEND_BUILD_DIR,
-    GOOGLE_DRIVE_API_KEY,
-    GOOGLE_DRIVE_CLIENT_ID,
     GOOGLE_PSE_API_KEY,
     GOOGLE_PSE_ENGINE_ID,
-    IFRAME_CSP,
     IMAGE_EDIT_ENGINE,
     IMAGE_EDIT_MODEL,
     IMAGE_EDIT_SIZE,
@@ -299,10 +292,6 @@ from open_webui.config import (
     OLLAMA_API_CONFIGS,
     OLLAMA_BASE_URLS,
     OLLAMA_CLOUD_WEB_SEARCH_API_KEY,
-    ONEDRIVE_CLIENT_ID_BUSINESS,
-    ONEDRIVE_CLIENT_ID_PERSONAL,
-    ONEDRIVE_SHAREPOINT_TENANT_ID,
-    ONEDRIVE_SHAREPOINT_URL,
     OPENAI_API_BASE_URLS,
     OPENAI_API_CONFIGS,
     OPENAI_API_KEYS,
@@ -428,21 +417,12 @@ from open_webui.env import (
     AUDIT_LOG_LEVEL,
     BYPASS_MODEL_ACCESS_CONTROL,
     CHANGELOG,
-    CHAT_RETENTION_DAYS,
-    CHAT_SYSTEM_PROMPT_MAX_CHARS,
-    ENABLE_ADMIN_FUNCTIONS_UI,
-    ENABLE_ADMIN_SETTINGS_UI,
-    ENABLE_CHAT_ARCHIVE,
-    ENABLE_IMAGE_OCR_FALLBACK,
-    ENABLE_TEMPORARY_CHAT,
-    ENABLE_VOICE,
     MAX_CHATS_PER_USER,
     DEPLOYMENT_ID,
     ENABLE_AUDIT_GET_REQUESTS,
     ENABLE_COMPRESSION_MIDDLEWARE,
     ENABLE_MULTI_TENANCY,
     ENABLE_CUSTOM_MODEL_FALLBACK,
-    ENABLE_EASTER_EGGS,
     # OAuth Back-Channel Logout
     ENABLE_OAUTH_BACKCHANNEL_LOGOUT,
     ENABLE_OTEL,
@@ -460,7 +440,6 @@ from open_webui.env import (
     LICENSE_KEY,
     LOG_FORMAT,
     MAX_BODY_LOG_SIZE,
-    RAG_FULL_CONTEXT_MAX_CHARS,
     # Redis
     REDIS_CLUSTER,
     REDIS_KEY_PREFIX,
@@ -559,9 +538,7 @@ from open_webui.utils.asgi_middleware import (
 from open_webui.utils.audit import AuditLevel, AuditLoggingMiddleware
 from open_webui.utils.auth import (
     create_admin_user,
-    decode_token,
     get_admin_user,
-    get_http_authorization_cred,
     get_license_data,
     get_verified_user,
 )
@@ -2428,38 +2405,34 @@ async def stop_tasks_by_chat_id_endpoint(request: Request, chat_id: str, user=De
 
 @app.get('/api/config')
 async def get_app_config(request: Request):
-    user = None
-    token = None
+    """Sunway: this endpoint answers "what is this deployment?" and nothing about
+    "who are you?" (security review #18b, Option 2).
 
-    auth_header = request.headers.get('Authorization')
-    if auth_header:
-        cred = get_http_authorization_cred(auth_header)
-        if cred:
-            token = cred.credentials
+    It used to resolve the caller and emit a large authenticated block. That could not
+    work under multi-tenancy: /api/config is on the tenant middleware's
+    _SYSTEM_EXACT_PATHS list -- correctly, because the sign-in page reads it before any
+    tenant exists -- so it runs in a system context and every DB read landed on the
+    control-plane engine, while tenant users live in per-tenant DBs. The lookup missed
+    for most users, `user` came back None, the whole authenticated block was omitted,
+    and every frontend gate reading `?? true` fell open. That is how the August 2026
+    VAPT tester reached admin surfaces the operator had disabled.
 
-    if not token and 'token' in request.cookies:
-        token = request.cookies.get('token')
+    The authenticated payload now comes from GET /api/v1/auths/ (utils/app_config.py),
+    which is deliberately NOT on the bypass list and therefore reads the right database.
+    Removing the lookup here does not merely fix the bug -- it deletes the code that
+    caused it, and it is a prerequisite for retiring the control-plane DB
+    (reports/security/to-be-reviewed-later.md 6).
 
-    if token:
-        try:
-            data = decode_token(token)
-        except Exception as e:
-            log.debug(e)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail='Invalid token',
-            )
-        if data is not None and 'id' in data:
-            user = await Users.get_user_by_id(data['id'])
+    Gone with it: `onboarding` (its Users.has_users() also ran against the control-plane
+    DB, so under MT it could report onboarding:true to every caller, suppressing the IdP
+    redirect and rendering first-admin signup UI), and the google_drive / onedrive blocks,
+    which shipped GOOGLE_DRIVE_API_KEY and the OneDrive client ids to every authenticated
+    caller.
 
-    onboarding = False
-    if user is None:
-        onboarding = not await Users.has_users()
-
-    user_count = await Users.get_num_users() if app.state.LICENSE_METADATA else None
-
+    The `pending` user overlay also moved: it is part of the authenticated fragment now,
+    and a pending user still passes get_current_user, so /auths/ serves it.
+    """
     return {
-        **({'onboarding': True} if onboarding else {}),
         'status': True,
         'name': app.state.WEBUI_NAME,
         'version': VERSION,
@@ -2469,7 +2442,9 @@ async def get_app_config(request: Request):
             'auto_redirect': app.state.config.OAUTH_AUTO_REDIRECT,
         },
         'features': {
-            # --- Public: required by login/signup page pre-auth ---
+            # Public ONLY — required by the login/signup page before a session exists.
+            # Anything that is not safe for an anonymous caller belongs in
+            # utils/app_config.py instead.
             'auth': WEBUI_AUTH,
             'auth_trusted_header': bool(app.state.AUTH_TRUSTED_EMAIL_HEADER),
             'enable_signup_password_confirmation': ENABLE_SIGNUP_PASSWORD_CONFIRMATION,
@@ -2483,149 +2458,17 @@ async def get_app_config(request: Request):
             # visitors there. Null when unset, in which case the built-in sign-in page
             # is shown instead (previous behaviour).
             'landing_page_url': LANDING_PAGE_URL,
-            # --- Authenticated: only consumed by logged-in frontend ---
-            **(
-                {
-                    'enable_api_keys': app.state.config.ENABLE_API_KEYS,
-                    'enable_password_change_form': app.state.config.ENABLE_PASSWORD_CHANGE_FORM,
-                    'enable_version_update_check': ENABLE_VERSION_UPDATE_CHECK,
-                    'enable_public_active_users_count': ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
-                    'enable_easter_eggs': ENABLE_EASTER_EGGS,
-                    'enable_direct_connections': app.state.config.ENABLE_DIRECT_CONNECTIONS,
-                    'enable_folders': app.state.config.ENABLE_FOLDERS,
-                    'folder_max_file_count': app.state.config.FOLDER_MAX_FILE_COUNT,
-                    'enable_channels': app.state.config.ENABLE_CHANNELS,
-                    'enable_calendar': app.state.config.ENABLE_CALENDAR,
-                    'enable_automations': app.state.config.ENABLE_AUTOMATIONS,
-                    'enable_notes': app.state.config.ENABLE_NOTES,
-                    'enable_web_search': app.state.config.ENABLE_WEB_SEARCH,
-                    'enable_code_execution': app.state.config.ENABLE_CODE_EXECUTION,
-                    'enable_code_interpreter': app.state.config.ENABLE_CODE_INTERPRETER,
-                    'enable_image_generation': app.state.config.ENABLE_IMAGE_GENERATION,
-                    'enable_autocomplete_generation': app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
-                    'enable_community_sharing': app.state.config.ENABLE_COMMUNITY_SHARING,
-                    'enable_message_rating': app.state.config.ENABLE_MESSAGE_RATING,
-                    'enable_user_webhooks': app.state.config.ENABLE_USER_WEBHOOKS,
-                    'enable_user_status': app.state.config.ENABLE_USER_STATUS,
-                    'enable_admin_export': ENABLE_ADMIN_EXPORT,
-                    'enable_admin_chat_access': ENABLE_ADMIN_CHAT_ACCESS,
-                    'enable_admin_analytics': ENABLE_ADMIN_ANALYTICS,
-                    'enable_admin_settings_ui': ENABLE_ADMIN_SETTINGS_UI,
-                    'enable_admin_functions_ui': ENABLE_ADMIN_FUNCTIONS_UI,
-                    'enable_google_drive_integration': app.state.config.ENABLE_GOOGLE_DRIVE_INTEGRATION,
-                    'enable_onedrive_integration': app.state.config.ENABLE_ONEDRIVE_INTEGRATION,
-                    'enable_memories': app.state.config.ENABLE_MEMORIES,
-                    **(
-                        {
-                            'enable_onedrive_personal': ENABLE_ONEDRIVE_PERSONAL,
-                            'enable_onedrive_business': ENABLE_ONEDRIVE_BUSINESS,
-                        }
-                        if app.state.config.ENABLE_ONEDRIVE_INTEGRATION
-                        else {}
-                    ),
-                }
-                if user is not None
-                else {}
-            ),
         },
+        # Login-page branding; safe pre-auth and needed there.
         **(
             {
-                'default_models': app.state.config.DEFAULT_MODELS,
-                'default_pinned_models': app.state.config.DEFAULT_PINNED_MODELS,
-                'default_prompt_suggestions': app.state.config.DEFAULT_PROMPT_SUGGESTIONS,
-                **({'user_count': user_count} if user_count is not None else {}),
-                'code': {
-                    'engine': app.state.config.CODE_EXECUTION_ENGINE,
-                    'interpreter_engine': app.state.config.CODE_INTERPRETER_ENGINE,
-                },
-                'audio': {
-                    'tts': {
-                        'engine': app.state.config.TTS_ENGINE,
-                        'voice': app.state.config.TTS_VOICE,
-                        'split_on': app.state.config.TTS_SPLIT_ON,
-                    },
-                    'stt': {
-                        'engine': app.state.config.STT_ENGINE,
-                    },
-                },
-                'file': {
-                    'max_size': app.state.config.FILE_MAX_SIZE,
-                    'max_count': app.state.config.FILE_MAX_COUNT,
-                    # Drives the upload picker's `accept` filter (UX only — the server-side
-                    # allowlist in the files router is the actual boundary).
-                    'allowed_extensions': app.state.config.ALLOWED_FILE_EXTENSIONS,
-                    # Full-context ("use entire document") is downgraded to chunked
-                    # retrieval above this many extracted chars; the UI disables the
-                    # per-file toggle past it. 0 = unbounded (guard off).
-                    'full_context_max_chars': RAG_FULL_CONTEXT_MAX_CHARS,
-                    'image_compression': {
-                        'width': app.state.config.FILE_IMAGE_COMPRESSION_WIDTH,
-                        'height': app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT,
-                    },
-                    # Sunway: when on, images for non-vision models are OCR'd to text
-                    # instead of being blocked at upload (see ENABLE_IMAGE_OCR_FALLBACK).
-                    'image_ocr_fallback': ENABLE_IMAGE_OCR_FALLBACK,
-                },
-                'retention': {
-                    'max_chats_per_user': MAX_CHATS_PER_USER,
-                    'chat_retention_days': CHAT_RETENTION_DAYS,
-                },
-                # Sunway: char budget for the per-chat System Prompt, so the Controls
-                # textarea can show a live counter and stop the user at the same limit the
-                # backend truncates at (rather than silently trimming after the fact).
-                'chat_system_prompt_max_chars': CHAT_SYSTEM_PROMPT_MAX_CHARS,
-                'enable_chat_archive': ENABLE_CHAT_ARCHIVE,
-                'enable_temporary_chat': ENABLE_TEMPORARY_CHAT,
-                'enable_voice': ENABLE_VOICE,
-                'permissions': {**app.state.config.USER_PERMISSIONS},
-                'google_drive': {
-                    'client_id': GOOGLE_DRIVE_CLIENT_ID.value,
-                    'api_key': GOOGLE_DRIVE_API_KEY.value,
-                },
-                'onedrive': {
-                    'client_id_personal': ONEDRIVE_CLIENT_ID_PERSONAL,
-                    'client_id_business': ONEDRIVE_CLIENT_ID_BUSINESS,
-                    'sharepoint_url': ONEDRIVE_SHAREPOINT_URL.value,
-                    'sharepoint_tenant_id': ONEDRIVE_SHAREPOINT_TENANT_ID.value,
-                },
-                'ui': {
-                    'pending_user_overlay_title': app.state.config.PENDING_USER_OVERLAY_TITLE,
-                    'pending_user_overlay_content': app.state.config.PENDING_USER_OVERLAY_CONTENT,
-                    'response_watermark': app.state.config.RESPONSE_WATERMARK,
-                    'iframe_csp': IFRAME_CSP,
-                },
-                'license_metadata': app.state.LICENSE_METADATA,
-                **(
-                    {
-                        'active_entries': app.state.USER_COUNT,
-                    }
-                    if user.role == 'admin'
-                    else {}
-                ),
+                'metadata': {
+                    'login_footer': app.state.LICENSE_METADATA.get('login_footer', ''),
+                    'auth_logo_position': app.state.LICENSE_METADATA.get('auth_logo_position', ''),
+                }
             }
-            if user is not None and (user.role in ['admin', 'user'])
-            else {
-                **(
-                    {
-                        'ui': {
-                            'pending_user_overlay_title': app.state.config.PENDING_USER_OVERLAY_TITLE,
-                            'pending_user_overlay_content': app.state.config.PENDING_USER_OVERLAY_CONTENT,
-                        }
-                    }
-                    if user and user.role == 'pending'
-                    else {}
-                ),
-                **(
-                    {
-                        'metadata': {
-                            'login_footer': app.state.LICENSE_METADATA.get('login_footer', ''),
-                            'auth_logo_position': app.state.LICENSE_METADATA.get('auth_logo_position', ''),
-                        }
-                    }
-                    if app.state.LICENSE_METADATA
-                    else {}
-                ),
-            }
+            if app.state.LICENSE_METADATA
+            else {}
         ),
     }
 

@@ -681,7 +681,7 @@
 
 		// Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md)
 		if (
-			($config?.enable_temporary_chat ?? true) &&
+			($config?.enable_temporary_chat ?? false) &&
 			$user?.role !== 'admin' &&
 			$user?.permissions?.chat?.temporary_enforced
 		) {

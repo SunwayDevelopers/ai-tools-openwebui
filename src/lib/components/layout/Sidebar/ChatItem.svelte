@@ -617,7 +617,7 @@
 		{:else if shiftKey && mouseOver}
 			<div class=" flex items-center self-center space-x-1.5">
 				<!-- Sunway: archive deferred (redundant w/ retention); honor enable_chat_archive like the rest of the archive UI -->
-				{#if $config?.enable_chat_archive ?? true}
+				{#if $config?.enable_chat_archive ?? false}
 					<Tooltip content={$i18n.t('Archive')} className="flex items-center">
 						<button
 							class=" self-center dark:hover:text-white transition disabled:cursor-not-allowed"

@@ -49,12 +49,12 @@
 				if (HIDDEN_SHORTCUT_IDS.includes(id)) {
 					return false;
 				}
-				if (!($config?.enable_voice ?? true) && VOICE_SHORTCUT_IDS.includes(id)) {
+				if (!($config?.enable_voice ?? false) && VOICE_SHORTCUT_IDS.includes(id)) {
 					return false;
 				}
 				// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
 				// its handler is gated too, so drop the listing entirely. See CLAUDE.md.
-				if (!($config?.enable_temporary_chat ?? true) && id === 'newTemporaryChat') {
+				if (!($config?.enable_temporary_chat ?? false) && id === 'newTemporaryChat') {
 					return false;
 				}
 				if (!shortcut.setting) {

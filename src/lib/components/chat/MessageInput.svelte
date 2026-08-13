@@ -1770,7 +1770,31 @@
 										</button>
 									</InputMenu>
 
-									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showToolsButton || showSkillsButton || (toggleFilters && toggleFilters.length > 0)}
+									<!-- Sunway: the entire composer integrations toolbar is hidden — the divider and
+									     the IntegrationsMenu trigger. Users get no per-turn control over Web Search,
+									     Image Generation, tools/MCP, skills or filters from the message input.
+									     This HIDES, it does not disable. Nothing here is switched off at the config
+									     layer: ENABLE_WEB_SEARCH and ENABLE_IMAGE_GENERATION stay on, and the curated
+									     tiers keep both features active via their own meta.defaultFeatureIds +
+									     meta.capabilities, which Chat.svelte applies on model selection without any
+									     UI involvement (see the chip-row comment below for the full trade-off).
+									     Tools / Skills / Filters are ALSO guarded individually inside
+									     IntegrationsMenu.svelte. That is deliberate layering, not redundancy: if this
+									     toolbar is ever reopened, those three must stay hidden on their own merits
+									     (Workspace → Tools and → Skills are already hidden as an arbitrary-code class).
+									     Original guard: {#if showWebSearchButton || showImageGenerationButton ||
+									     showCodeInterpreterButton || showToolsButton || showSkillsButton ||
+									     (toggleFilters && toggleFilters.length > 0)} -->
+									<!-- Sunway: TEMPORARILY RESTORED for the VAPT retest (2026-08-12). The composer
+									     integrations toolbar is intended to be hidden, but the tester reported he
+									     could not USE web search or image generation — the same /api/config defect,
+									     seen from the other side: gates written `$config?.features?.X` with no
+									     `?? true` failed CLOSED when the payload went missing, so those two features
+									     never activated. He has to be able to see the toggles to confirm the fix.
+									     RE-HIDE after sign-off by restoring `{#if false}` here and on the chip row
+									     below. Tools / Skills / Filters stay hidden inside IntegrationsMenu.svelte,
+									     so this exposes only Web Search and Image Generation. -->
+									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton}
 										<div
 											class="flex self-center w-[1px] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50"
 										/>
@@ -1832,196 +1856,217 @@
 										</div>
 									{/if}
 
-									<div class="ml-1 flex gap-1.5">
-										{#if (selectedToolIds ?? []).length > 0}
-											<Tooltip
-												content={$i18n.t('{{COUNT}} Available Tools', {
-													COUNT: (selectedToolIds ?? []).length
-												})}
-											>
-												<button
-													class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
-													aria-label="Available Tools"
-													type="button"
-													on:click={() => {
-														showTools = !showTools;
-													}}
+									<!-- Sunway: the whole active-state chip row is hidden. These chips are not
+									     read-only indicators — each one TOGGLES its feature off when clicked, so
+									     leaving them would hand back exactly the control the IntegrationsMenu hide
+									     above removes.
+									     Hiding them does NOT disable anything. Web Search and Image Generation stay
+									     ON for the curated tiers because Chat.svelte (~line 453) enables them from
+									     the model's own meta.defaultFeatureIds + meta.capabilities, independent of
+									     any UI. The three presets in schat-models.seed.json ship with
+									     defaultFeatureIds: ['web_search','image_generation'], so the features run
+									     and users simply cannot see or flip them.
+									     Two consequences worth knowing: (1) there is no longer any in-composer cue
+									     that web search ran — response citations are the only signal; (2) the
+									     features now depend silently on ENABLE_WEB_SEARCH / ENABLE_IMAGE_GENERATION
+									     (PersistentConfig) and the matching user permissions staying true. If one is
+									     turned off, the feature stops with no UI anywhere to reveal why.
+									     Also hidden here: the tools count chip, per-turn filter chips, and the
+									     pendingOAuthTools "Click to connect" prompts (MCP auth), all of which belong
+									     to surfaces hidden above. -->
+									{#if true}
+										<!-- Sunway: temporarily restored with the block above; re-hide together -->
+										<div class="ml-1 flex gap-1.5">
+											{#if (selectedToolIds ?? []).length > 0}
+												<Tooltip
+													content={$i18n.t('{{COUNT}} Available Tools', {
+														COUNT: (selectedToolIds ?? []).length
+													})}
 												>
-													<Wrench className="size-4" strokeWidth="1.75" />
-
-													<span class="text-sm">
-														{(selectedToolIds ?? []).length}
-													</span>
-												</button>
-											</Tooltip>
-										{/if}
-
-										{#if (selectedSkillIds ?? []).length > 0}
-											<Tooltip
-												content={$i18n.t('{{COUNT}} Available Skills', {
-													COUNT: (selectedSkillIds ?? []).length
-												})}
-											>
-												<button
-													class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
-													aria-label="Available Skills"
-													type="button"
-													on:click={() => {
-														showSkills = !showSkills;
-													}}
-												>
-													<Keyframes className="size-4" strokeWidth="1.75" />
-
-													<span class="text-sm">
-														{(selectedSkillIds ?? []).length}
-													</span>
-												</button>
-											</Tooltip>
-										{/if}
-
-										{#each selectedFilterIds as filterId (filterId)}
-											{@const filter = toggleFilters.find((f) => f.id === filterId)}
-											{#if filter}
-												<Tooltip content={filter?.name} placement="top">
 													<button
-														on:click|preventDefault={() => {
-															if (
-																filter?.has_user_valves &&
-																($_user?.role === 'admin' ||
-																	($_user?.permissions?.chat?.valves ?? true))
-															) {
-																selectedValvesType = 'function';
-																selectedValvesItemId = filterId;
-																showValvesModal = true;
-															} else {
-																selectedFilterIds = selectedFilterIds.filter(
-																	(id) => id !== filterId
-																);
-															}
-														}}
+														class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
+														aria-label="Available Tools"
 														type="button"
-														class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(
-															filterId
-														)
-															? 'text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-600/10 border border-sky-200/40 dark:border-sky-500/20'
-															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '} capitalize"
+														on:click={() => {
+															showTools = !showTools;
+														}}
 													>
-														{#if filter?.icon}
-															<div class="size-4 items-center flex justify-center">
-																<img
-																	src={filter.icon}
-																	class="size-3.5 {filter.icon.includes('data:image/svg')
-																		? 'dark:invert-[80%]'
-																		: ''}"
-																	style="fill: currentColor;"
-																	alt={filter.name}
-																/>
-															</div>
-														{:else}
-															<Sparkles className="size-4" strokeWidth="1.75" />
-														{/if}
-														<!-- svelte-ignore a11y-click-events-have-key-events -->
-														<!-- svelte-ignore a11y-no-static-element-interactions -->
-														<div
-															class="hidden group-hover:block"
-															on:click={(e) => {
-																e.stopPropagation();
-																e.preventDefault();
-																selectedFilterIds = selectedFilterIds.filter(
-																	(id) => id !== filterId
-																);
+														<Wrench className="size-4" strokeWidth="1.75" />
+
+														<span class="text-sm">
+															{(selectedToolIds ?? []).length}
+														</span>
+													</button>
+												</Tooltip>
+											{/if}
+
+											{#if (selectedSkillIds ?? []).length > 0}
+												<Tooltip
+													content={$i18n.t('{{COUNT}} Available Skills', {
+														COUNT: (selectedSkillIds ?? []).length
+													})}
+												>
+													<button
+														class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
+														aria-label="Available Skills"
+														type="button"
+														on:click={() => {
+															showSkills = !showSkills;
+														}}
+													>
+														<Keyframes className="size-4" strokeWidth="1.75" />
+
+														<span class="text-sm">
+															{(selectedSkillIds ?? []).length}
+														</span>
+													</button>
+												</Tooltip>
+											{/if}
+
+											{#each selectedFilterIds as filterId (filterId)}
+												{@const filter = toggleFilters.find((f) => f.id === filterId)}
+												{#if filter}
+													<Tooltip content={filter?.name} placement="top">
+														<button
+															on:click|preventDefault={() => {
+																if (
+																	filter?.has_user_valves &&
+																	($_user?.role === 'admin' ||
+																		($_user?.permissions?.chat?.valves ?? true))
+																) {
+																	selectedValvesType = 'function';
+																	selectedValvesItemId = filterId;
+																	showValvesModal = true;
+																} else {
+																	selectedFilterIds = selectedFilterIds.filter(
+																		(id) => id !== filterId
+																	);
+																}
 															}}
+															type="button"
+															class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(
+																filterId
+															)
+																? 'text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-600/10 border border-sky-200/40 dark:border-sky-500/20'
+																: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '} capitalize"
 														>
+															{#if filter?.icon}
+																<div class="size-4 items-center flex justify-center">
+																	<img
+																		src={filter.icon}
+																		class="size-3.5 {filter.icon.includes('data:image/svg')
+																			? 'dark:invert-[80%]'
+																			: ''}"
+																		style="fill: currentColor;"
+																		alt={filter.name}
+																	/>
+																</div>
+															{:else}
+																<Sparkles className="size-4" strokeWidth="1.75" />
+															{/if}
+															<!-- svelte-ignore a11y-click-events-have-key-events -->
+															<!-- svelte-ignore a11y-no-static-element-interactions -->
+															<div
+																class="hidden group-hover:block"
+																on:click={(e) => {
+																	e.stopPropagation();
+																	e.preventDefault();
+																	selectedFilterIds = selectedFilterIds.filter(
+																		(id) => id !== filterId
+																	);
+																}}
+															>
+																<XMark className="size-4" strokeWidth="1.75" />
+															</div>
+														</button>
+													</Tooltip>
+												{/if}
+											{/each}
+
+											{#if webSearchEnabled}
+												<Tooltip content={$i18n.t('Web Search')} placement="top">
+													<button
+														on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
+														type="button"
+														class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {webSearchEnabled ||
+														($settings?.webSearch ?? false) === 'always'
+															? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-600/10 border border-sky-200/40 dark:border-sky-500/20'
+															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
+													>
+														<GlobeAlt className="size-4" strokeWidth="1.75" />
+														<div class="hidden group-hover:block">
 															<XMark className="size-4" strokeWidth="1.75" />
 														</div>
 													</button>
 												</Tooltip>
 											{/if}
-										{/each}
 
-										{#if webSearchEnabled}
-											<Tooltip content={$i18n.t('Web Search')} placement="top">
-												<button
-													on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
-													type="button"
-													class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {webSearchEnabled ||
-													($settings?.webSearch ?? false) === 'always'
-														? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-600/10 border border-sky-200/40 dark:border-sky-500/20'
-														: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
-												>
-													<GlobeAlt className="size-4" strokeWidth="1.75" />
-													<div class="hidden group-hover:block">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</div>
-												</button>
-											</Tooltip>
-										{/if}
+											{#if imageGenerationEnabled}
+												<Tooltip content={$i18n.t('Image')} placement="top">
+													<button
+														on:click|preventDefault={() =>
+															(imageGenerationEnabled = !imageGenerationEnabled)}
+														type="button"
+														class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {imageGenerationEnabled
+															? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-700/10 border border-sky-200/40 dark:border-sky-500/20'
+															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
+													>
+														<Photo className="size-4" strokeWidth="1.75" />
+														<div class="hidden group-hover:block">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</div>
+													</button>
+												</Tooltip>
+											{/if}
 
-										{#if imageGenerationEnabled}
-											<Tooltip content={$i18n.t('Image')} placement="top">
-												<button
-													on:click|preventDefault={() =>
-														(imageGenerationEnabled = !imageGenerationEnabled)}
-													type="button"
-													class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {imageGenerationEnabled
-														? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-700/10 border border-sky-200/40 dark:border-sky-500/20'
-														: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '}"
-												>
-													<Photo className="size-4" strokeWidth="1.75" />
-													<div class="hidden group-hover:block">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</div>
-												</button>
-											</Tooltip>
-										{/if}
+											{#if codeInterpreterEnabled}
+												<Tooltip content={$i18n.t('Code Interpreter')} placement="top">
+													<button
+														aria-label={codeInterpreterEnabled
+															? $i18n.t('Disable Code Interpreter')
+															: $i18n.t('Enable Code Interpreter')}
+														aria-pressed={codeInterpreterEnabled}
+														on:click|preventDefault={() =>
+															(codeInterpreterEnabled = !codeInterpreterEnabled)}
+														type="button"
+														class=" group p-[7px] flex gap-1.5 items-center text-sm transition-colors duration-300 max-w-full overflow-hidden {codeInterpreterEnabled
+															? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-700/10 border border-sky-200/40 dark:border-sky-500/20'
+															: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '} {($settings?.highContrastMode ??
+														false)
+															? 'm-1'
+															: 'focus:outline-hidden rounded-full'}"
+													>
+														<Terminal className="size-3.5" strokeWidth="2" />
 
-										{#if codeInterpreterEnabled}
-											<Tooltip content={$i18n.t('Code Interpreter')} placement="top">
-												<button
-													aria-label={codeInterpreterEnabled
-														? $i18n.t('Disable Code Interpreter')
-														: $i18n.t('Enable Code Interpreter')}
-													aria-pressed={codeInterpreterEnabled}
-													on:click|preventDefault={() =>
-														(codeInterpreterEnabled = !codeInterpreterEnabled)}
-													type="button"
-													class=" group p-[7px] flex gap-1.5 items-center text-sm transition-colors duration-300 max-w-full overflow-hidden {codeInterpreterEnabled
-														? ' text-sky-500 dark:text-sky-300 bg-sky-50 hover:bg-sky-100 dark:bg-sky-400/10 dark:hover:bg-sky-700/10 border border-sky-200/40 dark:border-sky-500/20'
-														: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 '} {($settings?.highContrastMode ??
-													false)
-														? 'm-1'
-														: 'focus:outline-hidden rounded-full'}"
-												>
-													<Terminal className="size-3.5" strokeWidth="2" />
+														<div class="hidden group-hover:block">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</div>
+													</button>
+												</Tooltip>
+											{/if}
 
-													<div class="hidden group-hover:block">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</div>
-												</button>
-											</Tooltip>
-										{/if}
-
-										{#each pendingOAuthTools as pendingTool (pendingTool.id)}
-											<Tooltip content={$i18n.t('Click to connect')} placement="top">
-												<button
-													on:click|preventDefault={() => {
-														sessionStorage.setItem('pendingOAuthToolId', pendingTool.id);
-														const authUrl = getOAuthClientAuthorizationUrl(
-															pendingTool.serverId,
-															pendingTool.authType ?? 'mcp'
-														);
-														window.open(authUrl, '_self', 'noopener');
-													}}
-													type="button"
-													class="group px-2 py-[5px] flex gap-1.5 items-center text-xs rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden
+											{#each pendingOAuthTools as pendingTool (pendingTool.id)}
+												<Tooltip content={$i18n.t('Click to connect')} placement="top">
+													<button
+														on:click|preventDefault={() => {
+															sessionStorage.setItem('pendingOAuthToolId', pendingTool.id);
+															const authUrl = getOAuthClientAuthorizationUrl(
+																pendingTool.serverId,
+																pendingTool.authType ?? 'mcp'
+															);
+															window.open(authUrl, '_self', 'noopener');
+														}}
+														type="button"
+														class="group px-2 py-[5px] flex gap-1.5 items-center text-xs rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden
 														text-amber-600 dark:text-amber-400 bg-amber-50 hover:bg-amber-100 dark:bg-amber-400/10 dark:hover:bg-amber-600/10 border border-amber-200/40 dark:border-amber-500/20"
-												>
-													<Wrench className="size-3.5" strokeWidth="1.75" />
-													<span class="truncate">{pendingTool.name}</span>
-												</button>
-											</Tooltip>
-										{/each}
-									</div>
+													>
+														<Wrench className="size-3.5" strokeWidth="1.75" />
+														<span class="truncate">{pendingTool.name}</span>
+													</button>
+												</Tooltip>
+											{/each}
+										</div>
+									{/if}
 								</div>
 
 								<div class="self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
@@ -2086,7 +2131,7 @@
 												<TerminalMenu bind:show={showTerminalMenu} />
 											{/if}
 
-											{#if ($config?.enable_voice ?? true) && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true))}
+											{#if ($config?.enable_voice ?? false) && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.stt ?? true))}
 												<!-- {$i18n.t('Record voice')} -->
 												<Tooltip content={$i18n.t('Dictate')}>
 													<button
@@ -2137,7 +2182,7 @@
 											{/if}
 										{/if}
 
-										{#if ($config?.enable_voice ?? true) && prompt === '' && files.length === 0 && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.call ?? true))}
+										{#if ($config?.enable_voice ?? false) && prompt === '' && files.length === 0 && ($_user?.role === 'admin' || ($_user?.permissions?.chat?.call ?? true))}
 											<div class=" flex items-center">
 												<!-- {$i18n.t('Call')} -->
 												<Tooltip content={$i18n.t('Voice mode')}>
