@@ -1785,16 +1785,19 @@
 									     Original guard: {#if showWebSearchButton || showImageGenerationButton ||
 									     showCodeInterpreterButton || showToolsButton || showSkillsButton ||
 									     (toggleFilters && toggleFilters.length > 0)} -->
-									<!-- Sunway: TEMPORARILY RESTORED for the VAPT retest (2026-08-12). The composer
-									     integrations toolbar is intended to be hidden, but the tester reported he
-									     could not USE web search or image generation — the same /api/config defect,
-									     seen from the other side: gates written `$config?.features?.X` with no
-									     `?? true` failed CLOSED when the payload went missing, so those two features
-									     never activated. He has to be able to see the toggles to confirm the fix.
-									     RE-HIDE after sign-off by restoring `{#if false}` here and on the chip row
-									     below. Tools / Skills / Filters stay hidden inside IntegrationsMenu.svelte,
-									     so this exposes only Web Search and Image Generation. -->
-									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton}
+									<!-- Sunway: composer integrations toolbar hidden. Users get no per-turn control over
+									     Web Search, Image Generation, tools/MCP, skills or filters from the message input.
+									     This HIDES, it does not disable: nothing is switched off at the config layer, and the
+									     curated tiers keep Web Search and Image Generation ACTIVE via their own
+									     meta.defaultFeatureIds + meta.capabilities, which Chat.svelte applies on model
+									     selection with no UI involvement. Tools attached via meta.toolIds (e.g. the Sdeck MCP
+									     server) are likewise unaffected — that path never reads this menu.
+									     Was temporarily restored for the August 2026 VAPT retest so the tester could confirm
+									     web search worked again after the /api/config fix; re-hidden now that it is signed off.
+									     Original guard: {#if showWebSearchButton || showImageGenerationButton ||
+									     showCodeInterpreterButton || showToolsButton || showSkillsButton ||
+									     (toggleFilters && toggleFilters.length > 0)} -->
+									{#if false}
 										<div
 											class="flex self-center w-[1px] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50"
 										/>
@@ -1874,8 +1877,7 @@
 									     Also hidden here: the tools count chip, per-turn filter chips, and the
 									     pendingOAuthTools "Click to connect" prompts (MCP auth), all of which belong
 									     to surfaces hidden above. -->
-									{#if true}
-										<!-- Sunway: temporarily restored with the block above; re-hide together -->
+									{#if false}
 										<div class="ml-1 flex gap-1.5">
 											{#if (selectedToolIds ?? []).length > 0}
 												<Tooltip
