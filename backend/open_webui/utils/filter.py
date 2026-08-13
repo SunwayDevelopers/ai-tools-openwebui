@@ -1,6 +1,12 @@
 import inspect
 import logging
 
+from open_webui.filters import (
+    get_builtin_filter,
+    get_builtin_filter_ids,
+    get_builtin_filter_valves,
+    is_builtin_filter,
+)
 from open_webui.models.functions import Functions
 from open_webui.utils.plugin import (
     get_function_module_from_cache,
@@ -14,8 +20,28 @@ async def get_function_module(request, function_id, load_from_db=True):
     """
     Get the function module by its ID.
     """
+    # Sunway: built-in filters short-circuit the DB-backed loader entirely (hardening
+    # plan Item 8). The registry returns a Filter INSTANCE, which is exactly what
+    # load_function_module_by_id() returned for a DB row, so every caller below is
+    # unchanged. Once the Functions router is deleted this branch becomes the only path.
+    if is_builtin_filter(function_id):
+        return get_builtin_filter(function_id)
+
     function_module, _, _ = await get_function_module_from_cache(request, function_id, load_from_db=load_from_db)
     return function_module
+
+
+async def _get_filter_valves(filter_id):
+    """Sunway: valves for a filter, whichever kind it is.
+
+    A built-in never touches `Functions.get_function_valves_by_id` — that is the point
+    of Item 8. Its valves cannot be rewritten through
+    POST /api/v1/functions/id/{id}/valves/update, so PII redaction cannot be silently
+    disabled by any admin (which, under multi-tenancy, means any BU admin).
+    """
+    if is_builtin_filter(filter_id):
+        return get_builtin_filter_valves(filter_id)
+    return await Functions.get_function_valves_by_id(filter_id)
 
 
 async def get_sorted_filter_ids(request, model: dict, enabled_filter_ids: list = None):
@@ -23,18 +49,24 @@ async def get_sorted_filter_ids(request, model: dict, enabled_filter_ids: list =
         try:
             function_module = await get_function_module(request, function_id)
             if function_module and hasattr(function_module, 'Valves'):
-                valves_db = await Functions.get_function_valves_by_id(function_id)
+                valves_db = await _get_filter_valves(function_id)
                 valves = function_module.Valves(**(valves_db if valves_db else {}))
                 return getattr(valves, 'priority', 0)
         except Exception:
             pass
         return 0
 
-    filter_ids = [function.id for function in await Functions.get_global_filter_functions()]
+    # Sunway: built-ins are always global and always active (hardening plan Item 8).
+    # The DB row for schat_guardrails carried is_global=true / is_active=true, so listing
+    # them unconditionally preserves today's behaviour — and, unlike the row, that can no
+    # longer be flipped through POST /api/v1/functions/id/{id}/toggle.
+    filter_ids = get_builtin_filter_ids()
+    filter_ids += [function.id for function in await Functions.get_global_filter_functions()]
     if 'info' in model and 'meta' in model['info']:
         filter_ids.extend(model['info']['meta'].get('filterIds', []))
-        filter_ids = list(set(filter_ids))
+    filter_ids = list(set(filter_ids))
     active_filter_ids = {function.id for function in await Functions.get_functions_by_type('filter', active_only=True)}
+    active_filter_ids.update(get_builtin_filter_ids())
 
     async def get_active_status(filter_id):
         function_module = await get_function_module(request, filter_id)
@@ -84,7 +116,7 @@ async def process_filter_functions(request, filter_functions, filter_type, form_
 
         # Apply valves to the function
         if hasattr(function_module, 'valves') and hasattr(function_module, 'Valves'):
-            valves = await Functions.get_function_valves_by_id(filter_id)
+            valves = await _get_filter_valves(filter_id)
             function_module.valves = function_module.Valves(**(valves if valves else {}))
 
         try:
