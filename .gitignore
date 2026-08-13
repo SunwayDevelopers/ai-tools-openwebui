@@ -310,3 +310,8 @@ dist
 cypress/videos
 cypress/screenshots
 .vscode/settings.json
+
+# Sunway: security review reports (2026-08-11). NOT committed — they quote a real
+# production NRIC and credential prefixes. Kept locally for reference only; see the
+# note at the top of reports/security/README.md before sharing them anywhere.
+reports/

@@ -1320,36 +1320,46 @@
 						}}
 					/>
 
-					<Dropdown align="end">
-						<button
-							class="p-1.5 mr-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-							type="button"
-						>
-							<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
-						</button>
-
-						<div slot="content">
-							<div
-								class="min-w-[180px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
+					<!-- Sunway: "File content" search filter hidden. This dropdown holds exactly one
+					     control — a checkbox that widens Search Collection from filenames into the
+					     EXTRACTED TEXT of every file in the collection, returning matching content
+					     snippets. That is a document-content search surface over a shared KB, which
+					     is a different disclosure profile from listing filenames.
+					     `includeContent` defaults to false (line ~114) and nothing else writes it, so
+					     hiding the toggle leaves search filename-only rather than silently freezing it
+					     in the "on" state. Whole block left intact for clean upstream syncs. -->
+					{#if false}
+						<Dropdown align="end">
+							<button
+								class="p-1.5 mr-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+								type="button"
 							>
-								<button
-									class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-									type="button"
-									on:click={() => {
-										includeContent = !includeContent;
-									}}
+								<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
+							</button>
+
+							<div slot="content">
+								<div
+									class="min-w-[180px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
 								>
-									<Checkbox
-										state={includeContent ? 'checked' : 'unchecked'}
-										on:change={(e) => {
-											includeContent = e.detail === 'checked';
+									<button
+										class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+										type="button"
+										on:click={() => {
+											includeContent = !includeContent;
 										}}
-									/>
-									{$i18n.t('File content')}
-								</button>
+									>
+										<Checkbox
+											state={includeContent ? 'checked' : 'unchecked'}
+											on:change={(e) => {
+												includeContent = e.detail === 'checked';
+											}}
+										/>
+										{$i18n.t('File content')}
+									</button>
+								</div>
 							</div>
-						</div>
-					</Dropdown>
+						</Dropdown>
+					{/if}
 
 					{#if knowledge?.write_access}
 						<div>

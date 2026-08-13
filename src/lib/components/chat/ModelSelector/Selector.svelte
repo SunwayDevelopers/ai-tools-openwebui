@@ -581,10 +581,16 @@
 				? ` width: ${dropdownPosition.width}px;`
 				: ''}"
 		>
+			<!-- Sunway: py-1 added. Upstream relied on the search block's own `pt-3.5 mb-1.5`
+			     (below) for the panel's top inset, so with searchEnabled={false} and the filter
+			     chips hidden the item list sat flush against the rounded top edge and the first
+			     row's hover highlight bled into it. py-1 puts the inset on the CONTAINER instead,
+			     so it holds regardless of which optional children are shown — and it matches the
+			     px-1 py-1 used by the other dropdown panels in this codebase. -->
 			<div
 				class="z-40 {$mobile
 					? `w-full`
-					: `${className}`} max-w-[calc(100vw-1rem)] justify-start rounded-2xl bg-white dark:bg-gray-850 dark:text-white shadow-lg outline-hidden"
+					: `${className}`} max-w-[calc(100vw-1rem)] justify-start rounded-2xl bg-white dark:bg-gray-850 dark:text-white shadow-lg outline-hidden py-1"
 				transition:flyAndScale
 			>
 				<slot>
@@ -627,7 +633,17 @@
 					{/if}
 
 					<div class="px-2">
-						{#if tags && items.filter((item) => !(item.model?.info?.meta?.hidden ?? false)).length > 0}
+						<!-- Sunway: connection-type / tag filter chips hidden. The picker lists exactly
+					     three curated tiers, so "All | Local | External | Direct" filters nothing
+					     useful. Worth knowing WHY "External" showed at all with only three items
+					     visible: the chips below test the UNFILTERED `items`, while the row's own
+					     guard and the list both exclude meta.hidden — so the five hidden base
+					     models still contributed chips they could never filter to. `tags` is a
+					     local computed value, not a prop, so this is a {#if false} guard rather
+					     than a prop from ModelSelector; the whole block is left intact for clean
+					     upstream syncs. Original guard:
+					     {#if tags && items.filter((item) => !(item.model?.info?.meta?.hidden ?? false)).length > 0} -->
+						{#if false}
 							<div
 								class=" flex w-full bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none font-[450] mb-0.5"
 								on:wheel={(e) => {

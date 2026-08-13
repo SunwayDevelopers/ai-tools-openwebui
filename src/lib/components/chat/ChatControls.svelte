@@ -84,7 +84,22 @@
 				$user?.role === 'admin' ||
 				($user?.permissions?.features?.direct_tool_servers ?? true))) ||
 		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
-	$: showOverviewTab = hasMessages;
+	// Sunway: Overview tab hidden. It is a SvelteFlow node-graph of the conversation's branch
+	// tree (Overview.svelte -> Overview/View.svelte, @xyflow/svelte) — a power-user view of
+	// regenerate/edit branches. It only became visible because the Controls BUTTON was restored
+	// for the per-chat System Prompt; the intent was never to expose the whole panel.
+	//
+	// `false &&` rather than plain `false`, matching the Valves / Advanced Params gates in
+	// Controls/Controls.svelte: it keeps `hasMessages` referenced (no unused-variable warning)
+	// and leaves the original condition legible for upstream syncs.
+	//
+	// Safe because the tab-fallback logic below does the right thing on its own:
+	//   :90  a persisted savedTab === 'overview' is rerouted to 'controls', so a user who left
+	//        the panel on Overview gets the System Prompt rather than a blank pane.
+	//   :94  the `else if (showOverviewTab)` branch goes dead. Only reachable for a user WITHOUT
+	//        chat.controls, and Navbar.svelte:235 gates the button on that same permission, so
+	//        such a user has no way to open the panel and no dead button appears.
+	$: showOverviewTab = false && hasMessages;
 
 	// Tab fallback: if active tab becomes hidden, switch to next available
 	$: if (!showOverviewTab && activeTab === 'overview') activeTab = 'controls';
@@ -320,7 +335,7 @@
 											: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
 										on:click={() => (activeTab = 'controls')}
 									>
-										{$i18n.t('Controls')}
+										{$i18n.t('Chat Instructions')}
 									</button>
 								{/if}
 								{#if showFilesTab}
@@ -466,7 +481,7 @@
 												: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
 											on:click={() => (activeTab = 'controls')}
 										>
-											{$i18n.t('Controls')}
+											{$i18n.t('Instructions')}
 										</button>
 									{/if}
 									{#if showFilesTab}
