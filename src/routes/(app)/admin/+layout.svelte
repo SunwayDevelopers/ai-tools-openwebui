@@ -32,13 +32,28 @@
 	// be tuned by flipping ENABLE_ADMIN_FUNCTIONS_UI without editing source. Both are PLAIN
 	// env (see env.py for why Settings especially must never be PersistentConfig).
 	//
-	// `=== false` deliberately, not falsy: $config is null on the first render, and treating
-	// "not loaded yet" as "hidden" would bounce an admin off a page they are allowed to see.
-	// Absent flag → visible, which is also what an older backend returns.
+	// FAIL CLOSED (changed 2026-08-12). This used to read `=== false`, i.e. "hide only when
+	// the backend explicitly says false", so an ABSENT flag meant visible. That is precisely
+	// how the August 2026 VAPT tester reached Functions and Settings by direct URL: /api/config
+	// dropped its whole feature block for him (he had no row in the DATABASE_URL tenant — see
+	// main.py:_resolve_config_user_multi_tenant), the flags arrived undefined rather than false,
+	// and every gate here opened.
+	//
+	// The original concern behind `=== false` was real and is preserved: $config is null on the
+	// first render, and treating "not loaded yet" as "hidden" would bounce an admin off a page
+	// they are allowed to see. So the two cases are now distinguished explicitly —
+	//   config not loaded yet  → do NOT redirect (wait for it)
+	//   config loaded, flag not exactly true → hide, including direct-URL access
+	$: configLoaded = $config !== null && $config !== undefined;
+
 	$: hiddenAdminPaths = [
 		'/admin/evaluations',
-		...($config?.features?.enable_admin_functions_ui === false ? ['/admin/functions'] : []),
-		...($config?.features?.enable_admin_settings_ui === false ? ['/admin/settings'] : [])
+		...(configLoaded && $config?.features?.enable_admin_functions_ui !== true
+			? ['/admin/functions']
+			: []),
+		...(configLoaded && $config?.features?.enable_admin_settings_ui !== true
+			? ['/admin/settings']
+			: [])
 	];
 
 	$: if (browser && hiddenAdminPaths.some((path) => $page.url.pathname.includes(path))) {
@@ -139,7 +154,7 @@
 						     reopened for tuning without a code change.
 						     Note `admin` does NOT distinguish super admin from BU admin under
 						     multi-tenancy, so when visible this is reachable by any tenant admin. -->
-						{#if $config?.features?.enable_admin_functions_ui ?? true}
+						{#if $config?.features?.enable_admin_functions_ui ?? false}
 							<a
 								draggable="false"
 								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/functions')
@@ -154,7 +169,7 @@
 						     tenant. Gated on ENABLE_ADMIN_SETTINGS_UI (plain env; it must never be
 						     PersistentConfig, since this is the only screen that could turn it back
 						     on). Individual tabs stay filtered by HIDDEN_ADMIN_SETTINGS_TAB_IDS. -->
-						{#if $config?.features?.enable_admin_settings_ui ?? true}
+						{#if $config?.features?.enable_admin_settings_ui ?? false}
 							<a
 								draggable="false"
 								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/settings')

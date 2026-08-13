@@ -62,6 +62,7 @@ from open_webui.models.users import (
     UserStatus,
 )
 from open_webui.utils.access_control import get_permissions, has_permission
+from open_webui.utils.app_config import get_authenticated_app_config
 from open_webui.utils.auth import (
     create_api_key,
     create_token,
@@ -157,6 +158,10 @@ class SessionUserResponse(Token, UserProfileImageResponse):
 
 
 class SessionUserInfoResponse(SessionUserResponse, UserStatus):
+    # Sunway: carries the authenticated app-config fragment — see utils/app_config.py.
+    # Without this field declared, FastAPI's response_model filtering would silently
+    # drop it and every feature flag would arrive undefined again.
+    config: dict | None = None
     bio: str | None = None
     gender: str | None = None
     date_of_birth: datetime.date | None = None
@@ -222,6 +227,14 @@ async def get_session_user(
         'status_message': user.status_message,
         'status_expires_at': user.status_expires_at,
         'permissions': user_permissions,
+        # Sunway: the authenticated half of the app config now rides with the session
+        # (security review #18b, Option 2). It lives HERE and not in /api/config because
+        # this route is deliberately NOT on the tenant-middleware bypass list, so it always
+        # runs with a resolved tenant and reads the correct per-tenant database.
+        # /api/config runs in a system context against the control-plane DB and so could
+        # never resolve a multi-tenant user — which silently dropped ~40 feature flags and
+        # opened every frontend gate that reads `?? true`. See utils/app_config.py.
+        'config': get_authenticated_app_config(request),
     }
 
     return response_data

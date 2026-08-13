@@ -92,7 +92,22 @@
 				localStorage.token = sessionUser.token;
 			}
 			await user.set(sessionUser);
-			await config.set(await getBackendConfig());
+
+			// Sunway: merge, do not replace (security review #18b, Option 2). /api/config now
+			// returns ONLY the public half — the authenticated flags ride with the session from
+			// GET /api/v1/auths/, which is tenant-enforced and so reads the correct database.
+			// A bare `config.set(await getBackendConfig())` here would overwrite the store with
+			// the public payload and leave every feature flag undefined until the next full
+			// page load, which is exactly the fail-open this change exists to remove.
+			const backendConfig = await getBackendConfig();
+			await config.set({
+				...(backendConfig ?? {}),
+				...(sessionUser.config ?? {}),
+				features: {
+					...((backendConfig ?? {}).features ?? {}),
+					...((sessionUser.config ?? {}).features ?? {})
+				}
+			});
 
 			// Update user timezone
 			const timezone = getUserTimezone();

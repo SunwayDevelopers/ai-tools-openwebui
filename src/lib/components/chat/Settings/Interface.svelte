@@ -744,7 +744,7 @@
 			</div>
 
 			<!-- Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md) -->
-			{#if ($config?.enable_temporary_chat ?? true) && ($user.role === 'admin' || $user?.permissions?.chat?.temporary)}
+			{#if ($config?.enable_temporary_chat ?? false) && ($user.role === 'admin' || $user?.permissions?.chat?.temporary)}
 				<div>
 					<div class=" py-0.5 flex w-full justify-between">
 						<div id="temp-chat-default-label" class=" self-center text-xs">
