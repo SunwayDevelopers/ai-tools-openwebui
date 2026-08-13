@@ -263,12 +263,17 @@
 			<div class="absolute inset-0 z-10"></div>
 		{/if}
 		{#key iframeKey}
+			<!-- Sunway: `allow-same-origin` REMOVED from the sandbox below (security review C2) —
+			     same reasoning as FileNav/FilePreview.svelte. This frame renders a web app running
+			     on a port in the sandbox, proxied through SChat's own origin, so allow-scripts +
+			     allow-same-origin would give that app full same-origin control of the user's SChat
+			     session. Latent only because terminals is unconfigured. -->
 			<iframe
 				bind:this={iframeEl}
 				src={proxyUrl}
 				title="Port {port} preview"
 				class="w-full h-full border-0 bg-white"
-				sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+				sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
 				on:load={onIframeLoad}
 			/>
 		{/key}

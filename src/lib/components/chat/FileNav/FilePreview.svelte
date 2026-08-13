@@ -398,10 +398,20 @@
 			{#if overlay}
 				<div class="absolute top-0 left-0 right-0 bottom-0 z-10"></div>
 			{/if}
+			<!-- Sunway: `allow-same-origin` REMOVED from the sandbox below (security review C2).
+			     Together with allow-scripts it cancels the sandbox entirely: this iframe's src is
+			     ${baseUrl}/files/serve/... proxied through routers/terminals.py, i.e. SChat's OWN
+			     origin, and the proxy forwards the upstream Content-Type verbatim — so any HTML on
+			     a terminal server could reach `parent`, read the session token from localStorage
+			     and call every API as the victim. CSP is report-only, so nothing else stops it.
+			     Latent rather than live today (terminals is unused and TERMINAL_SERVER_CONNECTIONS
+			     is empty, so serveUrl is null and this branch never renders) — which is exactly why
+			     it must be fixed BEFORE terminals is ever configured. If relative asset loading
+			     breaks as a result, serve previews from a separate hostname; do not restore this
+			     flag. -->
 			<iframe
 				src={serveUrl}
-				sandbox="allow-scripts allow-same-origin allow-downloads{($settings?.iframeSandboxAllowForms ??
-				false)
+				sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
 					? ' allow-forms'
 					: ''}"
 				class="w-full h-full border-none bg-white"
