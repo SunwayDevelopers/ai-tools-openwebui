@@ -231,7 +231,7 @@
 				</div>
 			{/if}
 
-			{#if $config?.enable_chat_archive ?? true}
+			{#if $config?.enable_chat_archive ?? false}
 				<div>
 					<div class="py-0.5 flex w-full justify-between">
 						<div class="self-center text-xs">{$i18n.t('Archived Chats')}</div>
@@ -263,7 +263,7 @@
 				</div>
 			</div>
 
-			{#if $config?.enable_chat_archive ?? true}
+			{#if $config?.enable_chat_archive ?? false}
 				<div>
 					<div class="py-0.5 flex w-full justify-between">
 						<div class="self-center text-xs">{$i18n.t('Archive All Chats')}</div>

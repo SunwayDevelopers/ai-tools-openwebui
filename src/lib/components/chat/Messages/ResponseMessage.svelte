@@ -1063,7 +1063,7 @@
 									</button>
 								</Tooltip>
 
-								{#if !readOnly && ($config?.enable_voice ?? true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.tts ?? true))}
+								{#if !readOnly && ($config?.enable_voice ?? false) && ($user?.role === 'admin' || ($user?.permissions?.chat?.tts ?? true))}
 									<Tooltip content={$i18n.t('Read Aloud')} placement="bottom">
 										<button
 											aria-label={$i18n.t('Read Aloud')}

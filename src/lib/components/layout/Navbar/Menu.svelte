@@ -474,7 +474,7 @@
 				{/if}
 
 				<!-- Sunway: archive deferred (redundant w/ retention); honor enable_chat_archive like the rest of the archive UI -->
-				{#if $config?.enable_chat_archive ?? true}
+				{#if $config?.enable_chat_archive ?? false}
 					<button
 						draggable="false"
 						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"

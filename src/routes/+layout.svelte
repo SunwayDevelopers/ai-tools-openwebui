@@ -1158,10 +1158,28 @@
 
 					if (sessionUser) {
 						await user.set(sessionUser);
-						try {
-							await config.set(await getBackendConfig());
-						} catch (error) {
-							console.error('Error refreshing backend config:', error);
+
+						// Sunway: the authenticated half of the config arrives WITH the session
+						// (security review #18b, Option 2). This replaces a re-fetch of
+						// /api/config that used to sit here and could never work: that endpoint
+						// is on the tenant-middleware bypass list, so it runs in a system context
+						// against the control-plane DB and cannot resolve a multi-tenant user —
+						// it returned the anonymous payload no matter how many times it was
+						// called. The token was never the problem; the bypass-list membership
+						// was. GET /api/v1/auths/ IS tenant-enforced, so it reads the right
+						// database.
+						//
+						// Merged top-level, with `features` merged one level deeper, so the store
+						// keeps its exact shape and all ~100 `$config?.…` call sites are unchanged.
+						if (sessionUser.config) {
+							config.update((c) => ({
+								...(c ?? {}),
+								...sessionUser.config,
+								features: {
+									...((c ?? {}).features ?? {}),
+									...(sessionUser.config.features ?? {})
+								}
+							}));
 						}
 
 						// Keep user timezone in sync on every app load/refresh
