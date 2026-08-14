@@ -326,9 +326,11 @@ ENABLE_DIRECT_CONNECTIONS = ConfigVar(
 #   2. It does not make Ollama reachable again if turned on. There are no routes; the flag now
 #      only re-enables the outbound provider fetch.
 #
-# Unlike the 2026-07-31 default flips, ENABLE_OLLAMA_API is an UPSTREAM variable, so this joins
-# ENABLE_VERSION_UPDATE_CHECK, ENABLE_RAG_HYBRID_SEARCH, ENABLE_CODE_EXECUTION and
-# ENABLE_EVALUATION_ARENA_MODELS as a value to re-check after every upstream merge.
+# NOTE ON UPSTREAM. Unlike the 2026-07-31 flips (all Sunway-invented variables), this one exists
+# in Open WebUI, where it defaults to True. So schat's behaviour now differs from what upstream's
+# code and documentation describe -- relevant to anyone debugging against an upstream reference,
+# not to any merge process. This fork has diverged from `upstream-sync` by roughly a hundred
+# commits and does not track it, so there is no periodic reconciliation to schedule.
 ENABLE_OLLAMA_API = ConfigVar(
     'ENABLE_OLLAMA_API',
     'ollama.enable',

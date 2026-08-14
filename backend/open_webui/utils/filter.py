@@ -23,8 +23,8 @@ async def get_function_module(request, function_id, load_from_db=True):
     returned None. The registry returns a Filter INSTANCE, exactly what the DB-backed
     loader returned, so every caller below is unchanged.
 
-    `load_from_db` is retained in the signature because callers still pass it, and to keep
-    the diff against upstream narrow. It no longer has anything to read from.
+    `load_from_db` is retained in the signature only because callers still pass it; dropping it
+    would mean editing every call site for no benefit. It no longer has anything to read from.
     """
     return get_builtin_filter(function_id)
 

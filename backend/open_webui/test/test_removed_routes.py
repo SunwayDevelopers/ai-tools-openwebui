@@ -3,10 +3,10 @@
 WHY THIS EXISTS. Part 4 of the deletion manifest asks for exactly this, and its reasoning is
 the point: *"the manifest is only as good as its enforcement."* Roughly ninety routes were
 deleted across a dozen commits. Nothing else in this repository would notice if one came back —
-CI runs no tests, and an upstream merge that restores a router file or re-adds a decorator would
-land silently. Several of these endpoints returned other users' message content, stored
-credentials, or ran Python from a database row, so a silent restoration is not a cosmetic
-regression.
+CI runs no tests, so anything that restores deleted code lands silently: a revert, a
+cherry-picked fix, or a file copied in from upstream to chase a bug. Several of these endpoints
+returned other users' message content, stored credentials, or ran Python from a database row, so
+a silent restoration is not a cosmetic regression.
 
 HOW IT WORKS, and why it is not an integration test. These assertions are made by parsing the
 router sources, not by importing the application. Importing `open_webui.main` pulls in the
@@ -15,10 +15,10 @@ test that expensive does not get run, and a test that does not get run enforces 
 is sub-second and needs neither.
 
 The trade-off, stated plainly: this catches a route being re-declared in a router file, which is
-what an upstream merge or a well-meaning revert actually does. It would not catch a route
-re-introduced by some other mechanism (a new router file under a different name, a dynamically
-mounted sub-application). For that, run the route inventory in
-`reports/security/route_inventory.py` and diff the counts.
+what a revert or a copied-in file actually does. It would not catch a route re-introduced by some
+other mechanism (a new router file under a different name, a dynamically mounted
+sub-application). For that, run the route inventory in `reports/security/route_inventory.py` and
+diff the counts.
 
 WHEN THIS TEST FAILS, the fix is almost never to edit the list. It means a removed capability is
 back. Check `docs/rollout-scope.md` for why it went, and delete it again. Only amend the list if
