@@ -1038,7 +1038,13 @@ async def update_chat_message_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if chat.user_id != user.id and user.role != 'admin':
+    # Sunway: the `or admin` exemption was removed from this check (hardening plan). It let an
+    # admin WRITE to another user's chat -- rewriting a stored message, or emitting an event into
+    # someone else's conversation. That is worse than reading it: an edited message is
+    # indistinguishable from one the model actually produced, so the chat record stops being
+    # evidence of what happened. Under multi-tenancy `admin` is a per-tenant IAM role, so this
+    # was reachable by every departmental admin. Ownership is now the only key.
+    if chat.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -1100,7 +1106,13 @@ async def send_chat_message_event_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if chat.user_id != user.id and user.role != 'admin':
+    # Sunway: the `or admin` exemption was removed from this check (hardening plan). It let an
+    # admin WRITE to another user's chat -- rewriting a stored message, or emitting an event into
+    # someone else's conversation. That is worse than reading it: an edited message is
+    # indistinguishable from one the model actually produced, so the chat record stops being
+    # evidence of what happened. Under multi-tenancy `admin` is a per-tenant IAM role, so this
+    # was reachable by every departmental admin. Ownership is now the only key.
+    if chat.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,

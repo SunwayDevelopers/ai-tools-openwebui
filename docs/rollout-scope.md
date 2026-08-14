@@ -215,9 +215,23 @@ longer imported by `routers/chats.py` at all; it still gates the analytics guard
 *shared* chat without holding a grant. Narrower than the others (shared content only), but it
 means the pre-existing posture was never quite "off".
 
+**Two admin WRITE paths were closed on the same pass**, and they were arguably worse than the
+reads. `POST /chats/{id}/messages/{message_id}` let an admin rewrite a stored message in another
+user's chat, and `POST /chats/{id}/messages/{message_id}/event` let them emit an event into
+someone else's conversation. Neither was gated on `ENABLE_ADMIN_CHAT_ACCESS` — both were live
+with the flag off. The reason to rank them above the reads: **an edited message is
+indistinguishable from one the model actually produced**, so the chat record stops being evidence
+of what happened. Both are now owner-only.
+
 **The cost, stated plainly:** nobody — including a super admin — can now open a user's chat to
-investigate a complaint or a misuse report. Restoring that requires a reviewed commit and a
-deploy, which is the intent.
+investigate a complaint or a misuse report, or correct a message in one. Restoring that requires
+a reviewed commit and a deploy, which is the intent.
+
+**What deliberately remains admin-accessible in this router**, so the boundary is on record:
+`DELETE /chats/{id}` (needed for the user-deletion cascade and the retention sweep),
+`GET /chats/stats/export/{chat_id}` (metadata only — role, model, timestamp, content length,
+rating and tags; **no message text**), and the two `/chats/shared/{id}/access` grant-management
+endpoints. Tags are the one arguable item in that list and should be confirmed as intended.
 
 **⚠ Not addressed by this row.** These controls stop *future* reads. Message content already
 stored — including any personal data — is untouched, as are database backups. See §4.
