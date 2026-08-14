@@ -194,6 +194,31 @@ admin still sees *metadata* — per-user message counts, token counts, activity.
 deliberate retention for capacity and cost management, and should be confirmed as intended
 rather than assumed.
 
+**The admin read paths are now deleted, not gated.** This row previously rested on
+`ENABLE_ADMIN_CHAT_ACCESS` being `False`. The plan's target was stricter — *"endpoints returning
+other users' messages: 4 → 0"* and *"Admin reading user messages: Closed"* — and off-by-default
+is not closed: it is one environment variable from open, and `admin` does not distinguish a super
+admin from a BU admin. Four code paths were therefore removed outright:
+
+| Endpoint | What the admin branch did |
+|---|---|
+| `GET /chats/share/{share_id}` | re-read the id as a **chat** id, returning an **unshared** chat |
+| `GET /chats/share/{share_id}` | skipped the access-grant check entirely for an admin |
+| `GET /chats/{id}` | returned **any** user's chat by id |
+| `POST /chats/{id}/clone/shared` | cloned an **unshared** chat by id |
+
+Access is now by ownership or an explicit grant, for every role. `ENABLE_ADMIN_CHAT_ACCESS` is no
+longer imported by `routers/chats.py` at all; it still gates the analytics guard.
+
+**One of these was not behind the flag.** The grant check in `clone/shared` was bypassed on
+`user.role != 'admin'` alone, so it was live even with the flag off — an admin could clone any
+*shared* chat without holding a grant. Narrower than the others (shared content only), but it
+means the pre-existing posture was never quite "off".
+
+**The cost, stated plainly:** nobody — including a super admin — can now open a user's chat to
+investigate a complaint or a misuse report. Restoring that requires a reviewed commit and a
+deploy, which is the intent.
+
 **⚠ Not addressed by this row.** These controls stop *future* reads. Message content already
 stored — including any personal data — is untouched, as are database backups. See §4.
 

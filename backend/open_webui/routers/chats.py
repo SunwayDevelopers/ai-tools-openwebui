@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS
 from open_webui.env import ENABLE_CHAT_ARCHIVE, MAX_CHATS_PER_USER
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
@@ -523,6 +522,13 @@ async def get_chat_count(
     return await Chats.count_chats_by_user_id(user.id, db=db)
 
 
+# Sunway: ENABLE_ADMIN_CHAT_ACCESS is deliberately NOT imported here any more. Every admin path
+# into another user's chat has been deleted rather than gated, so there is nothing in this router
+# for the flag to switch. It still gates GET /api/v1/analytics/messages' successor checks in
+# routers/analytics.py. Re-introducing an admin read here would need a reviewed commit, which is
+# the point -- `admin` does not distinguish super admin from BU admin under multi-tenancy.
+
+
 ############################
 # GetUserChatList -- DELETED (hardening plan Item 3)
 ############################
@@ -879,29 +885,31 @@ async def get_shared_chat_by_id(
 
     chat = await Chats.get_chat_by_share_id(share_id, db=db)
 
-    # Fallback: admins can also access any chat directly by chat ID
-    if not chat and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
-        chat = await Chats.get_chat_by_id(share_id, db=db)
+    # Sunway: the admin fallback was deleted here (hardening plan). It re-read the id as a CHAT
+    # id when no share existed, so an admin could fetch an UNSHARED chat through the share route.
+    # The plan's target is "endpoints returning other users' messages: 0", which means no code
+    # path -- not a flag switched off, since `admin` does not distinguish super admin from BU
+    # admin under multi-tenancy.
 
     if not chat:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    # Look up the original chat_id to check access grants (admins bypass)
-    if user.role != 'admin' or not ENABLE_ADMIN_CHAT_ACCESS:
-        shared = await SharedChats.get_by_id(share_id, db=db)
-        if shared and shared.user_id != user.id:
-            has_grant = await AccessGrants.has_access(
-                user_id=user.id,
-                resource_type='shared_chat',
-                resource_id=shared.chat_id,
-                permission='read',
-                db=db,
+    # Sunway: this access-grant check used to be skipped for an admin. It is now unconditional --
+    # holding the admin role is not a grant.
+    shared = await SharedChats.get_by_id(share_id, db=db)
+    if shared and shared.user_id != user.id:
+        has_grant = await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='shared_chat',
+            resource_id=shared.chat_id,
+            permission='read',
+            db=db,
+        )
+        if not has_grant:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
             )
-            if not has_grant:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-                )
 
     return ChatResponse(**chat.model_dump())
 
@@ -945,19 +953,18 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user), db: AsyncSess
     chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
 
     if not chat:
-        # Check if user has access via access grants (shared_chat grants)
-        if user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+        # Sunway: the admin branch was deleted here (hardening plan). It returned ANY user's chat
+        # by id to an admin. Access is now by grant only, for every role -- an admin asking for a
+        # chat they do not own and hold no grant for gets the same 401 as anyone else.
+        has_grant = await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='shared_chat',
+            resource_id=id,
+            permission='read',
+            db=db,
+        )
+        if has_grant:
             chat = await Chats.get_chat_by_id(id, db=db)
-        else:
-            has_grant = await AccessGrants.has_access(
-                user_id=user.id,
-                resource_type='shared_chat',
-                resource_id=id,
-                permission='read',
-                db=db,
-            )
-            if has_grant:
-                chat = await Chats.get_chat_by_id(id, db=db)
 
     if chat:
         return ChatResponse(**chat.model_dump())
@@ -1264,9 +1271,8 @@ async def clone_shared_chat_by_id(
 ):
     chat = await Chats.get_chat_by_share_id(id, db=db)
 
-    # Fallback: admins can also access any chat directly by chat ID
-    if not chat and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
-        chat = await Chats.get_chat_by_id(id, db=db)
+    # Sunway: the admin fallback was deleted here (hardening plan) -- same pattern as the share
+    # route: it let an admin clone an UNSHARED chat by id.
 
     if not chat:
         raise HTTPException(
@@ -1274,9 +1280,11 @@ async def clone_shared_chat_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Enforce access grants (owner and admins bypass)
+    # Sunway: the admin bypass was removed from this check. Note it was NOT gated on
+    # ENABLE_ADMIN_CHAT_ACCESS, so unlike the fallbacks above it was live even with that flag
+    # off -- an admin could clone any SHARED chat without holding a grant. Owner still bypasses.
     shared = await SharedChats.get_by_id(id, db=db)
-    if shared and user.role != 'admin' and shared.user_id != user.id:
+    if shared and shared.user_id != user.id:
         has_grant = await AccessGrants.has_access(
             user_id=user.id,
             resource_type='shared_chat',
