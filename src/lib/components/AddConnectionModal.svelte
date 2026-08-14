@@ -5,7 +5,6 @@
 
 	import { settings } from '$lib/stores';
 	import { verifyOpenAIConnection } from '$lib/apis/openai';
-	import { verifyOllamaConnection } from '$lib/apis/ollama';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
@@ -59,22 +58,6 @@
 	let loading = false;
 	let showDeleteConfirmDialog = false;
 
-	const verifyOllamaHandler = async () => {
-		// remove trailing slash from url
-		url = url.replace(/\/$/, '');
-
-		const res = await verifyOllamaConnection(localStorage.token, {
-			url,
-			key
-		}).catch((error) => {
-			toast.error(`${error}`);
-		});
-
-		if (res) {
-			toast.success($i18n.t('Server connection verified'));
-		}
-	};
-
 	const verifyOpenAIHandler = async () => {
 		// remove trailing slash from url
 		url = url.replace(/\/$/, '');
@@ -119,11 +102,7 @@
 	};
 
 	const verifyHandler = () => {
-		if (ollama) {
-			verifyOllamaHandler();
-		} else {
-			verifyOpenAIHandler();
-		}
+		verifyOpenAIHandler();
 	};
 
 	const addModelHandler = () => {

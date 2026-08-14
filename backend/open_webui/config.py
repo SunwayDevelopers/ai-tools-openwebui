@@ -309,10 +309,30 @@ ENABLE_DIRECT_CONNECTIONS = ConfigVar(
 # OLLAMA_BASE_URL
 ####################################
 
+# Sunway: default flipped True -> False, 2026-08-14 (hardening plan Item 6).
+#
+# Every route this flag gated is deleted, so its ONLY remaining effect is to make
+# utils/models.py attempt an outbound fetch to an Ollama backend on each model refresh and log
+# the failure. A default of True for a flag whose sole behaviour is a futile network call is
+# simply wrong. OLLAMA_BASE_URL defaults to '', so the attempt fails immediately rather than
+# waiting on a timeout -- log noise, not latency.
+#
+# TWO THINGS THIS DOES NOT DO.
+#   1. It does not change an existing deployment. This is PersistentConfig: the stored
+#      `ollama.enable` wins, and the chart's "false" only ever seeded a FRESH database. If
+#      staging logs show Ollama connection errors, the stored value is true and must be
+#      corrected with SQL -- there is no API path left, because POST /ollama/config/update was
+#      deleted with the router.
+#   2. It does not make Ollama reachable again if turned on. There are no routes; the flag now
+#      only re-enables the outbound provider fetch.
+#
+# Unlike the 2026-07-31 default flips, ENABLE_OLLAMA_API is an UPSTREAM variable, so this joins
+# ENABLE_VERSION_UPDATE_CHECK, ENABLE_RAG_HYBRID_SEARCH, ENABLE_CODE_EXECUTION and
+# ENABLE_EVALUATION_ARENA_MODELS as a value to re-check after every upstream merge.
 ENABLE_OLLAMA_API = ConfigVar(
     'ENABLE_OLLAMA_API',
     'ollama.enable',
-    os.getenv('ENABLE_OLLAMA_API', 'True').lower() == 'true',
+    os.getenv('ENABLE_OLLAMA_API', 'False').lower() == 'true',
 )
 
 OLLAMA_API_BASE_URL = os.getenv('OLLAMA_API_BASE_URL', 'http://localhost:11434/api')

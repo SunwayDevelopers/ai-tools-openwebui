@@ -30,7 +30,6 @@ export const appInfo = writable(null);
 export const appData = writable(null);
 
 // Frontend
-export const MODEL_DOWNLOAD_POOL = writable({});
 
 export const mobile = writable(false);
 

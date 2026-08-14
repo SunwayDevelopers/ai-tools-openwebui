@@ -34,7 +34,6 @@
 	import ModelSettingsModal from './Models/ModelSettingsModal.svelte';
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
-	import ManageModelsModal from './Models/ManageModelsModal.svelte';
 	import ModelMenu from '$lib/components/admin/Settings/Models/ModelMenu.svelte';
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
 	import EyeSlash from '$lib/components/icons/EyeSlash.svelte';
@@ -63,7 +62,6 @@
 	let selectedModelId = null;
 
 	let showConfigModal = false;
-	let showManageModal = false;
 
 	let viewOption = ''; // '' = All, 'enabled', 'disabled', 'visible', 'hidden'
 
@@ -361,7 +359,6 @@
 </script>
 
 <ModelSettingsModal bind:show={showConfigModal} initHandler={init} />
-<ManageModelsModal bind:show={showManageModal} />
 
 {#if models !== null}
 	{#if selectedModelId === null}
@@ -441,17 +438,10 @@
 						</button>
 					{/if}
 
-					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
-						type="button"
-						on:click={() => {
-							showManageModal = true;
-						}}
-					>
-						<div class=" self-center font-medium line-clamp-1">
-							{$i18n.t('Manage')}
-						</div>
-					</button>
+					<!-- Sunway: the "Manage" button was deleted here (hardening plan Item 6). It opened
+					     ManageModelsModal, which was entirely an Ollama model manager -- pull, delete,
+					     download progress -- with its only other tab (llama.cpp) commented out
+					     upstream. Every endpoint behind it is gone. -->
 
 					<button
 						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
