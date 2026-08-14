@@ -47,7 +47,6 @@
 	$: configLoaded = $config !== null && $config !== undefined;
 
 	$: hiddenAdminPaths = [
-		'/admin/evaluations',
 		...(configLoaded && $config?.features?.enable_admin_functions_ui !== true
 			? ['/admin/functions']
 			: []),
@@ -132,19 +131,8 @@
 							>
 						{/if}
 
-						<!-- Sunway: Evaluations hidden — the evaluation programme does not exist and
-						     Good/Bad response ratings are off (ENABLE_MESSAGE_RATING=false), so the
-						     leaderboard/feedback screens are permanently dataless. Arena models are
-						     disabled in Admin Settings too. Original gate: always visible to admins -->
-						{#if false}
-							<a
-								draggable="false"
-								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/evaluations')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-								href="/admin/evaluations">{$i18n.t('Evaluations')}</a
-							>
-						{/if}
+						<!-- Sunway: the Evaluations nav entry was deleted here (hardening plan Item 6).
+						     It was already hidden; the router, pages and API client are now gone too. -->
 
 						<!-- Sunway: Filter functions are the inlet/outlet attachment point for the
 						     prompt/content guardrails, and this UI is the only way to install, edit,

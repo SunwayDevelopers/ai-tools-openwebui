@@ -10,7 +10,6 @@ from open_webui.config import (
     DEFAULT_ARENA_MODEL,
 )
 from open_webui.env import BYPASS_MODEL_ACCESS_CONTROL, GLOBAL_LOG_LEVEL
-from open_webui.functions import get_function_models
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.functions import Functions
 from open_webui.models.groups import Groups
@@ -19,10 +18,6 @@ from open_webui.models.users import UserModel
 from open_webui.routers import ollama, openai
 from open_webui.socket.utils import RedisDict
 from open_webui.utils.access_control import has_access, has_base_model_access
-from open_webui.utils.plugin import (
-    get_function_module_from_cache,
-    load_function_module_by_id,
-)
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -62,11 +57,11 @@ async def get_all_base_models(request: Request, user: UserModel = None):
         if request.app.state.config.ENABLE_OLLAMA_API
         else asyncio.sleep(0, result=[])
     )
-    function_task = get_function_models(request)
+    # Sunway: the function-model task was removed here (hardening plan Item 2). It served
+    # models backed by `pipe` function rows, which can no longer exist.
+    openai_models, ollama_models = await asyncio.gather(openai_task, ollama_task)
 
-    openai_models, ollama_models, function_models = await asyncio.gather(openai_task, ollama_task, function_task)
-
-    return function_models + openai_models + ollama_models
+    return openai_models + ollama_models
 
 
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):
@@ -274,18 +269,12 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
     functions_by_id = {f.id: f for f in await Functions.get_functions_by_ids(list(all_function_ids))}
 
-    # Pre-warm the function module cache once per unique function ID.
-    # This ensures each function's DB freshness check runs exactly once,
-    # not once per (model × function) pair.
-    # Only attempt to load functions that actually exist in the local DB;
-    # imported/custom model configs may reference tools or filters the user
-    # hasn't installed, and trying to load those would cause persistent
-    # "Failed to load function module" log spam on every model refresh.
-    for function_id, function in functions_by_id.items():
-        try:
-            await get_function_module_from_cache(request, function_id, function=function)
-        except Exception as e:
-            log.debug(f'Failed to load function module for {function_id}: {e}')
+    # Sunway: the function-module pre-warm loop was removed here (hardening plan Item 2). It
+    # called get_function_module_from_cache(), which `exec()`d a `function` row's source and
+    # populated request.app.state.FUNCTIONS. That table can no longer be populated, so the
+    # loop had nothing to warm. The two consumers below read FUNCTIONS and skip on a miss,
+    # which is already what happens today -- model['actions'] and model['filters'] come back
+    # empty either way.
 
     # Apply global model defaults to all models
     # Per-model overrides take precedence over global defaults

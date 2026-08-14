@@ -3,33 +3,17 @@
 
 	const i18n = getContext('i18n');
 
-	import { user as _user, channels, socket } from '$lib/stores';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
-	import { getChannels, getDMChannelByUserId } from '$lib/apis/channels';
-
-	import ChatBubbles from '$lib/components/icons/ChatBubbles.svelte';
-	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
-	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
-	import { goto } from '$app/navigation';
+	import { user as _user } from '$lib/stores';
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	export let user = null;
 
-	const directMessageHandler = async () => {
-		if (!user) {
-			return;
-		}
-
-		const res = await getDMChannelByUserId(localStorage.token, user.id).catch((error) => {
-			console.error('Error fetching DM channel:', error);
-			return null;
-		});
-
-		if (res) {
-			goto(`/channels/${res.id}`);
-		}
-	};
+	// Sunway: directMessageHandler was removed with Channels (hardening plan Item 6). It opened
+	// a DM channel via GET /api/v1/channels/dm/{user_id} and navigated to /channels/{id}; both
+	// the endpoint and the route are deleted. This component survives only as the profile
+	// hovercard used by MentionToken, MemberSelector and the admin user list.
 </script>
 
 {#if user}
@@ -111,28 +95,6 @@
 						{group.name}
 					</div>
 				{/each}
-			</div>
-		{/if}
-
-		{#if $_user?.id !== user.id}
-			<hr class="border-gray-100/50 dark:border-gray-800/50 my-2.5" />
-
-			<div class=" flex flex-col w-full px-2.5 items-center">
-				<button
-					class="w-full text-left px-3 py-1.5 rounded-xl border border-gray-100/50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-850 transition flex items-center gap-2 text-sm"
-					type="button"
-					on:click={() => {
-						directMessageHandler();
-					}}
-				>
-					<div>
-						<ChatBubbleOval className="size-4" />
-					</div>
-
-					<div class="font-medium">
-						{$i18n.t('Message')}
-					</div>
-				</button>
 			</div>
 		{/if}
 	</div>

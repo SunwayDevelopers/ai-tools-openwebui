@@ -100,7 +100,6 @@
 	import { getSkills } from '$lib/apis/skills';
 	import { uploadFile } from '$lib/apis/files';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
-	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
 	import Banner from '../common/Banner.svelte';
@@ -387,8 +386,21 @@
 		if (!$tools) {
 			tools.set(await getTools(localStorage.token));
 		}
+		// Sunway: the Functions router is deleted (hardening plan Item 2), so GET
+		// /api/v1/functions/ no longer exists. getFunctions() THROWS on a non-ok response
+		// rather than returning null, so calling it here would abort setDefaults() and break
+		// chat initialisation — not degrade quietly.
+		//
+		// Set the store empty instead of removing it: `$functions` is still read by
+		// Controls/Valves.svelte and Models/ModelEditor.svelte, and an empty array keeps those
+		// rendering nothing rather than erroring on null. Both surfaces are hidden and are
+		// removed in the frontend half of Item 2; this line goes with them.
+		//
+		// Nothing is lost by it being empty. The only Function that ever existed here was the
+		// SChat guardrails filter, which now runs from code (backend/open_webui/filters/) and
+		// is applied by the backend filter pipeline, not by anything the browser sends.
 		if (!$functions) {
-			functions.set(await getFunctions(localStorage.token));
+			functions.set([]);
 		}
 		if (!$skills) {
 			skills.set(await getSkills(localStorage.token));

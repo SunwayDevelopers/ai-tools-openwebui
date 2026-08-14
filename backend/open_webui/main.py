@@ -474,13 +474,10 @@ from open_webui.routers import (
     auths,
     automations,
     calendar,
-    channels,
     chats,
     configs,
-    evaluations,
     files,
     folders,
-    functions,
     groups,
     images,
     knowledge,
@@ -489,7 +486,6 @@ from open_webui.routers import (
     notes,
     ollama,
     openai,
-    pipelines,
     prompts,
     retrieval,
     scim,
@@ -528,7 +524,6 @@ from open_webui.tasks import (
     stop_task,
 )  # Import from tasks.py
 from open_webui.utils import logger
-from open_webui.utils.actions import chat_action as chat_action_handler
 from open_webui.utils.asgi_middleware import (
     AuthTokenMiddleware,
     CommitSessionMiddleware,
@@ -571,7 +566,6 @@ from open_webui.utils.oauth import (
     get_oauth_client_info_with_static_credentials,
     resolve_oauth_client_info,
 )
-from open_webui.utils.plugin import install_tool_and_function_dependencies
 from open_webui.utils.redis import get_redis_client, get_redis_connection
 from open_webui.utils.security_headers import SecurityHeadersMiddleware
 from open_webui.utils.session_pool import get_session
@@ -657,10 +651,12 @@ async def lifespan(app: FastAPI):
     if SAFE_MODE:
         await Functions.deactivate_all_functions()
 
-    # This should be blocking (sync) so functions are not deactivated on first /get_models calls
-    # when the first user lands on the / route.
-    log.info('Installing external dependencies of functions and tools...')
-    await install_tool_and_function_dependencies()
+    # Sunway: install_tool_and_function_dependencies() was removed here (hardening plan
+    # Item 2). At every boot it read the `requirements:` frontmatter out of each `function`
+    # and `tool` row and pip-installed the named packages into the running pod -- an
+    # arbitrary-package-install path driven by database content, on top of the exec() the
+    # rows themselves got. Both tables are unpopulatable now that the authoring endpoints
+    # are gone, and utils/plugin.py, which held both exec() calls, is deleted.
 
     app.state.redis = get_redis_client(async_mode=True)
 
@@ -1428,7 +1424,12 @@ app.include_router(ollama.router, prefix='/ollama', tags=['ollama'])
 app.include_router(openai.router, prefix='/openai', tags=['openai'])
 
 
-app.include_router(pipelines.router, prefix='/api/v1/pipelines', tags=['pipelines'])
+# Sunway: the Pipelines router is no longer mounted (hardening plan Item 2). Its 8 admin
+# endpoints -- upload, add, delete and valve editing for an external run-arbitrary-Python
+# plugin server -- were deleted; the module itself remains because utils/chat.py,
+# utils/middleware.py and routers/tasks.py import its inlet/outlet filter helpers, which are
+# inert with no pipeline models configured. See routers/pipelines.py.
+
 app.include_router(tasks.router, prefix='/api/v1/tasks', tags=['tasks'])
 app.include_router(images.router, prefix='/api/v1/images', tags=['images'])
 
@@ -1450,7 +1451,18 @@ if ENABLE_MULTI_TENANCY:
     app.include_router(tenant_members.router, prefix='/api/v1/tenant/members', tags=['tenant-members'])
 
 
-app.include_router(channels.router, prefix='/api/v1/channels', tags=['channels'])
+# Sunway: the Channels router is no longer mounted (hardening plan Item 6). Its 28 endpoints
+# implemented Slack-style channels, a feature schat does not offer. It also contained the only
+# UNAUTHENTICATED write endpoint in the application, POST /channels/webhooks/{id}/{token},
+# whose bearer token travelled in the URL path -- where proxy and Istio access logs record it.
+# That endpoint was reachable whenever ENABLE_CHANNELS was on, and ENABLE_CHANNELS is
+# PersistentConfig, so its default of False protects only a fresh database; on an existing one
+# a stored value wins, and POST /api/v1/auths/admin/config could set it with any admin token.
+# Deleting the router removes that possibility rather than relying on a flag.
+#
+# models/channels.py is deliberately KEPT: routers/files.py, socket/main.py and
+# utils/access_control/files.py import it for file access-control checks. The tables stay too,
+# per the plan -- dropping them is a separate migration with no security benefit.
 app.include_router(chats.router, prefix='/api/v1/chats', tags=['chats'])
 app.include_router(notes.router, prefix='/api/v1/notes', tags=['notes'])
 
@@ -1465,8 +1477,22 @@ app.include_router(memories.router, prefix='/api/v1/memories', tags=['memories']
 app.include_router(folders.router, prefix='/api/v1/folders', tags=['folders'])
 app.include_router(groups.router, prefix='/api/v1/groups', tags=['groups'])
 app.include_router(files.router, prefix='/api/v1/files', tags=['files'])
-app.include_router(functions.router, prefix='/api/v1/functions', tags=['functions'])
-app.include_router(evaluations.router, prefix='/api/v1/evaluations', tags=['evaluations'])
+# Sunway: the Functions router is deleted (hardening plan Item 2). It exposed create /
+# update / load-from-url / delete plus valve editing for Function rows -- Python source
+# stored in the database and run by exec() in utils/plugin.py. Two consequences beyond the
+# obvious code-execution one: POST /functions/id/schat_guardrails/toggle could switch the
+# PII redaction filter off wholesale, and .../valves/update could set enable_input_pii=false
+# or add a caller to exempt_user_ids -- both admin-gated, which under multi-tenancy means
+# any BU admin, with only updated_at as evidence. That filter now lives in code
+# (backend/open_webui/filters/), so nothing loads a filter from the database any more.
+# The pipe-execution machinery in backend/open_webui/functions.py is deliberately NOT
+# touched -- with no HTTP route able to create or edit a Function row, it is unreachable
+# from outside, and refactoring the chat pipeline would add regression risk for no gain.
+# Sunway: the Evaluations router is no longer mounted (hardening plan Item 6). Its 15 endpoints
+# covered the model arena leaderboard and the feedback store -- including bulk feedback export
+# and a delete-all -- for an evaluation programme schat does not run. Deleting it also removes
+# the backend behind the Good/Bad message ratings, which were already disabled via
+# ENABLE_MESSAGE_RATING; that feature therefore moves from "deferred" to "removed".
 if ENABLE_ADMIN_ANALYTICS:
     app.include_router(analytics.router, prefix='/api/v1/analytics', tags=['analytics'])
 app.include_router(utils.router, prefix='/api/v1/utils', tags=['utils'])
@@ -2332,21 +2358,11 @@ async def chat_completed(request: Request, form_data: dict, user=Depends(get_ver
         )
 
 
-@app.post('/api/chat/actions/{action_id}')
-async def chat_action(request: Request, action_id: str, form_data: dict, user=Depends(get_verified_user)):
-    try:
-        model_item = form_data.pop('model_item', {})
-
-        if model_item.get('direct', False):
-            request.state.direct = True
-            request.state.model = model_item
-
-        return await chat_action_handler(request, action_id, form_data, user)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+# Sunway: POST /api/chat/actions/{action_id} was deleted here (hardening plan Item 2).
+# An "action" was a `function` row of type `action` whose Python source was exec()'d to render
+# a custom button under an assistant message. With the Functions router gone the table cannot
+# be populated, so `model.actions` is always empty and no button could ever be rendered to
+# invoke this. utils/actions.py went with it.
 
 
 @app.post('/api/tasks/stop/{task_id}')

@@ -10,7 +10,6 @@ from typing import Any, Optional
 from aiocache import cached
 from fastapi import HTTPException, Request, status
 from open_webui.env import BYPASS_MODEL_ACCESS_CONTROL, GLOBAL_LOG_LEVEL
-from open_webui.functions import generate_function_chat_completion
 from open_webui.models.functions import Functions
 from open_webui.models.models import Models
 from open_webui.models.users import UserModel
@@ -271,9 +270,10 @@ async def generate_chat_completion(
                     'selected_model_id': selected_model_id,
                 }
 
-        if model.get('pipe'):
-            # Below does not require bypass_filter because this is the only route the uses this function and it is already bypassing the filter
-            return await generate_function_chat_completion(request, form_data, user=user, models=models)
+        # Sunway: the `model.get('pipe')` branch was deleted here (hardening plan Item 2). A
+        # "pipe" was a `function` row of type `pipe` -- Python exec()'d to serve a model of its
+        # own. open_webui/functions.py, which executed them, is deleted; with no way to create
+        # a function row, no model can carry a `pipe` key, so this branch was unreachable.
         if model.get('owned_by') == 'ollama':
             # Using /ollama/api/chat endpoint
             form_data = convert_payload_openai_to_ollama(form_data)

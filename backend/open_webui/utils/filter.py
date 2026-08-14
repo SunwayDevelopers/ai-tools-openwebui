@@ -8,10 +8,6 @@ from open_webui.filters import (
     is_builtin_filter,
 )
 from open_webui.models.functions import Functions
-from open_webui.utils.plugin import (
-    get_function_module_from_cache,
-    load_function_module_by_id,
-)
 
 log = logging.getLogger(__name__)
 
@@ -19,16 +15,18 @@ log = logging.getLogger(__name__)
 async def get_function_module(request, function_id, load_from_db=True):
     """
     Get the function module by its ID.
-    """
-    # Sunway: built-in filters short-circuit the DB-backed loader entirely (hardening
-    # plan Item 8). The registry returns a Filter INSTANCE, which is exactly what
-    # load_function_module_by_id() returned for a DB row, so every caller below is
-    # unchanged. Once the Functions router is deleted this branch becomes the only path.
-    if is_builtin_filter(function_id):
-        return get_builtin_filter(function_id)
 
-    function_module, _, _ = await get_function_module_from_cache(request, function_id, load_from_db=load_from_db)
-    return function_module
+    Sunway: the built-in registry is now the ONLY source (hardening plan Items 2 and 8).
+    This used to fall through to get_function_module_from_cache(), which `exec()`'d a
+    `function` row's source out of the database; utils/plugin.py and the Functions router
+    that populated that table are both deleted, so the fallback could only ever have
+    returned None. The registry returns a Filter INSTANCE, exactly what the DB-backed
+    loader returned, so every caller below is unchanged.
+
+    `load_from_db` is retained in the signature because callers still pass it, and to keep
+    the diff against upstream narrow. It no longer has anything to read from.
+    """
+    return get_builtin_filter(function_id)
 
 
 async def _get_filter_valves(filter_id):

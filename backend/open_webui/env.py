@@ -847,9 +847,16 @@ ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == '
 # So the failure mode of default-off here is "cannot administer the system", not "user
 # sees a dead feature". Hiding is opt-in, per deployment, from the manifest.
 #
-# NOT A SECURITY BOUNDARY. /api/v1/functions/* and POST /api/v1/auths/admin/config
-# remain reachable for anyone holding an admin token — this removes the UI, not the
-# endpoint. It reduces accident and casual discovery, not a determined actor.
+# NOT A SECURITY BOUNDARY. POST /api/v1/auths/admin/config remains reachable for anyone
+# holding an admin token — this removes the UI, not the endpoint. It reduces accident and
+# casual discovery, not a determined actor.
+#
+# UPDATED 2026-08-13: this note used to name /api/v1/functions/* alongside it. That router
+# is now DELETED (hardening plan Item 2), so ENABLE_ADMIN_FUNCTIONS_UI hides a page whose
+# backend no longer exists — the capability is gone, not merely hidden. The flag itself is
+# scheduled for removal with the admin Functions pages in the frontend half of Item 2;
+# until those pages go, leaving it in place keeps the nav entry hideable rather than
+# rendering a link to a page that 404s.
 ENABLE_ADMIN_SETTINGS_UI = os.getenv('ENABLE_ADMIN_SETTINGS_UI', 'True').lower() == 'true'
 ENABLE_ADMIN_FUNCTIONS_UI = os.getenv('ENABLE_ADMIN_FUNCTIONS_UI', 'True').lower() == 'true'
 

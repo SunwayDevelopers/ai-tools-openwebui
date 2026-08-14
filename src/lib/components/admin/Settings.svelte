@@ -9,7 +9,6 @@
 	import Database from './Settings/Database.svelte';
 
 	import General from './Settings/General.svelte';
-	import Pipelines from './Settings/Pipelines.svelte';
 	import Audio from './Settings/Audio.svelte';
 	import Images from './Settings/Images.svelte';
 	import Interface from './Settings/Interface.svelte';
@@ -18,7 +17,6 @@
 	import Documents from './Settings/Documents.svelte';
 	import WebSearch from './Settings/WebSearch.svelte';
 
-	import Evaluations from './Settings/Evaluations.svelte';
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import Integrations from './Settings/Integrations.svelte';
 
@@ -116,12 +114,6 @@
 				'import',
 				'export'
 			]
-		},
-		{
-			id: 'evaluations',
-			title: 'Evaluations',
-			route: '/admin/settings/evaluations',
-			keywords: ['evaluations', 'feedback', 'rating', 'arena', 'leaderboard', 'preference']
 		},
 		{
 			id: 'integrations',
@@ -225,12 +217,6 @@
 			]
 		},
 		{
-			id: 'pipelines',
-			title: 'Pipelines',
-			route: '/admin/settings/pipelines',
-			keywords: ['pipelines', 'workflows', 'filters', 'valves', 'middleware']
-		},
-		{
 			id: 'db',
 			title: 'Database',
 			route: '/admin/settings/db',
@@ -308,7 +294,6 @@
 		<!-- {$i18n.t('General')} -->
 		<!-- {$i18n.t('Connections')} -->
 		<!-- {$i18n.t('Models')} -->
-		<!-- {$i18n.t('Evaluations')} -->
 		<!-- {$i18n.t('Integrations')} -->
 		<!-- {$i18n.t('Documents')} -->
 		<!-- {$i18n.t('Web Search')} -->
@@ -316,7 +301,6 @@
 		<!-- {$i18n.t('Interface')} -->
 		<!-- {$i18n.t('Audio')} -->
 		<!-- {$i18n.t('Images')} -->
-		<!-- {$i18n.t('Pipelines')} -->
 		<!-- {$i18n.t('Database')} -->
 		{#each filteredSettings as tab (tab.id)}
 			<a
@@ -366,8 +350,6 @@
 								clip-rule="evenodd"
 							/>
 						</svg>
-					{:else if tab.id === 'evaluations'}
-						<DocumentChartBar />
 					{:else if tab.id === 'integrations'}
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -462,23 +444,6 @@
 								clip-rule="evenodd"
 							/>
 						</svg>
-					{:else if tab.id === 'pipelines'}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="size-4"
-						>
-							<path
-								d="M11.644 1.59a.75.75 0 0 1 .712 0l9.75 5.25a.75.75 0 0 1 0 1.32l-9.75 5.25a.75.75 0 0 1-.712 0l-9.75-5.25a.75.75 0 0 1 0-1.32l9.75-5.25Z"
-							/>
-							<path
-								d="m3.265 10.602 7.668 4.129a2.25 2.25 0 0 0 2.134 0l7.668-4.13 1.37.739a.75.75 0 0 1 0 1.32l-9.75 5.25a.75.75 0 0 1-.71 0l-9.75-5.25a.75.75 0 0 1 0-1.32l1.37-.738Z"
-							/>
-							<path
-								d="m10.933 19.231-7.668-4.13-1.37.739a.75.75 0 0 0 0 1.32l9.75 5.25c.221.12.489.12.71 0l9.75-5.25a.75.75 0 0 0 0-1.32l-1.37-.738-7.668 4.13a2.25 2.25 0 0 1-2.134-.001Z"
-							/>
-						</svg>
 					{:else if tab.id === 'db'}
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -521,8 +486,6 @@
 			/>
 		{:else if selectedTab === 'models'}
 			<Models />
-		{:else if selectedTab === 'evaluations'}
-			<Evaluations />
 		{:else if selectedTab === 'integrations'}
 			<Integrations />
 		{:else if selectedTab === 'documents'}
@@ -572,12 +535,6 @@
 			/>
 		{:else if selectedTab === 'db'}
 			<Database
-				saveHandler={() => {
-					toast.success($i18n.t('Settings saved successfully!'));
-				}}
-			/>
-		{:else if selectedTab === 'pipelines'}
-			<Pipelines
 				saveHandler={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

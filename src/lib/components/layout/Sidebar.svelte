@@ -21,7 +21,6 @@
 		scrollPaginationEnabled,
 		currentChatPage,
 		temporaryChatEnabled,
-		channels,
 		socket,
 		config,
 		isApp,
@@ -67,9 +66,6 @@
 	import Folder from '../common/Folder.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Folders from './Sidebar/Folders.svelte';
-	import { getChannels, createNewChannel } from '$lib/apis/channels';
-	import ChannelModal from './Sidebar/ChannelModal.svelte';
-	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
 	import SearchModal from './SearchModal.svelte';
@@ -90,7 +86,6 @@
 	let shiftKey = false;
 
 	let selectedChatId = null;
-	let showCreateChannel = false;
 
 	// Pagination variables
 	let chatListLoading = false;
@@ -113,7 +108,6 @@
 			})
 			.catch(() => {});
 	}
-	let showChannels = false;
 	let showFolders = false;
 
 	let folders = {};
@@ -283,22 +277,6 @@
 			// newFolderId = res.id;
 			await initFolders();
 			showFolders = true;
-		}
-	};
-
-	const initChannels = async () => {
-		// default (none), group, dm type
-		const res = await getChannels(localStorage.token).catch((error) => {
-			return null;
-		});
-
-		if (res) {
-			await channels.set(
-				res.sort(
-					(a, b) =>
-						['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
-				)
-			);
 		}
 	};
 
@@ -570,13 +548,6 @@
 				}
 
 				if (value) {
-					// Only fetch channels if the feature is enabled and user has permission
-					if (
-						$config?.features?.enable_channels &&
-						($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))
-					) {
-						await initChannels();
-					}
 					await initChatList();
 
 					// Check which chats have active tasks
@@ -735,46 +706,6 @@
 		if ($chatId === id) {
 			goto('/');
 			chatId.set('');
-		}
-	}}
-/>
-
-<ChannelModal
-	bind:show={showCreateChannel}
-	onSubmit={async (payload: any) => {
-		let { type, name, is_private, access_grants, group_ids, user_ids } = payload ?? {};
-		name = name?.trim();
-
-		if (type === 'dm') {
-			if (!user_ids || user_ids.length === 0) {
-				toast.error($i18n.t('Please select at least one user for Direct Message channel.'));
-				return;
-			}
-		} else {
-			if (!name) {
-				toast.error($i18n.t('Channel name cannot be empty.'));
-				return;
-			}
-		}
-
-		const res = await createNewChannel(localStorage.token, {
-			type: type,
-			name: name,
-			is_private: is_private,
-			access_grants: access_grants,
-			group_ids: group_ids,
-			user_ids: user_ids
-		}).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			$socket.emit('join-channels', { auth: { token: $user?.token } });
-			await initChannels();
-			showCreateChannel = false;
-			showChannels = true;
-			goto(`/channels/${res.id}`);
 		}
 	}}
 />
@@ -1322,40 +1253,7 @@
 					</Folder>
 				{/if}
 
-				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
-					<Folder
-						id="sidebar-channels"
-						bind:open={showChannels}
-						className="px-2 mt-0.5"
-						name={$i18n.t('Channels')}
-						chevron={false}
-						dragAndDrop={false}
-						onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)
-							? async () => {
-									await tick();
-
-									setTimeout(() => {
-										showCreateChannel = true;
-									}, 0);
-								}
-							: null}
-						onAddLabel={$i18n.t('Create Channel')}
-					>
-						{#each $channels as channel, channelIdx (`${channel?.id}`)}
-							<ChannelItem
-								{channel}
-								onUpdate={async () => {
-									await initChannels();
-								}}
-							/>
-
-							{#if channelIdx < $channels.length - 1 && channel.type !== $channels[channelIdx + 1]?.type}<hr
-									class=" border-gray-100/40 dark:border-gray-800/10 my-1.5 w-full"
-								/>
-							{/if}
-						{/each}
-					</Folder>
-				{/if}
+				<!-- Sunway: the Channels sidebar section was deleted here (hardening plan Item 6). -->
 
 				{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
 					<Folder

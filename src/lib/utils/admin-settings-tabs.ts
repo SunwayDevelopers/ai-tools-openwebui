@@ -16,7 +16,6 @@ export const ALL_ADMIN_SETTINGS_TAB_IDS = [
 	'general',
 	'connections',
 	'models',
-	'evaluations',
 	'integrations',
 	'documents',
 	'web',
@@ -24,19 +23,18 @@ export const ALL_ADMIN_SETTINGS_TAB_IDS = [
 	'interface',
 	'audio',
 	'images',
-	'pipelines',
 	'db'
 ];
 
+// Sunway: 'pipelines' is gone from both lists (hardening plan Item 2). The tab used to be
+// hidden here, but the router, the component and the API clients are now deleted outright, so
+// there is no longer a tab to hide.
 export const HIDDEN_ADMIN_SETTINGS_TAB_IDS = [
 	// version/update check (ENABLE_VERSION_UPDATE_CHECK=false) + upstream Open WebUI help and
 	// licence links + signup / default-role / LDAP — all now owned by the IAM + multi-tenancy
 	// layer. Note what this DOES take away: enterprise-licence activation, and the JWT expiry /
 	// API-key endpoint restrictions. See CLAUDE.md.
 	'general',
-	// no evaluation programme; ratings off (ENABLE_MESSAGE_RATING=false) and arena models
-	// disabled, so the feedback/arena config is dead config
-	'evaluations',
 	// task-model selection + title/tag/query-generation prompts. Hidden on the same call as the
 	// user-facing Settings → Interface tab
 	'interface',
@@ -46,8 +44,6 @@ export const HIDDEN_ADMIN_SETTINGS_TAB_IDS = [
 	'code-execution',
 	// Voice out of scope (ENABLE_VOICE=false); STT/TTS config is unreachable
 	'audio',
-	// arbitrary-code plugin surface, same class as Workspace → Tools
-	'pipelines',
 	// DB export/import/backup; an ops job, not a UI job (ISO 27001: backups are handled at the
 	// cluster/Helm layer, not by a browser download button)
 	'db'
