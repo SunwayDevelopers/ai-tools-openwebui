@@ -22,15 +22,13 @@
 	// already-mounted layout and slip straight past an onMount check. That is the identical
 	// defect that made clicking "Workspace" render the hidden Models page.
 	//
-	// FUNCTIONS UN-HIDDEN 2026-08-05 — it was hidden earlier the same day, then restored
-	// because Filter functions carry the inlet/outlet hooks the guardrail work attaches to,
-	// and the UI is the only place to install, edit, order or toggle a filter. Hiding it never
-	// disabled anything (utils/middleware.py still ran installed filters); it only blocked the
-	// install surface, which would have blocked the guardrail work itself.
+	// FUNCTIONS DELETED 2026-08-14 (hardening plan Item 2). The router, pages and API client
+	// are gone, so there is no longer a page to gate; ENABLE_ADMIN_FUNCTIONS_UI is retired.
+	// The guardrail filter it used to host is now a code module under
+	// backend/open_webui/filters/, which cannot be installed, re-valved or toggled over HTTP.
 	//
-	// Functions and Settings are now flag-driven rather than hard-coded, so the guardrail can
-	// be tuned by flipping ENABLE_ADMIN_FUNCTIONS_UI without editing source. Both are PLAIN
-	// env (see env.py for why Settings especially must never be PersistentConfig).
+	// Settings remains flag-driven via ENABLE_ADMIN_SETTINGS_UI — PLAIN env (see env.py for why
+	// it must never be PersistentConfig).
 	//
 	// FAIL CLOSED (changed 2026-08-12). This used to read `=== false`, i.e. "hide only when
 	// the backend explicitly says false", so an ABSENT flag meant visible. That is precisely
@@ -47,9 +45,6 @@
 	$: configLoaded = $config !== null && $config !== undefined;
 
 	$: hiddenAdminPaths = [
-		...(configLoaded && $config?.features?.enable_admin_functions_ui !== true
-			? ['/admin/functions']
-			: []),
 		...(configLoaded && $config?.features?.enable_admin_settings_ui !== true
 			? ['/admin/settings']
 			: [])
@@ -134,23 +129,12 @@
 						<!-- Sunway: the Evaluations nav entry was deleted here (hardening plan Item 6).
 						     It was already hidden; the router, pages and API client are now gone too. -->
 
-						<!-- Sunway: Filter functions are the inlet/outlet attachment point for the
-						     prompt/content guardrails, and this UI is the only way to install, edit,
-						     order or toggle one — so hiding it blocks guardrail work, not the
-						     guardrails themselves (utils/middleware.py keeps running installed
-						     filters either way). Gated on ENABLE_ADMIN_FUNCTIONS_UI so it can be
-						     reopened for tuning without a code change.
-						     Note `admin` does NOT distinguish super admin from BU admin under
-						     multi-tenancy, so when visible this is reachable by any tenant admin. -->
-						{#if $config?.features?.enable_admin_functions_ui ?? false}
-							<a
-								draggable="false"
-								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/functions')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-								href="/admin/functions">{$i18n.t('Functions')}</a
-							>
-						{/if}
+						<!-- Sunway: the Functions nav entry was deleted here (hardening plan Item 2,
+						     frontend half). The Functions router, its pages and its API client are all
+						     gone -- a "Function" was Python source in a database row, exec()'d on the
+						     server. The guardrail filter that used to live there is now a code module
+						     (backend/open_webui/filters/), so nothing needs this install surface.
+						     ENABLE_ADMIN_FUNCTIONS_UI is retired with it. -->
 
 						<!-- Sunway: Admin Settings writes PROCESS-GLOBAL config — no tenant component,
 						     no TTL — so a single BU admin's change propagates to every pod for every

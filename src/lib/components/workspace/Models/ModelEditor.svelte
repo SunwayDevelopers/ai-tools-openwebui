@@ -7,7 +7,6 @@
 
 	import { getTools } from '$lib/apis/tools';
 	import { getSkills } from '$lib/apis/skills';
-	import { getFunctions } from '$lib/apis/functions';
 	import { getModelsDefaults } from '$lib/apis/configs';
 
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
@@ -251,7 +250,9 @@
 	onMount(async () => {
 		await tools.set(await getTools(localStorage.token));
 		skillsList = (await getSkills(localStorage.token).catch(() => null)) ?? [];
-		await functions.set(await getFunctions(localStorage.token));
+		// Sunway: the getFunctions() fetch was removed here (hardening plan Item 2, frontend half).
+		// The Functions router is deleted, so the `functions` store stays empty and the filter and
+		// action pickers below -- both guarded on `.length > 0` -- never render.
 
 		// Fetch admin-configured default model metadata so the editor
 		// reflects the actual defaults rather than hardcoded values

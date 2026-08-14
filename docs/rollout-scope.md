@@ -119,6 +119,21 @@ to `function.content` and `tool.content` in the entire backend were inside `plug
 self-updates it performed after loading a row. No router, no service, and no migration can
 create a row. With `plugin.py` gone there is no writer and no reader left.
 
+**The frontend followed.** The user interface for these capabilities was deleted in a second
+pass: the Functions API client and admin pages, the Workspace → Tools pages, the tool-authoring
+clients (15 reduced to 2), both valve editors, and the custom-action buttons with the endpoint
+behind them. `getTools()` and `getToolList()` survive because tool **servers** are a different
+thing — they execute nothing inside schat and are how the Sdeck MCP server reaches a model.
+
+`ENABLE_ADMIN_FUNCTIONS_UI` was **retired** with those pages. A flag that hides a route which no
+longer exists is worse than no flag: it reads as though the capability is merely switched off,
+inviting someone to switch it back on. Any manifest still setting it is inert and the line can be
+dropped. `ENABLE_ADMIN_SETTINGS_UI` is unaffected and still governs Admin → Settings.
+
+**Verified against the plan's own check:** no Python `exec()` remains anywhere in the backend.
+The only surviving matches are Sunway comments recording what was removed, plus a Redis
+pipeline's unrelated `Batch.exec()`.
+
 **Residual risk after removal.** None from this path; the code no longer exists rather than
 being unreachable. Two adjacent things remain by design and are *not* the same class: the code
 interpreter runs in browser Pyodide or an external Jupyter, outside the schat process, with its
@@ -134,9 +149,9 @@ that way. Restoring database-backed authoring is not the path back.
 
 | | |
 |---|---|
-| **What** | `/chats/list/user/{id}`, `/chats/{id}` admin fallback, `/chats/all/db`, and the three content-bearing analytics endpoints |
+| **What** | `/chats/list/user/{id}`, `/chats/all/db`, `/utils/db/download`, the three content-bearing analytics endpoints — all **deleted**; the `/chats/{id}` admin fallback — **gated** |
 | **Class** | Removed / gated |
-| **Mechanism** | `ENABLE_ADMIN_CHAT_ACCESS` and `ENABLE_ADMIN_EXPORT`, both **plain env**, both defaulting `False` |
+| **Mechanism** | code deleted, plus `ENABLE_ADMIN_CHAT_ACCESS` and `ENABLE_ADMIN_EXPORT` for what remains — both **plain env**, both defaulting `False` |
 
 **Justification.** Upstream allows any admin to read any user's chats. Under multi-tenancy that
 means every BU admin, for every user in their tenant, through the browser.
@@ -147,11 +162,32 @@ The analytics endpoints were the subtle case: `/analytics/messages` returns full
 alone, so disabling admin chat access closed the obvious paths while these stayed open — and
 the second was reachable through the UI, two clicks from the Analytics dashboard.
 
-**Update — the three analytics endpoints are now deleted, not gated.** They were flag-gated
-first, to keep an admin support path reversible. That reversibility only had value while a UI
-existed to reverse to; the drill-down modal is gone, so the endpoints guarded nothing any caller
-used. `ENABLE_ADMIN_CHAT_ACCESS` still governs `/api/v1/chats/*`, where the genuine
-privacy-versus-support policy question lives.
+**Update — most of this row is now deleted code rather than gated code.** The three analytics
+endpoints were flag-gated first, to keep an admin support path reversible. That reversibility
+only had value while a UI existed to reverse to; the drill-down modal is gone, so the endpoints
+guarded nothing any caller used. Three more followed for the same reason:
+
+| Endpoint | What it returned |
+|---|---|
+| `GET /chats/list/user/{id}` | another user's chat list, to any admin — with `UserChatsModal`, the admin UI that browsed it |
+| `GET /chats/all/db` | every chat message belonging to every user, in one response |
+| `GET /utils/db/download` | the raw SQLite database file |
+
+The last two were already double-locked behind `ENABLE_ADMIN_EXPORT`, and the third only ever
+worked on SQLite, so both were inert on a Postgres deployment with the flag unset. They were
+deleted anyway, on the principle that **a capability which only works once someone sets an
+environment variable is a capability waiting to be switched on by accident** — and a
+whole-database download reachable from a browser is an ops action at the cluster layer, not a UI
+button.
+
+**A side effect worth recording:** with these gone, `routers/chats.py` has **no admin-gated
+endpoint left at all** — `get_admin_user` is no longer imported there. The entire chats router is
+now user-scoped.
+
+**What `ENABLE_ADMIN_CHAT_ACCESS` still governs**, and why it was kept: four live gates inside
+*user-facing* endpoints (`chats.py:886, 893, 952, 1271`) — the admin fallback in `GET /chats/{id}`,
+the share lookup, and `clone/shared`. Those are where the genuine privacy-versus-support policy
+question lives, and it is a policy call rather than a technical one.
 
 **Residual risk.** The five surviving analytics endpoints return counts and totals only. But an
 admin still sees *metadata* — per-user message counts, token counts, activity. That is a
@@ -211,7 +247,43 @@ hidden by a flag, restorable by flipping it. The three endpoints the thumbs call
 deleting it **moves message rating from deferred to removed**. Restoring ratings now means
 restoring code, not changing configuration. That is a deliberate consequence, not an oversight.
 
-### 3.5 Deferred — features hidden for phase 1
+### 3.5 Removed — one admin editing another admin
+
+| | |
+|---|---|
+| **What** | `POST /api/v1/users/{user_id}/update` and the user-edit UI; admin-on-admin deletion |
+| **Class** | Removed / gated |
+| **Mechanism** | endpoint deleted; a 403 added to `DELETE /{user_id}` when the target is an admin |
+
+**Justification.** Both actions protected only the **first account ever created**. Any admin could
+therefore edit or delete any *other* admin, including changing their role — and under
+multi-tenancy `admin` is a per-tenant IAM role, so that meant every departmental admin.
+
+**Why the edit endpoint was deleted rather than restricted.** Every field on that form belonged
+to IAM, so none of the edits actually held:
+
+- **`role`** is re-read from IAM on every request, so a local change is silently overwritten the
+  moment that user next does anything. It appears to work, then reverts.
+- **`email`** is the IAM entitlement key. Changing it locally breaks the mapping between the
+  schat row and the IAM membership, so the user is **re-provisioned as a new account** on their
+  next request, orphaning the original row.
+- **`name`** is synced from the IAM identity at provisioning.
+
+**This matters for how the finding is described.** The instinct is to call it privilege
+escalation, but the role field is self-healing — that is the *weakest* part of it. The real damage
+is **account integrity**: the email change is persistent, destructive and not self-healing, and
+admin-on-admin deletion is permanent. Framing it as escalation invites the (correct, and
+irrelevant) rebuttal that IAM overwrites the role anyway.
+
+With the endpoint gone, "an admin cannot promote another admin" holds **by construction** — no
+code path, no rule to enforce, nothing for a future change to get wrong — and three controls that
+never worked are removed with it.
+
+**Residual.** The user list stays visible and admins may still delete a non-admin. The delete
+button was already hidden for admin targets in the UI; the 403 makes that a real check rather
+than an assumption, since UI hiding is not a boundary (§3.6).
+
+### 3.6 Deferred — features hidden for phase 1
 
 Hidden rather than removed because each is a candidate for a later phase. Code is retained
 behind a guard or flag; nothing is deleted.
@@ -235,7 +307,7 @@ not claimed as one.
 **Reversal.** Each is re-enabled by its flag or by unwrapping its guard; `CLAUDE.md` records the
 specific lever per feature.
 
-### 3.6 Retained, gated — terminals
+### 3.7 Retained, gated — terminals
 
 | | |
 |---|---|

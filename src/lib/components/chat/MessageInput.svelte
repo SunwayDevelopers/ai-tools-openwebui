@@ -97,8 +97,6 @@
 	import Dropdown from '../common/Dropdown.svelte';
 
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
-	import Knobs from '../icons/Knobs.svelte';
-	import ValvesModal from '../workspace/common/ValvesModal.svelte';
 	import Note from '../icons/Note.svelte';
 	import { goto } from '$app/navigation';
 	import InputModal from '../common/InputModal.svelte';
@@ -161,14 +159,7 @@
 	let inputVariables = {};
 	let inputVariableValues = {};
 
-	let showValvesModal = false;
-	let selectedValvesType = 'tool'; // 'tool' or 'function'
-	let selectedValvesItemId = null;
 	let integrationsMenuCloseOnOutsideClick = true;
-
-	$: if (!showValvesModal) {
-		integrationsMenuCloseOnOutsideClick = true;
-	}
 
 	$: onChange({
 		prompt,
@@ -1220,19 +1211,6 @@
 	onSave={inputVariablesModalCallback}
 />
 
-<ValvesModal
-	bind:show={showValvesModal}
-	userValves={true}
-	type={selectedValvesType}
-	id={selectedValvesItemId ?? null}
-	on:save={async () => {
-		await tick();
-	}}
-	on:close={() => {
-		integrationsMenuCloseOnOutsideClick = true;
-	}}
-/>
-
 <InputModal
 	bind:show={showInputModal}
 	bind:value={prompt}
@@ -1815,13 +1793,6 @@
 											bind:imageGenerationEnabled
 											bind:codeInterpreterEnabled
 											closeOnOutsideClick={integrationsMenuCloseOnOutsideClick}
-											onShowValves={(e) => {
-												const { type, id } = e;
-												selectedValvesType = type;
-												selectedValvesItemId = id;
-												showValvesModal = true;
-												integrationsMenuCloseOnOutsideClick = false;
-											}}
 											onClose={async () => {
 												await tick();
 
@@ -1840,24 +1811,9 @@
 										</IntegrationsMenu>
 									{/if}
 
-									{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves}
-										<div class="ml-1 flex gap-1.5">
-											<Tooltip content={$i18n.t('Valves')} placement="top">
-												<button
-													type="button"
-													id="model-valves-button"
-													class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
-													on:click={() => {
-														selectedValvesType = 'function';
-														selectedValvesItemId = selectedModelIds[0]?.split('.')[0];
-														showValvesModal = true;
-													}}
-												>
-													<Knobs className="size-4" strokeWidth="1.5" />
-												</button>
-											</Tooltip>
-										</div>
-									{/if}
+									<!-- Sunway: the model Valves button was deleted here (hardening plan Item 2,
+									     frontend half). `has_user_valves` is only ever true for a `pipe`
+									     function model, and function rows can no longer exist. -->
 
 									<!-- Sunway: the whole active-state chip row is hidden. These chips are not
 									     read-only indicators — each one TOGGLES its feature off when clicked, so
@@ -1931,19 +1887,13 @@
 													<Tooltip content={filter?.name} placement="top">
 														<button
 															on:click|preventDefault={() => {
-																if (
-																	filter?.has_user_valves &&
-																	($_user?.role === 'admin' ||
-																		($_user?.permissions?.chat?.valves ?? true))
-																) {
-																	selectedValvesType = 'function';
-																	selectedValvesItemId = filterId;
-																	showValvesModal = true;
-																} else {
-																	selectedFilterIds = selectedFilterIds.filter(
-																		(id) => id !== filterId
-																	);
-																}
+																// Sunway: the user-valves branch was removed here (hardening plan
+																// Item 2, frontend half) -- filter valves lived behind
+																// /api/v1/functions/*, now deleted. Clicking a filter chip
+																// deselects it, which was already the fallback path.
+																selectedFilterIds = selectedFilterIds.filter(
+																	(id) => id !== filterId
+																);
 															}}
 															type="button"
 															class="group p-[7px] flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(

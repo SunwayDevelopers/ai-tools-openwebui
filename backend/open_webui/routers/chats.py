@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
+from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS
 from open_webui.env import ENABLE_CHAT_ARCHIVE, MAX_CHATS_PER_USER
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
@@ -33,7 +30,7 @@ from open_webui.models.tags import TagModel, Tags
 from open_webui.socket.main import get_event_emitter
 from open_webui.tasks import stop_item_tasks
 from open_webui.utils.access_control import filter_allowed_access_grants, has_permission
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.middleware import serialize_output
 from open_webui.utils.misc import get_message_list
 from open_webui.utils.retention import purge_chat_files, purge_chats_files
@@ -527,39 +524,13 @@ async def get_chat_count(
 
 
 ############################
-# GetUserChatList
+# GetUserChatList -- DELETED (hardening plan Item 3)
 ############################
-
-
-@router.get('/list/user/{user_id}', response_model=list[ChatTitleIdResponse])
-async def get_user_chat_list_by_user_id(
-    user_id: str,
-    page: int | None = None,
-    query: str | None = None,
-    order_by: str | None = None,
-    direction: str | None = None,
-    user=Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_session),
-):
-    """List chat summaries for a given user (admin-only endpoint)."""
-    if not ENABLE_ADMIN_CHAT_ACCESS:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-
-    effective_page = page if page is not None else 1
-    limit = 60
-    skip = (effective_page - 1) * limit
-
-    filter = {}
-    if query:
-        filter['query'] = query
-    if order_by:
-        filter['order_by'] = order_by
-    if direction:
-        filter['direction'] = direction
-
-    return await Chats.get_chat_list_by_user_id(
-        user_id, include_archived=True, filter=filter, skip=skip, limit=limit, db=db
-    )
+#
+# GET /list/user/{user_id} returned another user's chat list to any admin. It was gated on
+# ENABLE_ADMIN_CHAT_ACCESS (plain env, default False), and the admin UI that called it --
+# UserChatsModal -- is deleted with it. Under multi-tenancy `admin` is a per-tenant IAM
+# role, so this let every departmental admin browse every user in their tenant.
 
 
 ############################
@@ -785,15 +756,14 @@ async def get_all_user_tags(user=Depends(get_verified_user), db: AsyncSession = 
 
 
 ############################
-# GetAllChatsInDB
+# GetAllUserChatsInDB -- DELETED (hardening plan Item 3)
 ############################
-
-
-@router.get('/all/db', response_model=list[ChatResponse])
-async def get_all_user_chats_in_db(user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)):
-    if not ENABLE_ADMIN_EXPORT:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-    return [ChatResponse(**chat.model_dump()) for chat in await Chats.get_chats(db=db)]
+#
+# GET /all/db returned every chat message belonging to every user in a single response. It
+# was double-locked -- get_admin_user AND ENABLE_ADMIN_EXPORT, which defaults False -- so it
+# should already have refused. It is deleted anyway: a capability that only works when
+# someone sets an env var is a capability waiting to be switched on by accident, and under
+# multi-tenancy `admin` is a per-tenant IAM role, so "admin-only" is a wide group.
 
 
 ############################

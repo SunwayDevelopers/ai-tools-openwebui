@@ -15,11 +15,8 @@
 	import { updateUserRole, getUsers, deleteUserById } from '$lib/apis/users';
 
 	import Pagination from '$lib/components/common/Pagination.svelte';
-	import ChatBubbles from '$lib/components/icons/ChatBubbles.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
-	import EditUserModal from '$lib/components/admin/Users/UserList/EditUserModal.svelte';
-	import UserChatsModal from '$lib/components/admin/Users/UserList/UserChatsModal.svelte';
 	import AddUserModal from '$lib/components/admin/Users/UserList/AddUserModal.svelte';
 
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -53,8 +50,6 @@
 	let showDeleteConfirmDialog = false;
 	let showAddUserModal = false;
 
-	let showUserChatsModal = false;
-	let showEditUserModal = false;
 	let showUserPreviewModal = false;
 
 	const deleteUserHandler = async (id) => {
@@ -130,19 +125,6 @@
 		getUserList();
 	}}
 />
-
-<EditUserModal
-	bind:show={showEditUserModal}
-	{selectedUser}
-	sessionUser={$user}
-	on:save={async () => {
-		getUserList();
-	}}
-/>
-
-{#if selectedUser}
-	<UserChatsModal bind:show={showUserChatsModal} user={selectedUser} />
-{/if}
 
 {#if ($config?.license_metadata?.seats ?? null) !== null && total && total > $config?.license_metadata?.seats}
 	<div class=" mt-1 mb-2 text-xs text-red-500">
@@ -359,19 +341,15 @@
 				{#each users as user, userIdx (user.id)}
 					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 						<td class="px-3 py-1 min-w-[7rem] w-28">
-							<button
-								class=" translate-y-0.5"
-								aria-label={$i18n.t('Change User Role')}
-								on:click={() => {
-									selectedUser = user;
-									showEditUserModal = !showEditUserModal;
-								}}
-							>
+							<!-- Sunway: the role badge is no longer a button (hardening plan Item 5). It opened
+							     the user-edit modal; role is resolved from IAM per request, so a local change
+							     never held. The badge still shows the resolved role. -->
+							<div class=" translate-y-0.5">
 								<Badge
 									type={user.role === 'admin' ? 'info' : user.role === 'user' ? 'success' : 'muted'}
 									content={$i18n.t(user.role)}
 								/>
-							</button>
+							</div>
 						</td>
 						<td class="px-3 py-1 font-medium text-gray-900 dark:text-white max-w-48">
 							<div class="flex items-center gap-2">
@@ -412,20 +390,9 @@
 
 						<td class="px-3 py-1 text-right">
 							<div class="flex justify-end w-full">
-								{#if $config.features.enable_admin_chat_access && user.role !== 'admin'}
-									<Tooltip content={$i18n.t('Chats')}>
-										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-											aria-label={$i18n.t('Chats')}
-											on:click={async () => {
-												showUserChatsModal = !showUserChatsModal;
-												selectedUser = user;
-											}}
-										>
-											<ChatBubbles />
-										</button>
-									</Tooltip>
-								{/if}
+								<!-- Sunway: the per-user Chats button was deleted here (hardening plan Item 3).
+								     It opened UserChatsModal, the only caller of GET /chats/list/user/{id} --
+								     one admin reading another user's chats. Both are gone. -->
 
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Preview Access')}>
@@ -460,31 +427,8 @@
 									</Tooltip>
 								{/if}
 
-								<Tooltip content={$i18n.t('Edit User')}>
-									<button
-										class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-										aria-label={$i18n.t('Edit User')}
-										on:click={async () => {
-											showEditUserModal = !showEditUserModal;
-											selectedUser = user;
-										}}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="1.5"
-											stroke="currentColor"
-											class="w-4 h-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-											/>
-										</svg>
-									</button>
-								</Tooltip>
+								<!-- Sunway: the Edit User button was deleted here (hardening plan Item 5).
+								     POST /api/v1/users/{id}/update is gone; the user list is read-only. -->
 
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Delete User')}>

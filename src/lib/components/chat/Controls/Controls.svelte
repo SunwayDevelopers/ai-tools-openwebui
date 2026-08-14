@@ -5,7 +5,6 @@
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AdvancedParams from '../Settings/Advanced/AdvancedParams.svelte';
-	import Valves from '$lib/components/chat/Controls/Valves.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 	import Check from '$lib/components/icons/Check.svelte';
@@ -34,7 +33,6 @@
 	};
 
 	let showFiles = getOpen('files');
-	let showValves = getOpen('valves', false);
 	let showSystemPrompt = getOpen('systemPrompt');
 	let showAdvancedParams = getOpen('advancedParams');
 
@@ -100,21 +98,10 @@
 				<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
 			{/if}
 
-			<!-- Sunway: Valves hidden — per-chat Controls re-enabled for System Prompt only (see CLAUDE.md). -->
-			{#if false && ($user?.role === 'admin' || ($user?.permissions.chat?.valves ?? true))}
-				<Collapsible
-					bind:open={showValves}
-					onChange={setOpen('valves')}
-					title={$i18n.t('Valves')}
-					buttonClassName="w-full"
-				>
-					<div class="text-sm" slot="content">
-						<Valves show={showValves} />
-					</div>
-				</Collapsible>
-
-				<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
-			{/if}
+			<!-- Sunway: the Valves section was deleted here (hardening plan Item 2, frontend half).
+			     It was already `{#if false}`-gated; Controls/Valves.svelte edited tool and function
+			     valves through /api/v1/tools/id/{id}/valves/* and /api/v1/functions/*, all of which
+			     are now deleted. -->
 
 			{#if $user?.role === 'admin' || ($user?.permissions.chat?.system_prompt ?? true)}
 				<!-- Sunway: slot-mode header. The header slot now holds ONLY the title — the save

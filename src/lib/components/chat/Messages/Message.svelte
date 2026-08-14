@@ -31,7 +31,6 @@
 	export let saveMessage;
 	export let deleteMessage;
 	export let rateMessage;
-	export let actionMessage;
 	export let submitMessage;
 
 	export let regenerateResponse;
@@ -89,7 +88,6 @@
 				{editMessage}
 				{saveMessage}
 				{rateMessage}
-				{actionMessage}
 				{submitMessage}
 				{deleteMessage}
 				{continueResponse}
@@ -112,7 +110,6 @@
 					{editMessage}
 					{saveMessage}
 					{rateMessage}
-					{actionMessage}
 					{submitMessage}
 					{deleteMessage}
 					{continueResponse}

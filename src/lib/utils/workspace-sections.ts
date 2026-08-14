@@ -5,14 +5,14 @@
 // reason as lib/utils/admin-settings-tabs.ts: the entry redirect used to hard-code
 // '/workspace/models', so hiding Models left it redirecting into a hidden section.
 //
-// Section components and routes are left fully intact — only navigation is gated.
+// Section components and routes are left intact for the sections listed below — only navigation
+// is gated. EXCEPTION: Tools is gone entirely (hardening plan Item 2), so it appears in neither
+// list: its routes, components and 13 authoring API clients are deleted, not hidden.
 // See CLAUDE.md → "Deferred / hidden features" for the per-section rationale.
 
 export const HIDDEN_WORKSPACE_SECTIONS = [
 	// deferred (no custom presets)
 	'models',
-	// deferred (arbitrary-code risk)
-	'tools',
 	// deferred — same arbitrary-code class as Tools; schat-ba-docs governance/decisions.md:312
 	'skills',
 	// hidden 2026-08-05, reversing AUDIT-020: intended BU-admin/user hidden + super-admin
@@ -21,7 +21,7 @@ export const HIDDEN_WORKSPACE_SECTIONS = [
 ];
 
 // Order matters: the first visible section is where /workspace lands.
-export const ALL_WORKSPACE_SECTIONS = ['models', 'knowledge', 'prompts', 'tools', 'skills'];
+export const ALL_WORKSPACE_SECTIONS = ['models', 'knowledge', 'prompts', 'skills'];
 
 export const VISIBLE_WORKSPACE_SECTIONS = ALL_WORKSPACE_SECTIONS.filter(
 	(section) => !HIDDEN_WORKSPACE_SECTIONS.includes(section)

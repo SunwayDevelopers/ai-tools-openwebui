@@ -333,7 +333,6 @@ type Config = {
 		// restart applies them). Optional because an older backend simply omits them,
 		// and the consuming gates treat "absent" as visible.
 		enable_admin_settings_ui?: boolean;
-		enable_admin_functions_ui?: boolean;
 		enable_community_sharing: boolean;
 		enable_memories: boolean;
 		enable_autocomplete_generation: boolean;

@@ -851,14 +851,14 @@ ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == '
 # holding an admin token — this removes the UI, not the endpoint. It reduces accident and
 # casual discovery, not a determined actor.
 #
-# UPDATED 2026-08-13: this note used to name /api/v1/functions/* alongside it. That router
-# is now DELETED (hardening plan Item 2), so ENABLE_ADMIN_FUNCTIONS_UI hides a page whose
-# backend no longer exists — the capability is gone, not merely hidden. The flag itself is
-# scheduled for removal with the admin Functions pages in the frontend half of Item 2;
-# until those pages go, leaving it in place keeps the nav entry hideable rather than
-# rendering a link to a page that 404s.
+# ENABLE_ADMIN_FUNCTIONS_UI RETIRED 2026-08-14 (hardening plan Item 2). The Functions router,
+# its admin pages and its API client are deleted, so there is no page left to gate — a flag that
+# hides a route which no longer exists is worse than no flag, because it reads as though the
+# capability is merely switched off. Anything still setting ENABLE_ADMIN_FUNCTIONS_UI in a
+# manifest is now inert and can be dropped. The guardrail filter that made this UI load-bearing
+# is a code module (backend/open_webui/filters/), which cannot be installed or re-valved over
+# HTTP at all.
 ENABLE_ADMIN_SETTINGS_UI = os.getenv('ENABLE_ADMIN_SETTINGS_UI', 'True').lower() == 'true'
-ENABLE_ADMIN_FUNCTIONS_UI = os.getenv('ENABLE_ADMIN_FUNCTIONS_UI', 'True').lower() == 'true'
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA

@@ -90,7 +90,6 @@
 	import { getAndUpdateUserLocation, getUserSettings } from '$lib/apis/users';
 	import {
 		generateQueries,
-		chatAction,
 		generateMoACompletion,
 		stopTask,
 		stopTasksByChatId,
@@ -1646,58 +1645,9 @@
 		taskIds = null;
 	};
 
-	const chatActionHandler = async (_chatId, actionId, modelId, responseMessageId, event = null) => {
-		const messages = createMessagesList(history, responseMessageId);
-
-		const res = await chatAction(localStorage.token, actionId, {
-			model: modelId,
-			messages: messages.map((m) => ({
-				id: m.id,
-				role: m.role,
-				content: m.content,
-				info: m.info ? m.info : undefined,
-				timestamp: m.timestamp,
-				...(m.sources ? { sources: m.sources } : {})
-			})),
-			...(event ? { event: event } : {}),
-			model_item: $models.find((m) => m.id === modelId),
-			chat_id: _chatId,
-			session_id: $socket?.id,
-			id: responseMessageId
-		}).catch((error) => {
-			toast.error(`${error}`);
-			messages.at(-1).error = { content: error };
-			return null;
-		});
-
-		if (res !== null && res.messages) {
-			// Update chat history with the new messages
-			for (const message of res.messages) {
-				history.messages[message.id] = {
-					...history.messages[message.id],
-					...(history.messages[message.id].content !== message.content
-						? { originalContent: history.messages[message.id].content }
-						: {}),
-					...message
-				};
-			}
-		}
-
-		if ($chatId == _chatId) {
-			if (!$temporaryChatEnabled) {
-				chat = await updateChatById(localStorage.token, _chatId, {
-					models: selectedModels,
-					messages: messages,
-					history: history,
-					params: params,
-					files: chatFiles
-				});
-
-				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
-			}
-		}
-	};
+	// Sunway: chatActionHandler was deleted here (hardening plan Item 2, frontend half). It
+	// posted to /api/chat/actions/{id} to run a `function` row of type `action`; the endpoint,
+	// the router and the action buttons that called it are all gone.
 
 	const getChatEventEmitter = async (modelId: string, chatId: string = '') => {
 		return setInterval(() => {
@@ -3268,7 +3218,6 @@
 										{continueResponse}
 										{regenerateResponse}
 										{mergeResponses}
-										{chatActionHandler}
 										{addMessages}
 										topPadding={true}
 										bottomPadding={files.length > 0}

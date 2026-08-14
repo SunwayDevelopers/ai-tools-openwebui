@@ -169,20 +169,11 @@
 							</a>
 						{/if}
 
-						<!-- Sunway: Tools workspace deferred (arbitrary-code risk) — hidden for everyone incl. admins.
-						     Original gate was: user.role === 'admin' OR permissions.workspace.tools -->
-						{#if false}
-							<a
-								draggable="false"
-								aria-current={$page.url.pathname.includes('/workspace/tools') ? 'page' : null}
-								class="min-w-fit p-1.5 {$page.url.pathname.includes('/workspace/tools')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-								href="/workspace/tools"
-							>
-								{$i18n.t('Tools')}
-							</a>
-						{/if}
+						<!-- Sunway: the Tools nav entry was deleted here (hardening plan Item 2, frontend
+						     half). It was already hidden for everyone; the workspace/tools routes, the
+						     Tools components and the 13 tool-authoring API clients are now deleted too.
+						     Tool SERVERS (Sdeck's MCP path) are unaffected -- they are configured in
+						     Admin Settings, not here. -->
 					</div>
 				</div>
 

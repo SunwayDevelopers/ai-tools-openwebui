@@ -2,14 +2,12 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 
-	import { createEventDispatcher, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { onMount, tick, getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType, t } from 'i18next';
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
-
-	const dispatch = createEventDispatcher();
 
 	import { getChatById } from '$lib/apis/chats';
 	import { generateTags } from '$lib/apis';
@@ -146,7 +144,6 @@
 	export let editMessage: Function;
 	export let saveMessage: Function;
 	export let rateMessage: Function;
-	export let actionMessage: Function;
 	export let deleteMessage: Function;
 
 	export let submitMessage: Function;
@@ -1123,36 +1120,12 @@
 												class="hidden regenerate-response-button"
 												on:click={() => {
 													regenerateResponse(message);
-
-													(model?.actions ?? []).forEach((action) => {
-														dispatch('action', {
-															id: action.id,
-															event: {
-																id: 'regenerate-response',
-																data: {
-																	messageId: message.id
-																}
-															}
-														});
-													});
 												}}
 											/>
 
 											<RegenerateMenu
 												onRegenerate={(prompt = null) => {
 													regenerateResponse(message, prompt);
-
-													(model?.actions ?? []).forEach((action) => {
-														dispatch('action', {
-															id: action.id,
-															event: {
-																id: 'regenerate-response',
-																data: {
-																	messageId: message.id
-																}
-															}
-														});
-													});
 												}}
 											>
 												<Tooltip content={$i18n.t('Regenerate')} placement="bottom">
@@ -1190,18 +1163,6 @@
 														: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition regenerate-response-button"
 													on:click={() => {
 														regenerateResponse(message);
-
-														(model?.actions ?? []).forEach((action) => {
-															dispatch('action', {
-																id: action.id,
-																event: {
-																	id: 'regenerate-response',
-																	data: {
-																		messageId: message.id
-																	}
-																}
-															});
-														});
 													}}
 												>
 													<svg
@@ -1262,36 +1223,10 @@
 										{/if}
 									{/if}
 
-									{#each model?.actions ?? [] as action}
-										<Tooltip content={action.name} placement="bottom">
-											<button
-												type="button"
-												aria-label={action.name}
-												class="{isLastMessage || ($settings?.highContrastMode ?? false)
-													? 'visible'
-													: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
-												on:click={() => {
-													actionMessage(action.id, message);
-												}}
-											>
-												{#if action?.icon}
-													<div class="size-4">
-														<img
-															src={action.icon}
-															class="w-4 h-4 {action.icon.includes('data:image/svg')
-																? 'dark:invert-[80%]'
-																: ''}"
-															style="fill: currentColor;"
-															alt={action.name}
-															draggable="false"
-														/>
-													</div>
-												{:else}
-													<Sparkles strokeWidth="2.1" className="size-4" />
-												{/if}
-											</button>
-										</Tooltip>
-									{/each}
+									<!-- Sunway: the custom-action buttons were deleted here (hardening plan Item 2,
+									     frontend half). `model.actions` was populated from `function` rows of type
+									     `action`, exec()'d server-side; that table can no longer hold a row, so this
+									     always rendered nothing. POST /api/chat/actions/{id} is deleted too. -->
 								{/if}
 							{/if}
 						{/if}

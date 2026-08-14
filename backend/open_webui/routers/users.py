@@ -3,8 +3,6 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -24,12 +22,9 @@ from open_webui.models.users import (
     UserGroupIdsModel,
     UserInfoListResponse,
     UserInfoResponse,
-    UserModel,
-    UserRoleUpdateForm,
     Users,
     UserSettings,
     UserStatus,
-    UserUpdateForm,
 )
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.knowledge import Knowledges
@@ -39,9 +34,7 @@ from open_webui.socket.main import disconnect_user_sessions
 from open_webui.utils.access_control import get_permissions, has_permission
 from open_webui.utils.auth import (
     get_admin_user,
-    get_password_hash,
     get_verified_user,
-    validate_password,
 )
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -540,102 +533,29 @@ async def get_user_active_status_by_id(
 
 
 ############################
-# UpdateUserById
+# UpdateUserById -- DELETED (hardening plan Item 5)
 ############################
-
-
-@router.post('/{user_id}/update', response_model=UserModel | None)
-async def update_user_by_id(
-    user_id: str,
-    form_data: UserUpdateForm,
-    session_user: UserModel = Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_session),
-):
-    # Prevent modification of the primary admin user by other admins
-    try:
-        first_user = await Users.get_first_user(db=db)
-        if first_user:
-            if user_id == first_user.id:
-                if session_user.id != user_id:
-                    # If the user trying to update is the primary admin, and they are not the primary admin themselves
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=ERROR_MESSAGES.ACTION_PROHIBITED,
-                    )
-
-                if form_data.role is not None and form_data.role != 'admin':
-                    # If the primary admin is trying to change their own role, prevent it
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=ERROR_MESSAGES.ACTION_PROHIBITED,
-                    )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f'Error checking primary admin status: {e}')
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail='Could not verify primary admin status.',
-        )
-
-    user = await Users.get_user_by_id(user_id, db=db)
-
-    if user:
-        if form_data.email is not None and form_data.email.lower() != user.email:
-            email_user = await Users.get_user_by_email(form_data.email.lower(), db=db)
-            if email_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.EMAIL_TAKEN,
-                )
-
-        if form_data.password:
-            try:
-                validate_password(form_data.password)
-            except Exception as e:
-                raise HTTPException(400, detail=str(e))
-
-            hashed = get_password_hash(form_data.password)
-            await Auths.update_user_password_by_id(user_id, hashed, db=db)
-
-        # Build update dict from only the provided fields
-        update_data = {}
-        if form_data.role is not None:
-            update_data['role'] = form_data.role
-        if form_data.name is not None:
-            update_data['name'] = form_data.name
-        if form_data.email is not None:
-            update_data['email'] = form_data.email.lower()
-            await Auths.update_email_by_id(user_id, form_data.email.lower(), db=db)
-        if form_data.profile_image_url is not None:
-            update_data['profile_image_url'] = form_data.profile_image_url
-
-        if update_data:
-            updated_user = await Users.update_user_by_id(
-                user_id,
-                update_data,
-                db=db,
-            )
-        else:
-            updated_user = user
-
-        if updated_user:
-            # If the role changed, disconnect all socket sessions so stale
-            # privileges cached in SESSION_POOL are invalidated.
-            if updated_user.role != user.role:
-                await disconnect_user_sessions(user_id)
-            return updated_user
-
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(),
-        )
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=ERROR_MESSAGES.USER_NOT_FOUND,
-    )
+#
+# POST /{user_id}/update is gone, and the user list is now read-only. It protected only the
+# FIRST account ever created, so any admin could edit any OTHER admin -- including their
+# role. Under multi-tenancy `admin` is a per-tenant IAM role, so that meant every
+# departmental admin.
+#
+# Deleting it rather than adding a rule is deliberate: every field on that form belonged to
+# IAM, so none of the edits actually held.
+#
+#   role   re-read from IAM on every request (utils/auth.py) -- a local change is silently
+#          overwritten the moment that user next does anything. It looks like it worked,
+#          then reverts.
+#   email  the IAM entitlement key. Changing it locally breaks the mapping between the
+#          schat row and the IAM membership, so the user is re-provisioned as a NEW account
+#          on their next request, orphaning the original row. This was the genuinely
+#          damaging one -- persistent, and not self-healing like role.
+#   name   synced from the IAM identity at provisioning.
+#
+# So "an admin cannot promote another admin" now holds BY CONSTRUCTION -- no code path
+# exists, no rule to enforce, nothing for a future change to get wrong -- and three
+# controls that never worked are gone with it. UserUpdateForm stays in models/users.py.
 
 
 ############################
@@ -696,9 +616,19 @@ async def delete_user_by_id(
             detail='Could not verify primary admin status.',
         )
 
+    # Sunway: an admin may not delete ANOTHER admin (hardening plan Item 5). Upstream
+    # protected only the first-created account, so admin A could delete admin B. Under
+    # multi-tenancy `admin` is a per-tenant IAM role, which made that reachable by every
+    # departmental admin. Deleting yourself is still refused further down.
+    target = await Users.get_user_by_id(user_id, db=db)
+    if target and target.role == 'admin' and user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACTION_PROHIBITED,
+        )
+
     if user.id != user_id:
         # Revoke tenant access first (fails closed under MT before the local row goes).
-        target = await Users.get_user_by_id(user_id, db=db)
         if target and target.email:
             await _revoke_iam_membership(request, target.email.lower())
 
