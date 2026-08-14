@@ -1420,7 +1420,12 @@ app.add_middleware(
 app.mount('/ws', socket_app)
 
 
-app.include_router(ollama.router, prefix='/ollama', tags=['ollama'])
+# Sunway: the Ollama router is no longer mounted (hardening plan Item 6). All 44 routes were
+# deleted -- 19 admin (pull/push/create/copy/delete/upload/config), 22 user-facing proxies, and
+# three with no authentication. Ollama is out of scope: models are served by MLIS/vLLM over the
+# OpenAI-compatible API, and Ollama is deployed nowhere. The module remains because the provider
+# dispatch in utils/chat.py, utils/embeddings.py and utils/models.py imports four symbols from
+# it; see routers/ollama.py for what stays and why none of it is reachable over HTTP.
 app.include_router(openai.router, prefix='/openai', tags=['openai'])
 
 
