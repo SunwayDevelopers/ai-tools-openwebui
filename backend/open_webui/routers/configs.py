@@ -7,7 +7,7 @@ from typing import Optional
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request
 from mcp.shared.auth import OAuthMetadata
-from open_webui.config import BannerModel, async_save_config, get_config, save_config
+from open_webui.config import BannerModel
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL, AIOHTTP_CLIENT_TIMEOUT
 from open_webui.models.oauth_sessions import OAuthSessions
 from open_webui.utils.auth import get_admin_user, get_verified_user
@@ -42,25 +42,22 @@ log = logging.getLogger(__name__)
 ############################
 
 
-class ImportConfigForm(BaseModel):
-    config: dict
-
-
-@router.post('/import', response_model=dict)
-async def import_config(request: Request, form_data: ImportConfigForm, user=Depends(get_admin_user)):
-    await async_save_config(form_data.config)
-    request.app.state.config._sync_to_redis()
-    return get_config()
-
-
-############################
-# ExportConfig
-############################
-
-
-@router.get('/export', response_model=dict)
-async def export_config(user=Depends(get_admin_user)):
-    return get_config()
+# Sunway: POST /import and GET /export were deleted here (hardening plan Item 7; deletion
+# manifest calls /export "the highest-value endpoint on this list to an attacker").
+#
+# Both returned get_config() -- the ENTIRE config row -- with no masking whatsoever, so both
+# leaked every stored credential in one response, including a Kubernetes ServiceAccount token
+# (findings report C4). utils/secret_masking.py exists precisely to keep credentials out of
+# admin config responses and is applied to /openai/config, /retrieval/config, /images/config
+# and /audio/config -- these two bypassed it entirely by returning the raw snapshot.
+#
+# DELETING /export ALONE WOULD HAVE BEEN THEATRE: /import returns get_config() too, so an
+# admin could POST the config back unchanged and read every secret out of the response.
+#
+# /import was also a process-global config WRITE from an uploaded file -- no tenant component,
+# so under multi-tenancy one departmental admin's upload lands on every pod for every tenant.
+# Config belongs in the ConfigMap, which is the whole point of Item 7; a browser file-picker is
+# not a deployment mechanism.
 
 
 ############################
