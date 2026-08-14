@@ -13,7 +13,6 @@
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ChartLine from './ChartLine.svelte';
-	import AnalyticsModelModal from './AnalyticsModelModal.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { formatNumber } from '$lib/utils';
@@ -67,8 +66,6 @@
 	let loading = true;
 
 	// Selected model for drill-down
-	let selectedModel: { id: string; name: string } | null = null;
-	let showModelModal = false;
 
 	// Sorting
 	let modelOrderBy = 'count';
@@ -220,13 +217,12 @@
 	</div>
 </div>
 
-<!-- Model Details Modal -->
-<AnalyticsModelModal
-	bind:show={showModelModal}
-	model={selectedModel}
-	startDate={getDateRange(selectedPeriod).start}
-	endDate={getDateRange(selectedPeriod).end}
-/>
+<!--
+	Sunway: the model-details modal was deleted here (hardening plan Item 3). It was the only
+	caller of GET /analytics/models/{id}/chats and /models/{id}/overview -- the two endpoints
+	that returned message previews and conversation tags, i.e. the admin-reads-user-messages
+	path. The five endpoints backing the dashboard below return counts and totals only.
+-->
 
 <!-- Summary stats -->
 {#if !loading}
@@ -379,13 +375,7 @@
 					</thead>
 					<tbody>
 						{#each sortedModels as model, idx (model.model_id)}
-							<tr
-								class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-								on:click={() => {
-									selectedModel = { id: model.model_id, name: model.name };
-									showModelModal = true;
-								}}
-							>
+							<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 								<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
 								<td class="px-3 py-1 font-medium text-gray-900 dark:text-white">
 									<div class="flex items-center gap-2">
