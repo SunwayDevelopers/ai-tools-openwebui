@@ -249,7 +249,49 @@ Feature gates, not cross-user access.
 **⚠ Not addressed by this row.** These controls stop *future* reads. Message content already
 stored — including any personal data — is untouched, as are database backups. See §4.
 
-### 3.3 Removed — Channels, and the only unauthenticated write endpoint
+### 3.3 Removed — administrative access to other users' files
+
+| | |
+|---|---|
+| **What** | Nine admin bypasses in `routers/files.py`, one in `routers/retrieval.py`, and `DELETE /api/v1/files/all` |
+| **Class** | Removed |
+| **Mechanism** | code deleted; access is ownership or an explicit grant, for every role |
+
+**Justification.** The same pattern as §3.2, on data that is arguably more sensitive — a document
+a user uploaded, rather than the conversation about it. Every file endpoint carried
+`or user.role == 'admin'` in its access check, covering metadata, extracted text, the file bytes,
+the HTML rendering, renaming and deletion.
+
+**The listing endpoints were the worst of it.** `GET /files/` and `GET /files/search` passed
+`user_id=None` for an admin when `BYPASS_ADMIN_ACCESS_CONTROL` was set — which **defaults true** —
+so an admin was handed *every user's file list*. No id-guessing was needed; the ids were simply
+provided, and each could then be read.
+
+That flag is **left untouched elsewhere**, and the distinction is the point: for knowledge bases,
+models, prompts and skills it gates curated **workspace content**, where admin visibility is
+intended. An uploaded document is **user data**. Only the `files.py` uses were removed.
+
+**One reached through a different router.** `POST /api/v1/retrieval/process/file` had the same
+admin lookup. Because the caller chooses `collection_name`, that allowed embedding another user's
+document into a collection they control and then querying it — a read path via RAG rather than
+via the file API.
+
+**`DELETE /api/v1/files/all` deleted.** It called `Files.delete_all_files()`,
+`Storage.delete_all_files()` **and** `ASYNC_VECTOR_DB_CLIENT.reset()` — every user's uploads plus
+the entire vector database, from one admin request, with nothing scoped to a tenant. Its "Reset
+Upload Directory" button in Admin → Settings → Documents went with it. "Reset Vector
+Storage/Knowledge" is untouched.
+
+**What deliberately stays.** `GET /files/{id}/content/html` checks the **file owner's** role and
+serves inline only when an admin uploaded it. That is an XSS guard against user-supplied HTML,
+not an access bypass, and removing it would be a regression.
+
+**Provenance, because it affects who should review this.** The deletion manifest flagged
+`DELETE /files/all` and a separate config-write defect at `files.py:380-382`. The nine admin
+bypasses and the `retrieval.py` one were **not** in any report — they were found while closing the
+equivalent paths in `chats.py`.
+
+### 3.4 Removed — Channels, and the only unauthenticated write endpoint
 
 | | |
 |---|---|
@@ -280,7 +322,7 @@ components also had to be relocated rather than deleted — a profile hovercard 
 input that Notes, the workspace member selector and the admin user list all depend on. They now
 live under `components/common/`.
 
-### 3.4 Removed — Evaluations, and with it Good/Bad message ratings
+### 3.5 Removed — Evaluations, and with it Good/Bad message ratings
 
 | | |
 |---|---|
@@ -299,7 +341,7 @@ hidden by a flag, restorable by flipping it. The three endpoints the thumbs call
 deleting it **moves message rating from deferred to removed**. Restoring ratings now means
 restoring code, not changing configuration. That is a deliberate consequence, not an oversight.
 
-### 3.5 Removed — one admin editing another admin
+### 3.6 Removed — one admin editing another admin
 
 | | |
 |---|---|
@@ -335,7 +377,7 @@ never worked are removed with it.
 button was already hidden for admin targets in the UI; the 403 makes that a real check rather
 than an assumption, since UI hiding is not a boundary (§3.6).
 
-### 3.6 Deferred — features hidden for phase 1
+### 3.7 Deferred — features hidden for phase 1
 
 Hidden rather than removed because each is a candidate for a later phase. Code is retained
 behind a guard or flag; nothing is deleted.
@@ -359,7 +401,7 @@ not claimed as one.
 **Reversal.** Each is re-enabled by its flag or by unwrapping its guard; `CLAUDE.md` records the
 specific lever per feature.
 
-### 3.7 Retained, gated — terminals
+### 3.8 Retained, gated — terminals
 
 | | |
 |---|---|

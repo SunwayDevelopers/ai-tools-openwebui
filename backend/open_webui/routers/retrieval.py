@@ -1641,10 +1641,11 @@ async def process_file(
     Note: granular session management is used to prevent connection pool exhaustion.
     The session is committed before external API calls, and updates use a fresh session.
     """
-    if user.role == 'admin':
-        file = await Files.get_file_by_id(form_data.file_id, db=db)
-    else:
-        file = await Files.get_file_by_id_and_user_id(form_data.file_id, user.id, db=db)
+    # Sunway: the admin lookup was removed here (hardening plan). It let an admin process ANY
+    # user's file -- and because the caller chooses `collection_name`, that meant embedding
+    # someone else's document into a collection they control and then querying it. Same class as
+    # the routers/files.py bypasses closed alongside this, just reached through the RAG path.
+    file = await Files.get_file_by_id_and_user_id(form_data.file_id, user.id, db=db)
 
     if file:
         try:

@@ -20,9 +20,7 @@
 	} from '$lib/apis/retrieval';
 
 	import { reindexKnowledgeFiles } from '$lib/apis/knowledge';
-	import { deleteAllFiles } from '$lib/apis/files';
 
-	import ResetUploadDirConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ResetVectorDBConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ReindexKnowledgeFilesConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
@@ -37,7 +35,6 @@
 	let updateRerankingModelLoading = false;
 
 	let showResetConfirm = false;
-	let showResetUploadDirConfirm = false;
 	let showReindexConfirm = false;
 
 	let RAG_EMBEDDING_ENGINE = '';
@@ -322,20 +319,6 @@
 		extractionABLoaded = true;
 	});
 </script>
-
-<ResetUploadDirConfirmDialog
-	bind:show={showResetUploadDirConfirm}
-	on:confirm={async () => {
-		const res = await deleteAllFiles(localStorage.token).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			toast.success($i18n.t('Success'));
-		}
-	}}
-/>
 
 <ResetVectorDBConfirmDialog
 	bind:show={showResetConfirm}
@@ -1620,20 +1603,11 @@
 
 					<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
 
-					<div class="  mb-2.5 flex w-full justify-between">
-						<div class=" self-center text-xs font-medium">{$i18n.t('Reset Upload Directory')}</div>
-						<div class="flex items-center relative">
-							<button
-								class="text-xs"
-								type="button"
-								on:click={() => {
-									showResetUploadDirConfirm = true;
-								}}
-							>
-								{$i18n.t('Reset')}
-							</button>
-						</div>
-					</div>
+					<!-- Sunway: "Reset Upload Directory" was deleted here (deletion manifest). It called
+					     DELETE /api/v1/files/all, which wiped every user's uploads and reset the whole
+					     vector database in one request. That is an operator action at the cluster
+					     layer, not a browser button -- and under multi-tenancy the caller could be any
+					     departmental admin. "Reset Vector Storage/Knowledge" below is untouched. -->
 
 					<div class="  mb-2.5 flex w-full justify-between">
 						<div class=" self-center text-xs font-medium">
