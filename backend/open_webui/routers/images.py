@@ -16,7 +16,6 @@ import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from open_webui.config import (
-    CACHE_DIR,
     IMAGE_AUTO_SIZE_MODELS_REGEX_PATTERN,
     IMAGE_URL_RESPONSE_MODELS_REGEX_PATTERN,
 )
@@ -46,8 +45,9 @@ log = logging.getLogger(__name__)
 
 # An image can lie as easily as it can illuminate. Let what
 # is generated here be honest about what it shows.
-IMAGE_CACHE_DIR = CACHE_DIR / 'image' / 'generations'
-IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Sunway: IMAGE_CACHE_DIR was removed here. It was declared and its directory created on every
+# import, but nothing ever wrote to it -- generated images go through upload_file_handler() and
+# become File rows with ownership. It only existed to be served by the deleted /cache mount.
 
 router = APIRouter()
 

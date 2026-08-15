@@ -291,7 +291,44 @@ not an access bypass, and removing it would be a regression.
 bypasses and the `retrieval.py` one were **not** in any report — they were found while closing the
 equivalent paths in `chats.py`.
 
-### 3.4 Removed — Channels, and the only unauthenticated write endpoint
+### 3.4 Removed — the unauthenticated-by-tenant cache route
+
+| | |
+|---|---|
+| **What** | `GET /cache/{path}` |
+| **Class** | Removed |
+| **Mechanism** | route deleted; nothing migrated, because nothing referenced it |
+
+**Justification.** Security review finding **H5b**, rated High. The route required only
+`get_verified_user` and performed **no ownership check and no tenant check**, so any logged-in
+user who learned or guessed a path read that artifact — generated images, TTS audio, tool
+output — **across users and across tenants**.
+
+The cross-tenant part had two independent causes, and both are worth recording: `CACHE_DIR` is a
+single filesystem path shared by every tenant on the pod, and `/cache` was on the tenant
+middleware's `_SYSTEM_PATH_PREFIXES` bypass list, so tenant resolution never ran for it. That
+entry has been removed too.
+
+**This is the finding the VAPT tester demonstrated** by retrieving another user's generated
+images. Worth being precise about, because it was initially assumed to be an admin capability:
+it required **no admin role at all**, and it reached **across tenants**, not just within one.
+
+**Why deletion needed no migration.** The review offered two fixes and preferred re-serving
+artifacts through `/api/v1/files/{id}`. On inspection the route was already **unreferenced**:
+generated images go through `upload_file_handler()` and become File rows with ownership; TTS
+audio is returned directly by `/api/v1/audio/speech` via its own `FileResponse`; and nothing in
+the backend or the frontend constructs a `/cache/` URL. `IMAGE_CACHE_DIR` was declared and its
+directory created on every import but never written to. Deleting the mount removed the exposure
+without moving anything.
+
+**Sequencing note.** The review's preferred fix routed cache artifacts through `files.py` — which
+at the time had nine admin bypasses of its own (§3.3). Doing that first would have moved the
+problem rather than fixed it. §3.3 landed first for that reason.
+
+**Residual.** A chat predating the current image pipeline could in principle hold a `/cache/...`
+URL that now 404s. `CHAT_RETENTION_DAYS` is 30, so such history has long since been purged.
+
+### 3.5 Removed — Channels, and the only unauthenticated write endpoint
 
 | | |
 |---|---|
@@ -322,7 +359,7 @@ components also had to be relocated rather than deleted — a profile hovercard 
 input that Notes, the workspace member selector and the admin user list all depend on. They now
 live under `components/common/`.
 
-### 3.5 Removed — Evaluations, and with it Good/Bad message ratings
+### 3.6 Removed — Evaluations, and with it Good/Bad message ratings
 
 | | |
 |---|---|
@@ -341,7 +378,7 @@ hidden by a flag, restorable by flipping it. The three endpoints the thumbs call
 deleting it **moves message rating from deferred to removed**. Restoring ratings now means
 restoring code, not changing configuration. That is a deliberate consequence, not an oversight.
 
-### 3.6 Removed — one admin editing another admin
+### 3.7 Removed — one admin editing another admin
 
 | | |
 |---|---|
@@ -377,7 +414,7 @@ never worked are removed with it.
 button was already hidden for admin targets in the UI; the 403 makes that a real check rather
 than an assumption, since UI hiding is not a boundary (§3.6).
 
-### 3.7 Deferred — features hidden for phase 1
+### 3.8 Deferred — features hidden for phase 1
 
 Hidden rather than removed because each is a candidate for a later phase. Code is retained
 behind a guard or flag; nothing is deleted.
@@ -401,7 +438,7 @@ not claimed as one.
 **Reversal.** Each is re-enabled by its flag or by unwrapping its guard; `CLAUDE.md` records the
 specific lever per feature.
 
-### 3.8 Retained, gated — terminals
+### 3.9 Retained, gated — terminals
 
 | | |
 |---|---|

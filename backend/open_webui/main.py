@@ -33,7 +33,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from redis import Redis
@@ -100,7 +100,6 @@ from open_webui.config import (
     BYPASS_EMBEDDING_AND_RETRIEVAL,
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
     BYPASS_WEB_SEARCH_WEB_LOADER,
-    CACHE_DIR,
     CHUNK_MIN_SIZE_TARGET,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
@@ -2950,32 +2949,23 @@ async def check_db_health():
 app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
 
 
-@app.get('/cache/{path:path}')
-async def serve_cache_file(
-    path: str,
-    user=Depends(get_verified_user),
-):
-    """Serve cached files (e.g. tool outputs) with path-traversal protection.
-
-    Only ``image/*``, ``audio/*``, and ``video/*`` MIME types are served inline;
-    everything else gets a ``Content-Disposition: attachment`` header to prevent
-    XSS from user-generated HTML stored in the cache directory.
-    """
-    file_path = os.path.abspath(os.path.join(CACHE_DIR, path))
-    # trailing os.sep is required: without it, a path resolving to a sibling
-    # whose name starts with the cache-dir basename (e.g. cache_backup) passes
-    cache_root = os.path.abspath(CACHE_DIR) + os.sep
-    if not file_path.startswith(cache_root):
-        raise HTTPException(status_code=404, detail='File not found')
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail='File not found')
-
-    mime, _ = mimetypes.guess_type(file_path)
-    inline_safe = mime and mime.split('/', 1)[0] in {'image', 'audio', 'video'}
-    headers = {'X-Content-Type-Options': 'nosniff'}
-    if not inline_safe:
-        headers['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
-    return FileResponse(file_path, headers=headers)
+# Sunway: GET /cache/{path} was deleted here (security review H5b, High). It required only
+# `get_verified_user` and performed NO ownership and NO tenant check, so any logged-in user who
+# learned or guessed a path read that artifact -- generated images, TTS audio, tool output --
+# across users AND across tenants. It was also on the tenant-middleware bypass list
+# (_SYSTEM_PATH_PREFIXES), and CACHE_DIR is a single filesystem path shared by every tenant on
+# the pod, so tenant isolation never applied to it.
+#
+# The review offered two fixes and preferred the second: serve cached artifacts through
+# /api/v1/files/{id}, which does ownership checks properly, and delete this mount. That turned
+# out to need no migration at all -- the endpoint was already unreferenced. Generated images go
+# through upload_file_handler() and become File rows; TTS audio is returned directly by
+# /api/v1/audio/speech via its own FileResponse; nothing in the backend or the frontend builds a
+# /cache/ URL. Deleting the mount removes the exposure without moving anything.
+#
+# Note for anyone reading old data: a pre-2026 chat could in principle hold a /cache/... image
+# URL from an earlier version, which would now 404. CHAT_RETENTION_DAYS is 30, so any such
+# history has long since been purged.
 
 
 def swagger_ui_html(*args, **kwargs):

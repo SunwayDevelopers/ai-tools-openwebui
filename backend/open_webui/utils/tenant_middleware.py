@@ -93,7 +93,10 @@ _SYSTEM_PATH_PREFIXES = (
     '/static',
     '/assets',
     '/_app',  # SvelteKit build assets
-    '/cache',
+    # Sunway: '/cache' was removed from this list -- GET /cache/{path} is deleted (H5b). It is
+    # worth recording WHY it was here: the route sat outside tenant enforcement while serving a
+    # directory shared by every tenant on the pod, which is what made the exposure cross-tenant
+    # rather than merely cross-user. Do not re-add the prefix without a route to justify it.
 )
 
 # Data-plane prefixes that DO require a resolved tenant.
