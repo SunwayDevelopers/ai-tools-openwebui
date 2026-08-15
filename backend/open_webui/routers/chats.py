@@ -462,8 +462,12 @@ async def export_single_chat_stats(
                 detail=ERROR_MESSAGES.NOT_FOUND,
             )
 
-        # Verify the chat belongs to the user (unless admin)
-        if chat.user_id != user.id and user.role != 'admin':
+        # Sunway: the `unless admin` exemption was removed (hardening plan). This returns
+        # per-message metadata -- role, model, timestamp, content length, rating and TAGS -- for
+        # any chat by id. No message text, but conversation tags are revealing, and we deleted
+        # the analytics /overview endpoint partly because it returned exactly those. The caller
+        # is SyncStatsModal, a USER feature; there was no admin flow behind this.
+        if chat.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -1152,41 +1156,29 @@ async def delete_chat_by_id(
     # before deleting the chat to prevent orphaned requests.
     await stop_item_tasks(request.app.state.redis, id)
 
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-        if not chat:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERROR_MESSAGES.NOT_FOUND,
-            )
-        await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
+    # Sunway: the admin branch was collapsed into this one (hardening plan). It deleted ANY
+    # user's chat by id and skipped the chat.delete permission check as well. Nothing internal
+    # needed it: the retention sweep calls Chats.delete_chat_by_id() and user deletion calls
+    # Chats.delete_chats_by_user_id(), both at the model layer, never through HTTP. Admins are
+    # users, and USER_PERMISSIONS_CHAT_DELETE defaults True, so they still delete their own.
+    if not await has_permission(user.id, 'chat.delete', request.app.state.config.USER_PERMISSIONS):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
 
-        # Retention: purge files/vectors owned exclusively by this chat before it
-        # goes (chat_file links cascade away with the chat). KB/shared files kept.
-        await purge_chat_files(id, db=db)
-        result = await Chats.delete_chat_by_id(id, db=db)
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+    await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
 
-        return result
-    else:
-        if not await has_permission(user.id, 'chat.delete', request.app.state.config.USER_PERMISSIONS):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-            )
-
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
-        if not chat:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERROR_MESSAGES.NOT_FOUND,
-            )
-        await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
-
-        # Retention: purge files/vectors owned exclusively by this chat before it
-        # goes (chat_file links cascade away with the chat). KB/shared files kept.
-        await purge_chat_files(id, db=db)
-        result = await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
-        return result
+    # Retention: purge files/vectors owned exclusively by this chat before it
+    # goes (chat_file links cascade away with the chat). KB/shared files kept.
+    await purge_chat_files(id, db=db)
+    return await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
 
 
 ############################
@@ -1456,10 +1448,10 @@ async def update_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-    else:
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    # Sunway: the admin lookup was removed (hardening plan). These manage the access grants on a
+    # SHARED chat, and the only caller is ShareChatModal -- the user's own share button. An admin
+    # could otherwise read and rewrite anyone's sharing.
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1490,10 +1482,10 @@ async def get_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-    else:
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    # Sunway: the admin lookup was removed (hardening plan). These manage the access grants on a
+    # SHARED chat, and the only caller is ShareChatModal -- the user's own share button. An admin
+    # could otherwise read and rewrite anyone's sharing.
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

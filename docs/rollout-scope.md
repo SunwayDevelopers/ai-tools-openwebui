@@ -227,11 +227,24 @@ of what happened. Both are now owner-only.
 investigate a complaint or a misuse report, or correct a message in one. Restoring that requires
 a reviewed commit and a deploy, which is the intent.
 
-**What deliberately remains admin-accessible in this router**, so the boundary is on record:
-`DELETE /chats/{id}` (needed for the user-deletion cascade and the retention sweep),
-`GET /chats/stats/export/{chat_id}` (metadata only — role, model, timestamp, content length,
-rating and tags; **no message text**), and the two `/chats/shared/{id}/access` grant-management
-endpoints. Tags are the one arguable item in that list and should be confirmed as intended.
+**Four further admin bypasses were closed once their justification was actually checked.** They
+had been left on the reasoning that each served an operational need. None did:
+
+| Endpoint | Claimed need | What the code showed |
+|---|---|---|
+| `DELETE /chats/{id}` | user-deletion cascade, retention sweep | **Neither.** Retention calls `Chats.delete_chat_by_id()`; user deletion calls `Chats.delete_chats_by_user_id()`. Both at the model layer, never over HTTP. The branch also skipped the `chat.delete` permission check. |
+| `GET /chats/stats/export/{chat_id}` | admin metadata view | Sole caller is `SyncStatsModal` — a **user** feature. Returns per-message role, model, timestamp, content length, rating and **tags** for any chat. No text, but we deleted the analytics `/overview` endpoint partly *because* it returned conversation tags. |
+| `GET`/`POST /chats/shared/{id}/access` | grant management | Sole caller is `ShareChatModal` — **the user's own share button**. An admin could read and rewrite anyone's sharing. |
+
+The general point, worth carrying to the next router: these were **upstream defaults nobody chose**,
+not decisions. Users own their sharing through the share button, and the 30-chat cap and retention
+sweep handle lifecycle automatically, so no support workflow depended on any of them.
+
+**What remains admin-differentiated in this router, deliberately:** the `ENABLE_COMMUNITY_SHARING`
+gate and the `chat.share` permission check both let an admin act without the corresponding user
+permission — but every one of those paths looks the chat up with
+`get_chat_by_id_and_user_id(id, user.id)`, so an admin can only ever act on **their own** chat.
+Feature gates, not cross-user access.
 
 **⚠ Not addressed by this row.** These controls stop *future* reads. Message content already
 stored — including any personal data — is untouched, as are database backups. See §4.
