@@ -1965,64 +1965,20 @@ async def process_text(
         )
 
 
-@router.post('/process/youtube')
-@router.post('/process/web')
-async def process_web(
-    request: Request,
-    form_data: ProcessUrlForm,
-    process: bool = Query(True, description='Whether to process and save the content'),
-    overwrite: bool = Query(True, description='Whether to overwrite existing collection'),
-    user=Depends(get_verified_user),
-):
-    try:
-        content, docs = await run_in_threadpool(get_content_from_url, request, form_data.url)
-        log.debug(f'text_content: {content}')
-
-        if process:
-            collection_name = form_data.collection_name
-            if not collection_name:
-                collection_name = calculate_sha256_string(form_data.url)[:63]
-            else:
-                await _validate_collection_access([collection_name], user, access_type='write')
-
-            if not request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
-                await run_in_threadpool(
-                    save_docs_to_vector_db,
-                    request,
-                    docs,
-                    collection_name,
-                    overwrite=overwrite,
-                    add=(not overwrite),
-                    user=user,
-                )
-            else:
-                collection_name = None
-
-            return {
-                'status': True,
-                'collection_name': collection_name,
-                'filename': form_data.url,
-                'file': {
-                    'data': {
-                        'content': content,
-                    },
-                    'meta': {
-                        'name': form_data.url,
-                        'source': form_data.url,
-                    },
-                },
-            }
-        else:
-            return {
-                'status': True,
-                'content': content,
-            }
-    except Exception as e:
-        log.exception(e)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(e),
-        )
+# Sunway: POST /process/youtube and POST /process/web were deleted here (hardening plan). One
+# handler served both. They took a user-supplied URL and fetched it server-side -- the SSRF
+# surface described in docs/rollout-scope.md 4.
+#
+# Both entry points were already hidden: "Attach Webpage" in the chat + menu and the #-palette
+# URL/YouTube attach, and "Add webpage" in the Knowledge add-content menu, which is narrowed to
+# Upload files + Reset. No reachable capability is lost.
+#
+# URL reading in chat is UNAFFECTED and is the better shape anyway: the model calls the
+# built-in fetch_url tool, which goes straight to get_content_from_url() and never used this
+# endpoint. Pasting a link in a message still works.
+#
+# POST /process/web/search and the search_web() dispatcher below are DIFFERENT things -- web
+# search, in scope, untouched.
 
 
 async def search_web(request: Request, engine: str, query: str, user=None) -> list[SearchResult]:

@@ -593,18 +593,20 @@ async def create_new_chat(
 ############################
 
 
-@router.post('/import', response_model=list[ChatResponse])
-async def import_chats(
-    form_data: ChatsImportForm,
-    user=Depends(get_verified_user),
-    db: AsyncSession = Depends(get_async_session),
-):
-    try:
-        chats = await Chats.import_chats(user.id, form_data.chats, db=db)
-        return chats
-    except Exception as e:
-        log.exception(e)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT())
+# Sunway: POST /chats/import was deleted here (hardening plan). It called Chats.import_chats()
+# with no cap check, so a user could push past MAX_CHATS_PER_USER simply by importing -- the
+# limit is enforced only at /chats/new and on the completion path. The UI button was already
+# hidden for that reason, but hiding a button does not close an endpoint.
+#
+# Deleted rather than cap-enforced because the feature has no remaining flow: bulk Export is
+# hidden too, so there is nothing to import FROM within schat, and it is not a capability
+# enterprise deployments are expected to provide. Note what is NOT affected: exporting your OWN
+# chats (GET /chats/all) and the per-chat download both remain, which is the part with a
+# data-portability dimension under PDPA.
+#
+# The drag-and-drop handlers that used it were fallback-only -- they call getChatById first and
+# imported only when a dragged chat did not exist locally, i.e. a drag from a DIFFERENT schat
+# instance. Those frontend paths are removed with it.
 
 
 ############################

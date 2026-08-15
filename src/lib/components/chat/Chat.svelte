@@ -86,7 +86,7 @@
 		updateChatFolderIdById
 	} from '$lib/apis/chats';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
-	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
+	import { processWebSearch } from '$lib/apis/retrieval';
 	import { getAndUpdateUserLocation, getUserSettings } from '$lib/apis/users';
 	import {
 		generateQueries,
@@ -1119,9 +1119,11 @@
 
 		for (const fileItem of fileItems) {
 			try {
-				const res = isYoutubeUrl(fileItem.url)
-					? await processYoutubeVideo(localStorage.token, fileItem.url)
-					: await processWeb(localStorage.token, '', fileItem.url);
+				// Sunway: the web/YouTube ingest call was removed here (hardening plan). Its two
+				// endpoints are deleted; "Attach Webpage" and the #-palette URL attach were already
+				// hidden. Pasting a link in a message still works -- the model fetches it with the
+				// built-in fetch_url tool.
+				const res = null;
 
 				if (res) {
 					fileItem.status = 'uploaded';

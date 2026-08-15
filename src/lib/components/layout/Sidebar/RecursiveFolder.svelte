@@ -25,8 +25,7 @@
 		getChatById,
 		getChatsByFolderId,
 		getChatListByFolderId,
-		updateChatFolderIdById,
-		importChats
+		updateChatFolderIdById
 	} from '$lib/apis/chats';
 
 	import ChevronDown from '../../icons/ChevronDown.svelte';
@@ -157,21 +156,7 @@
 								let chat = await getChatById(localStorage.token, id).catch((error) => {
 									return null;
 								});
-								if (!chat && item) {
-									chat = await importChats(localStorage.token, [
-										{
-											chat: item.chat,
-											meta: item?.meta ?? {},
-											pinned: false,
-											folder_id: null,
-											created_at: item?.created_at ?? null,
-											updated_at: item?.updated_at ?? null
-										}
-									]).catch((error) => {
-										toast.error(`${error}`);
-										return null;
-									});
-								}
+								// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 								// Move the chat
 								const res = await updateChatFolderIdById(

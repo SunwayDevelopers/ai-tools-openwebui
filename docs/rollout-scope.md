@@ -286,10 +286,24 @@ Storage/Knowledge" is untouched.
 serves inline only when an admin uploaded it. That is an XSS guard against user-supplied HTML,
 not an access bypass, and removing it would be a regression.
 
+**This is the route behind the VAPT tester's image finding.** During the August 2026 test, an
+account holding the admin role in its own tenant retrieved **other users' generated images**. The
+path was almost certainly this one: `routers/images.py` calls `upload_file_handler(..., user=user)`,
+so a generated image is a **File row owned by the generating user** and is served by
+`GET /api/v1/files/{id}/content` — which carried the admin bypass. **Uploaded documents were
+reachable the same way**, through the identical check; the tester was unsure whether they were,
+and they were.
+
+This was initially attributed to the `/cache/{path}` route (3.4). That was wrong, and the
+distinction matters for anyone re-testing: `/cache` needs no admin role and crosses tenants, while
+this needed the admin role and stopped at the tenant boundary. Both are closed, but they are
+different findings with different blast radii.
+
 **Provenance, because it affects who should review this.** The deletion manifest flagged
 `DELETE /files/all` and a separate config-write defect at `files.py:380-382`. The nine admin
 bypasses and the `retrieval.py` one were **not** in any report — they were found while closing the
-equivalent paths in `chats.py`.
+equivalent paths in `chats.py`. So the tester demonstrated the *symptom* in August; the
+*mechanism* was not written down anywhere until now.
 
 ### 3.4 Removed — the unauthenticated-by-tenant cache route
 
@@ -309,9 +323,10 @@ single filesystem path shared by every tenant on the pod, and `/cache` was on th
 middleware's `_SYSTEM_PATH_PREFIXES` bypass list, so tenant resolution never ran for it. That
 entry has been removed too.
 
-**This is the finding the VAPT tester demonstrated** by retrieving another user's generated
-images. Worth being precise about, because it was initially assumed to be an admin capability:
-it required **no admin role at all**, and it reached **across tenants**, not just within one.
+**Not the route behind the VAPT tester's image finding**, despite the obvious similarity — that
+was the `files.py` admin bypass in 3.3, corrected below. This route is a *separate* and in one
+respect broader exposure: it needed **no admin role at all** and reached **across tenants**.
+Nobody is known to have exercised it; it was found by review, not by test.
 
 **Why deletion needed no migration.** The review offered two fixes and preferred re-serving
 artifacts through `/api/v1/files/{id}`. On inspection the route was already **unreferenced**:
@@ -438,7 +453,79 @@ not claimed as one.
 **Reversal.** Each is re-enabled by its flag or by unwrapping its guard; `CLAUDE.md` records the
 specific lever per feature.
 
-### 3.9 Retained, gated — terminals
+### 3.9 Hidden but still reachable — the honest inventory
+
+3.8 states that hiding user interface is not a security boundary. This section is the evidence
+for that claim, because "not a boundary" is easy to write and easy to skim past. It answers one
+question per feature: **with the UI hidden, can the endpoint still be called?**
+
+Each row below was checked against the code, not against the hide-site list.
+
+| Hidden feature | Flag enforced server-side? | Endpoint reachable |
+|---|---|---|
+| Memory / Personalisation | ✅ `memories.py` — 7 gates | no |
+| Chat Folders | ✅ `folders.py` | no |
+| Calendar | ✅ `calendar.py`, `automations.py` | no |
+| Automations | ✅ `automations.py` | no |
+| Chat Archive | ✅ `chats.py` | no |
+| Notes | ✅ **fixed** — router-level gate added | no |
+| Voice (STT/TTS) | ✅ **fixed** — router-level gate added | no |
+| Code Interpreter | ❌ `ENABLE_CODE_INTERPRETER` not enforced… | …but `/utils/code/execute` is gated by `ENABLE_CODE_EXECUTION`, which **is** enforced and defaults off |
+| Temporary Chat | ❌ not enforced | n/a — a temporary chat is simply one never persisted; there is no endpoint |
+| Attach Webpage | n/a | **endpoint deleted** — see below |
+| Import Chats | n/a | **endpoint deleted** — see below |
+
+**Three findings worth stating plainly.**
+
+**1. `ENABLE_NOTES` does not disable Notes.** `CLAUDE.md` groups it with the `PersistentConfig`
+flags and says those "disable the feature server-side". For Notes that is **not true** — the
+router is mounted and none of its nine routes consult the flag. Anyone with a session can create,
+read and update notes today. This is the single largest gap between what the hide-ledger claims
+and what the code does.
+
+**2. `ENABLE_VOICE` hides the UI only.** The audio routes stay mounted and callable, and they
+**write into the cache directory** — which is how a deferred feature came to populate the
+artifacts that 3.4 exposed cross-tenant. A hidden feature is not an inert one.
+
+Note the classification: Voice is **deferred, not out of scope**. A speech and translation vendor
+was seen at a workshop and remains under consideration, so this may return in a later phase. That
+makes a server-side gate the right fix rather than deletion — the code should stay, but the
+endpoints should refuse while the feature is off.
+
+**3. Attach Webpage is the SSRF surface.** Its button is hidden, but
+`POST /api/v1/retrieval/process/web` is live and takes a user-supplied URL. Any answer given to a
+questionnaire about server-side URL fetching must account for it, regardless of the UI state. The
+controls on that path are documented in §4.
+
+**All four gaps this inventory found are now closed**, by the cheapest mechanism that fits each:
+
+- **Notes** and **Voice** received router-level dependencies returning 404 while their flag is
+  off. Gated rather than deleted because both are deferred: Notes may yet find a use, and Voice is
+  under active vendor evaluation. Router-level so a route added later inherits the gate instead of
+  being forgotten. Verified: `GET /api/v1/notes/` and `GET /api/v1/audio/config` both return 404.
+- **Attach Webpage** — `POST /process/web` and `/process/youtube` deleted (one handler served
+  both). Both entry points were hidden, and URL reading in chat is unaffected: the model's
+  built-in `fetch_url` tool calls `get_content_from_url()` directly and never used the endpoint.
+  `/process/web/search` is a different thing and remains.
+- **Import Chats** — `POST /chats/import` deleted. It bypassed `MAX_CHATS_PER_USER`, which is
+  enforced only at `/chats/new` and on the completion path. Deleted rather than cap-enforced
+  because nothing imports *from* schat now that bulk export is hidden. Exporting your **own**
+  chats is untouched — that is the part with a data-portability dimension under PDPA.
+
+**Why this section still matters after the fixes.** It is the difference between "we hid it" and
+"it cannot be reached", and reviewers are entitled to ask which applies to each feature. The
+answer is now "cannot be reached" for every row — but the section stays, because the next feature
+hidden behind an `{#if false}` will need the same question asked of it.
+
+**The general lesson, recorded because it recurred three times.** A `PersistentConfig` flag does
+not disable a feature by existing; a router has to consult it. `ENABLE_NOTES` and `ENABLE_VOICE`
+both reached the browser and hid the UI while every endpoint answered normally. Voice compounded
+it: `AUDIO_STT_ENGINE` defaults to `''`, and the empty case is the **local faster-whisper** path,
+so an unconfigured deferred feature was downloading a model and running inference in the pod —
+and writing artifacts into the directory §3.4 exposed cross-tenant. Unconfigured is not the same
+as inert.
+
+### 3.10 Retained, gated — terminals
 
 | | |
 |---|---|
@@ -524,3 +611,7 @@ legal and procurement question, not an engineering one, and remains open.
 | IAM "BU admin" intended to carry schat administrative rights — confirm in writing | IAM owner | reads as signed-off design rather than a finding |
 | Admin visibility of per-user chat *metadata* — intended? | product / data protection | §3.2 residual |
 | Enterprise licence position for the intended user count | legal / procurement | §5 |
+| **Notes endpoints are live while the feature is "disabled"** — 9 routes, no flag check | engineering | §3.9; decide gate-or-delete |
+| Voice/audio endpoints reachable with `ENABLE_VOICE=false` | engineering | §3.9 |
+| `POST /retrieval/process/web` live while Attach Webpage is hidden — the SSRF surface | engineering / security | §3.9, §4 |
+| `POST /chats/import` live while the button is hidden; bypasses the 30-chat cap | product | §3.9 |

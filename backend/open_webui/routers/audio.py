@@ -43,6 +43,7 @@ from open_webui.config import (
     WHISPER_VAD_FILTER,
 )
 from open_webui.constants import ERROR_MESSAGES
+from open_webui.env import ENABLE_VOICE
 from open_webui.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
     AIOHTTP_CLIENT_TIMEOUT,
@@ -60,7 +61,36 @@ from open_webui.utils.secret_masking import mask_secrets, unmask_secret
 from open_webui.utils.session_pool import get_session
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+
+
+async def require_voice_enabled() -> None:
+    """Sunway: refuse every audio route while Voice is off (hardening plan; ledger 3.9).
+
+    ENABLE_VOICE was a frontend-only flag -- it hid the UI and no router consulted it, so
+    /api/v1/audio/* stayed callable by anyone with a session. That mattered more than a hidden
+    button usually does, for two reasons:
+
+      1. UNCONFIGURED IS NOT INERT. AUDIO_STT_ENGINE defaults to '' and the empty case is the
+         LOCAL faster-whisper path -- it downloads a model and runs inference inside the pod. So
+         "we never configured Voice" did not make Voice harmless, unlike terminals, where an
+         empty connection list genuinely means nothing to connect to.
+      2. It WROTE TO THE CACHE DIRECTORY. TTS output and transcriptions landed in CACHE_DIR,
+         which GET /cache/{path} then served with no ownership or tenant check (ledger 3.4).
+         A deferred feature was quietly producing the artifacts that route exposed.
+
+    Gated rather than deleted because Voice is DEFERRED, not out of scope: a speech and
+    translation vendor is under evaluation, so the code should stay and the endpoints should
+    refuse. Router-level, so a route added later inherits it. ENABLE_VOICE is plain env, so
+    flipping it takes only a restart.
+    """
+    if not ENABLE_VOICE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+
+router = APIRouter(dependencies=[Depends(require_voice_enabled)])
 
 # --- Constants ---
 

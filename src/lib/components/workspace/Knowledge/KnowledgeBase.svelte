@@ -42,7 +42,6 @@
 		syncKnowledgeDiff,
 		syncKnowledgeCleanup
 	} from '$lib/apis/knowledge';
-	import { processWeb, processYoutubeVideo } from '$lib/apis/retrieval';
 
 	import { blobToFile, isYoutubeUrl, copyToClipboard } from '$lib/utils';
 	import { computeFileHash } from '$lib/utils/hash';
@@ -70,14 +69,12 @@
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import AdjustmentsHorizontal from '$lib/components/icons/AdjustmentsHorizontal.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
-	import AttachWebpageModal from '$lib/components/chat/MessageInput/AttachWebpageModal.svelte';
 
 	let largeScreen = true;
 
 	let pane;
 	let showSidepanel = true;
 
-	let showAddWebpageModal = false;
 	let showAddTextContentModal = false;
 	let showNewDirectoryModal = false;
 
@@ -257,85 +254,10 @@
 		return file;
 	};
 
-	const uploadWeb = async (urls) => {
-		if (!Array.isArray(urls)) {
-			urls = [urls];
-		}
-
-		const newFileItems = urls.map((url) => ({
-			type: 'file',
-			file: '',
-			id: null,
-			url: url,
-			name: url,
-			size: null,
-			status: 'uploading',
-			error: '',
-			itemId: uuidv4()
-		}));
-
-		// Display all items at once
-		fileItems = [...newFileItems, ...(fileItems ?? [])];
-
-		for (const fileItem of newFileItems) {
-			try {
-				console.log(fileItem);
-				const res = await processWeb(localStorage.token, '', fileItem.url, false).catch((e) => {
-					console.error('Error processing web URL:', e);
-					return null;
-				});
-
-				if (res) {
-					console.log(res);
-					const file = createFileFromText(
-						// Use URL as filename, sanitized
-						fileItem.url
-							.replace(/[^a-z0-9]/gi, '_')
-							.toLowerCase()
-							.slice(0, 50),
-						res.content
-					);
-
-					const uploadedFile = await uploadFile(localStorage.token, file, {
-						knowledge_id: knowledge.id,
-						directory_id: currentDirectoryId
-					}).catch((e) => {
-						toast.error(`${e}`);
-						return null;
-					});
-
-					if (uploadedFile) {
-						console.log(uploadedFile);
-						fileItems = fileItems.map((item) => {
-							if (item.itemId === fileItem.itemId) {
-								item.id = uploadedFile.id;
-							}
-							return item;
-						});
-
-						if (uploadedFile.error) {
-							console.warn('File upload warning:', uploadedFile.error);
-							toast.warning(uploadedFile.error);
-							fileItems = fileItems.filter((file) => file.id !== uploadedFile.id);
-						} else {
-							toast.success($i18n.t('File added successfully.'));
-							init();
-						}
-					} else {
-						toast.error($i18n.t('Failed to upload file.'));
-					}
-				} else {
-					// remove the item from fileItems
-					fileItems = fileItems.filter((item) => item.itemId !== fileItem.itemId);
-					toast.error($i18n.t('Failed to process URL: {{url}}', { url: fileItem.url }));
-				}
-			} catch (e) {
-				// remove the item from fileItems
-				fileItems = fileItems.filter((item) => item.itemId !== fileItem.itemId);
-				toast.error(`${e}`);
-			}
-		}
-	};
+	// Sunway: uploadWeb() was removed here (hardening plan). It drove POST /retrieval/process/web,
+	// now deleted, from the "Add webpage" entry -- which is itself `{#if false}` in
+	// KnowledgeBase/AddContentMenu.svelte, alongside New directory, Upload directory, Sync
+	// directory and Add text content. The KB add-content menu is narrowed to Upload files + Reset.
 
 	const uploadFileHandler = async (file) => {
 		console.log(file);
@@ -1154,13 +1076,6 @@
 	}}
 />
 
-<AttachWebpageModal
-	bind:show={showAddWebpageModal}
-	onSubmit={async (e) => {
-		uploadWeb(e.data);
-	}}
-/>
-
 <AddTextContentModal
 	bind:show={showAddTextContentModal}
 	on:submit={(e) => {
@@ -1370,7 +1285,7 @@
 									} else if (data.type === 'new_directory') {
 										showNewDirectoryModal = true;
 									} else if (data.type === 'web') {
-										showAddWebpageModal = true;
+										// Sunway: no-op — the "Add webpage" entry is hidden and its endpoint deleted.
 									} else if (data.type === 'text') {
 										showAddTextContentModal = true;
 									} else {

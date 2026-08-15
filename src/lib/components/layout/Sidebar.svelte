@@ -43,7 +43,6 @@
 		toggleChatPinnedStatusById,
 		getChatById,
 		updateChatFolderIdById,
-		importChats,
 		deleteAllChats,
 		getChatListBySearchText,
 		getChatCount
@@ -338,46 +337,11 @@
 		chatListLoading = false;
 	};
 
-	const importChatHandler = async (items, pinned = false, folderId = null) => {
-		console.log('importChatHandler', items, pinned, folderId);
-		for (const item of items) {
-			console.log(item);
-			if (item.chat) {
-				await importChats(localStorage.token, [
-					{
-						chat: item.chat,
-						meta: item?.meta ?? {},
-						pinned: pinned,
-						folder_id: folderId,
-						created_at: item?.created_at ?? null,
-						updated_at: item?.updated_at ?? null
-					}
-				]);
-			}
-		}
+	// Sunway: importChatHandler() was removed here (hardening plan). It called the deleted
+	// POST /chats/import for chats dragged in from another schat instance.
 
-		initChatList();
-	};
-
-	const inputFilesHandler = async (files) => {
-		console.log(files);
-
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = async (e) => {
-				const content = e.target.result;
-
-				try {
-					const chatItems = JSON.parse(content);
-					importChatHandler(chatItems);
-				} catch {
-					toast.error($i18n.t(`Invalid file format.`));
-				}
-			};
-
-			reader.readAsText(file);
-		}
-	};
+	// Sunway: inputFilesHandler() was removed here (hardening plan). Its only job was to parse a
+	// dropped JSON file and feed it to the deleted chat-import endpoint.
 
 	const tagEventHandler = async (type, tagName, chatId) => {
 		console.log(type, tagName, chatId);
@@ -409,15 +373,9 @@
 		e.preventDefault();
 		console.log(e); // Log the drop event
 
-		// Perform file drop check and handle it accordingly
-		if (e.dataTransfer?.files) {
-			const inputFiles = Array.from(e.dataTransfer?.files);
-
-			if (inputFiles && inputFiles.length > 0) {
-				console.log(inputFiles); // Log the dropped files
-				inputFilesHandler(inputFiles); // Handle the dropped files
-			}
-		}
+		// Sunway: the dropped-file branch was removed here (hardening plan) -- dropping a chat
+		// export onto the sidebar imported it, bypassing the 30-chat cap. Dragging chats WITHIN
+		// the app is unaffected; that path uses getChatById, not import.
 
 		draggedOver = false; // Reset draggedOver status after drop
 	};
@@ -1298,10 +1256,6 @@
 							on:update={() => {
 								initChatList();
 							}}
-							on:import={(e) => {
-								const { folderId, items } = e.detail;
-								importChatHandler(items, false, folderId);
-							}}
 							on:change={async () => {
 								initChatList();
 							}}
@@ -1328,9 +1282,6 @@
 					on:change={async (e) => {
 						selectedFolder.set(null);
 					}}
-					on:import={(e) => {
-						importChatHandler(e.detail);
-					}}
 					on:drop={async (e) => {
 						const { type, id, item } = e.detail;
 
@@ -1338,18 +1289,7 @@
 							let chat = await getChatById(localStorage.token, id).catch((error) => {
 								return null;
 							});
-							if (!chat && item) {
-								chat = await importChats(localStorage.token, [
-									{
-										chat: item.chat,
-										meta: item?.meta ?? {},
-										pinned: false,
-										folder_id: null,
-										created_at: item?.created_at ?? null,
-										updated_at: item?.updated_at ?? null
-									}
-								]);
-							}
+							// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 							if (chat) {
 								console.log(chat);
@@ -1394,9 +1334,6 @@
 								<Folder
 									id="sidebar-pinned-chats"
 									buttonClassName=" text-gray-500"
-									on:import={(e) => {
-										importChatHandler(e.detail, true);
-									}}
 									on:drop={async (e) => {
 										const { type, id, item } = e.detail;
 
@@ -1404,18 +1341,7 @@
 											let chat = await getChatById(localStorage.token, id).catch((error) => {
 												return null;
 											});
-											if (!chat && item) {
-												chat = await importChats(localStorage.token, [
-													{
-														chat: item.chat,
-														meta: item?.meta ?? {},
-														pinned: false,
-														folder_id: null,
-														created_at: item?.created_at ?? null,
-														updated_at: item?.updated_at ?? null
-													}
-												]);
-											}
+											// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 											if (chat) {
 												console.log(chat);
