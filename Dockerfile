@@ -129,9 +129,26 @@ RUN --mount=type=cache,target=/opt/model-stage,sharing=locked \
     mkdir -p /app/backend/data/cache; \
     cp -a /opt/model-stage/. /app/backend/data/cache/
 
-# Opt chromadb's telemetry out before it can generate an id.
-RUN mkdir -p /root/.cache/chroma && \
-    echo -n 00000000-0000-0000-0000-000000000000 > /root/.cache/chroma/telemetry_user_id
+# Sunway: the container runs as a NON-ROOT user (security review M6). UID 1000, primary
+# group 0.
+#
+# Group 0 rather than a matching group 1000 is deliberate. The pod may run under an
+# arbitrary UID — the chart sets runAsUser, but an admission controller or a future
+# OpenShift-style policy can override it — and an arbitrary UID always lands in group 0.
+# Pairing that with `chmod -R g=u` below means the app can write its tree whatever UID it
+# is finally given, so the image does not depend on the chart and the chart getting the
+# number right.
+#
+# HOME is set explicitly because it stops being /root, and several libraries derive cache
+# paths from it. Anything writing under $HOME must exist and be group-writable, or the
+# first write fails at runtime rather than at build time.
+ENV HOME=/home/schat
+RUN useradd -u 1000 -g 0 -d "$HOME" -m -s /usr/sbin/nologin schat
+
+# Opt chromadb's telemetry out before it can generate an id. Under $HOME, not /root —
+# the app can no longer read or write /root.
+RUN mkdir -p "$HOME/.cache/chroma" && \
+    echo -n 00000000-0000-0000-0000-000000000000 > "$HOME/.cache/chroma/telemetry_user_id"
 
 # Frontend build output. package.json is read at runtime for the version string.
 COPY --from=build /app/build /app/build
@@ -140,6 +157,31 @@ COPY --from=build /app/package.json /app/package.json
 
 # Last, so a backend code change rebuilds only this layer.
 COPY ./backend .
+
+# Hand the whole tree to group 0 with the owner's permissions (security review M6). Two
+# separate things need this, and missing either one is a runtime crash, not a warning:
+#
+#   /app/backend/data  — DATA_DIR. The chart mounts the PVC on a subPath (UPLOAD_DIR) only,
+#                        so the REST of this tree stays image content and must be writable
+#                        in place: the baked embedding / whisper / tiktoken caches live here.
+#   /app/backend       — start.sh writes `.webui_secret_key` here when WEBUI_SECRET_KEY is
+#                        unset. The chart always sets it, so this should never fire — but if
+#                        it ever does, failing on a permission error would be a confusing way
+#                        to find out.
+#
+# `g=u` copies the owner bits to the group, and `find -type d` adds the setgid bit so files
+# created at runtime inherit group 0 instead of the writer's primary group.
+#
+# ⚠ Group 0 is LOAD-BEARING, not cosmetic. Verified by running this image three ways:
+#   uid 1000 gid 0      → all writes OK
+#   uid 31337 gid 0     → all writes OK  (this is why group 0 rather than group 1000)
+#   uid 31337 gid 31337 → EVERY write fails
+# So "tidying" the chart's runAsGroup/fsGroup from 0 to 1000 breaks the pod. They must stay 0.
+RUN chown -R 1000:0 /app "$HOME" && \
+    chmod -R g=u /app "$HOME" && \
+    find /app -type d -exec chmod g+s {} +
+
+USER 1000
 
 EXPOSE 8080
 

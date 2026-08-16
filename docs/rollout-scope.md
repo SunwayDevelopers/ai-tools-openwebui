@@ -666,6 +666,51 @@ without an explicit guard an encrypted database would fall through to the plain-
 failing confusingly, or silently creating a new **unencrypted** file at a path that looks correct.
 The async engine already rejected the scheme (`_make_async_url`); the sync path now matches it.
 
+### 3.14 Fixed — the container no longer runs as root
+
+| | |
+|---|---|
+| **What** | No `USER` in the Dockerfile and no `securityContext` in the chart (M6) |
+| **Class** | Fixed |
+| **Mechanism** | `USER 1000` (primary group 0) + pod and container `securityContext` |
+
+**Justification.** Root in the container was the last privilege nobody had asked for. Nothing the
+app does needs it: it binds 8080, which is unprivileged, and talks to Postgres, Qdrant and HTTP
+services. It is also the kind of finding a VAPT tester reports on sight.
+
+**Why group 0 rather than a matching group 1000.** The pod may end up running under a UID the
+image did not choose — the chart pins `runAsUser`, but an admission controller or an
+OpenShift-style policy can override it, and an arbitrary UID always lands in group 0. Owning the
+tree as `1000:0` with `chmod -R g=u` plus the setgid bit on directories means the app can write
+whatever UID it is finally given.
+
+**This was verified, not assumed.** The image was built and run three ways:
+
+| Run as | Result |
+|---|---|
+| `1000:0` | all writes OK |
+| `31337:0` | all writes OK — this is what group 0 buys |
+| `31337:31337` | **every write fails** |
+
+So `runAsGroup: 0` and `fsGroup: 0` in the chart are load-bearing. "Tidying" them to `1000` breaks
+the pod, which is why both the Dockerfile and the template say so.
+
+**Two things the permissions have to cover, and missing either is a crash not a warning.** The
+chart mounts the PVC on a **subPath** (UPLOAD_DIR), so the rest of `/app/backend/data` stays image
+content and must be writable in place — the baked embedding, whisper and tiktoken caches live
+there. And `start.sh` writes `.webui_secret_key` into `/app/backend` when `WEBUI_SECRET_KEY` is
+unset; the chart always sets it, so it should never fire, but a permission error is a poor way to
+discover otherwise.
+
+**`readOnlyRootFilesystem` was deliberately not set** — DATA_DIR, the model caches and `$HOME` are
+all written in place, so it would need an `emptyDir` for each, which buys little once the process
+is unprivileged.
+
+⚠️ **First rollout only.** The existing PVC holds root-owned data from earlier deployments. The
+kubelet applies `fsGroup` recursively at mount, so the first pod start after this change is slower
+in proportion to the files already on the volume. If that trips the readiness probe, raise
+`initialDelaySeconds` for that one rollout.
+
 ---
 
 ## 4. Guardrails — state the limits plainly
