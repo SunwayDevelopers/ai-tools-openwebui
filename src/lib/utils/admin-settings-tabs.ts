@@ -12,42 +12,16 @@
 // Reverse by removing ids from HIDDEN_ADMIN_SETTINGS_TAB_IDS.
 // See CLAUDE.md → "Deferred / hidden features" for the per-tab rationale.
 
-export const ALL_ADMIN_SETTINGS_TAB_IDS = [
-	'general',
-	'connections',
-	'models',
-	'integrations',
-	'documents',
-	'web',
-	'code-execution',
-	'interface',
-	'audio',
-	'images',
-	'db'
-];
+export const ALL_ADMIN_SETTINGS_TAB_IDS = ['models'];
 
 // Sunway: 'pipelines' is gone from both lists (hardening plan Item 2). The tab used to be
 // hidden here, but the router, the component and the API clients are now deleted outright, so
 // there is no longer a tab to hide.
-export const HIDDEN_ADMIN_SETTINGS_TAB_IDS = [
-	// version/update check (ENABLE_VERSION_UPDATE_CHECK=false) + upstream Open WebUI help and
-	// licence links + signup / default-role / LDAP — all now owned by the IAM + multi-tenancy
-	// layer. Note what this DOES take away: enterprise-licence activation, and the JWT expiry /
-	// API-key endpoint restrictions. See CLAUDE.md.
-	'general',
-	// task-model selection + title/tag/query-generation prompts. Hidden on the same call as the
-	// user-facing Settings → Interface tab
-	'interface',
-	// Code Interpreter deferred. Re-hidden 2026-08-05 AFTER the toggle was flipped off in this
-	// tab: ENABLE_CODE_INTERPRETER is PersistentConfig, so the stored DB value now wins and this
-	// tab is the only UI that can change it. If it ever needs flipping again, remove this id.
-	'code-execution',
-	// Voice out of scope (ENABLE_VOICE=false); STT/TTS config is unreachable
-	'audio',
-	// DB export/import/backup; an ops job, not a UI job (ISO 27001: backups are handled at the
-	// cluster/Helm layer, not by a browser download button)
-	'db'
-];
+// Sunway: the hide-list is empty because there is nothing left to hide (hardening plan Item 7).
+// Every other tab configured settings at runtime, and those endpoints are deleted -- config now
+// comes from the chart. Only Models survives, because POST /api/v1/models/import is still the way
+// presets are loaded into a tenant until Item 9 makes model definitions code.
+export const HIDDEN_ADMIN_SETTINGS_TAB_IDS: string[] = [];
 
 export const VISIBLE_ADMIN_SETTINGS_TAB_IDS = ALL_ADMIN_SETTINGS_TAB_IDS.filter(
 	(id) => !HIDDEN_ADMIN_SETTINGS_TAB_IDS.includes(id)

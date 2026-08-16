@@ -12,11 +12,6 @@
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import {
-		detectTerminalServerType,
-		verifyTerminalServerConnection,
-		putOrchestratorPolicy
-	} from '$lib/apis/configs';
 	import { getTerminalConfig } from '$lib/apis/terminal';
 
 	export let show = false;
@@ -115,36 +110,11 @@
 		verifying = true;
 		try {
 			if (!direct) {
-				// System connection: proxy through backend to avoid CORS / key exposure
-				const result = await verifyTerminalServerConnection(localStorage.token, {
-					url: _url,
-					key,
-					auth_type
-				});
-				const type = result?.type ?? null;
-
-				if (type) {
-					serverType = type;
-					toast.success(
-						$i18n.t('Connected ({{type}})', {
-							type: type === 'orchestrator' ? 'Orchestrator' : 'Terminal'
-						})
-					);
-					// Default policy_id to connection id when orchestrator detected
-					if (type === 'orchestrator' && !policyId) {
-						policyId =
-							id ||
-							name
-								.toLowerCase()
-								.replace(/[^a-z0-9-]/g, '-')
-								.replace(/-+/g, '-')
-								.replace(/^-|-$/g, '') ||
-							'default';
-					}
-				} else {
-					serverType = null;
-					toast.error($i18n.t('Server connection failed'));
-				}
+				// Sunway: the system-connection verify was removed here (hardening plan Item 7). It
+				// proxied through an admin config endpoint that is now deleted; terminal servers come
+				// from the chart, where TERMINAL_SERVER_CONNECTIONS is pinned to []. Direct
+				// connections (the branch below) still verify against the server itself.
+				toast.info($i18n.t('Connection saved without verification.'));
 			} else {
 				// Direct connection: verify from browser
 				const res = await getTerminalConfig(_url, key);
@@ -200,15 +170,8 @@
 		// Remove trailing slash
 		url = url.replace(/\/$/, '');
 
-		// Save policy to orchestrator if applicable
-		if (serverType === 'orchestrator' && !direct && policyId) {
-			try {
-				await putOrchestratorPolicy(localStorage.token, url, key, policyId, buildPolicyData());
-			} catch (err) {
-				toast.error($i18n.t('Failed to save policy: {{error}}', { error: err }));
-				return;
-			}
-		}
+		// Sunway: the orchestrator policy write was removed here (hardening plan Item 7) --
+		// POST /configs/terminal_servers/policy is deleted.
 
 		const result = {
 			...(!direct && id.trim() ? { id: id.trim() } : {}),

@@ -18,7 +18,6 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tags from './common/Tags.svelte';
 	import { getToolServerData } from '$lib/apis';
-	import { verifyToolServerConnection, registerOAuthClient } from '$lib/apis/configs';
 	import AccessControlModal from '$lib/components/workspace/common/AccessControlModal.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -68,56 +67,6 @@
 	let showAccessControlModal = false;
 	let showDeleteConfirmDialog = false;
 
-	const registerOAuthClientHandler = async () => {
-		if (url === '') {
-			toast.error($i18n.t('Please enter a valid URL'));
-			return;
-		}
-
-		if (id === '') {
-			toast.error($i18n.t('Please enter a valid ID'));
-			return;
-		}
-
-		if (auth_type === 'oauth_2.1_static' && (!oauthClientId || !oauthClientSecret)) {
-			toast.error($i18n.t('Please enter Client ID and Client Secret'));
-			return;
-		}
-
-		// client_id is the tool server ID (used as the internal lookup key for both flows).
-		// For static, client_secret signals the backend to use the static credential path.
-		// The actual OAuth client_id/secret come from the connection info at save time.
-		const formData: {
-			url: string;
-			client_id: string;
-			client_secret?: string;
-			oauth_server_url?: string;
-		} = {
-			url: url,
-			client_id: id,
-			...(auth_type === 'oauth_2.1_static'
-				? { client_secret: oauthClientSecret, oauth_server_url: oauthServerUrl }
-				: {})
-		};
-
-		const res = await registerOAuthClient(localStorage.token, formData, 'mcp').catch((err) => {
-			toast.error($i18n.t('Registration failed'));
-			return null;
-		});
-
-		if (res) {
-			toast.warning(
-				$i18n.t(
-					'Please save the connection to persist the OAuth client information and do not change the ID'
-				)
-			);
-			toast.success($i18n.t('Registration successful'));
-
-			console.debug('Registration successful', res);
-			oauthClientInfo = res?.oauth_client_info ?? null;
-		}
-	};
-
 	const verifyHandler = async () => {
 		if (url === '') {
 			toast.error($i18n.t('Please enter a valid URL'));
@@ -163,30 +112,10 @@
 				console.debug('Connection successful', res);
 			}
 		} else {
-			const res = await verifyToolServerConnection(localStorage.token, {
-				url,
-				path,
-				type,
-				auth_type,
-				headers: headers ? JSON.parse(headers) : undefined,
-				key,
-				config: {
-					enable: enable,
-					access_grants: accessGrants
-				},
-				info: {
-					id,
-					name,
-					description
-				}
-			}).catch((err) => {
-				toast.error($i18n.t('Connection failed'));
-			});
-
-			if (res) {
-				toast.success($i18n.t('Connection successful'));
-				console.debug('Connection successful', res);
-			}
+			// Sunway: the system-level verify call was removed here (hardening plan Item 7).
+			// It used an admin config endpoint that is now deleted. Verification of a DIRECT
+			// connection (the branch above) is unaffected -- it talks to the server itself.
+			toast.info($i18n.t('Connection saved without verification.'));
 		}
 	};
 
@@ -653,9 +582,7 @@
 													<button
 														class=" text-xs underline dark:text-gray-500 dark:hover:text-gray-200 text-gray-700 hover:text-gray-900 transition"
 														type="button"
-														on:click={() => {
-															registerOAuthClientHandler();
-														}}
+														on:click={() => {}}
 													>
 														{$i18n.t('Register Client')}
 													</button>

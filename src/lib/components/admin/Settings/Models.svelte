@@ -31,7 +31,6 @@
 	import Badge from '$lib/components/common/Badge.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
-	import ModelSettingsModal from './Models/ModelSettingsModal.svelte';
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
 	import ModelMenu from '$lib/components/admin/Settings/Models/ModelMenu.svelte';
@@ -60,8 +59,6 @@
 
 	let filteredModels = [];
 	let selectedModelId = null;
-
-	let showConfigModal = false;
 
 	let viewOption = ''; // '' = All, 'enabled', 'disabled', 'visible', 'hidden'
 
@@ -358,8 +355,6 @@
 	});
 </script>
 
-<ModelSettingsModal bind:show={showConfigModal} initHandler={init} />
-
 {#if models !== null}
 	{#if selectedModelId === null}
 		<div class="flex flex-col gap-1 mt-1.5 mb-2">
@@ -443,17 +438,11 @@
 					     download progress -- with its only other tab (llama.cpp) commented out
 					     upstream. Every endpoint behind it is gone. -->
 
-					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
-						type="button"
-						on:click={() => {
-							showConfigModal = true;
-						}}
-					>
-						<div class=" self-center font-medium line-clamp-1">
-							{$i18n.t('Settings')}
-						</div>
-					</button>
+					<!-- Sunway: the "Settings" button was deleted here (hardening plan Item 7). It opened
+					     ModelSettingsModal, which edited DEFAULT_MODELS, MODEL_ORDER_LIST and prompt
+					     suggestions through /api/v1/configs/models — now chart-seeded, endpoints gone.
+					     Import/Export below stay: /api/v1/models/import is still how presets are
+					     loaded into a tenant until Item 9 makes model definitions code. -->
 				</div>
 			</div>
 		</div>

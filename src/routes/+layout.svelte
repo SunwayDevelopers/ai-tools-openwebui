@@ -63,12 +63,6 @@
 	import { getSessionUser, updateUserTimezone, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 	import { chatCompletion } from '$lib/apis/openai';
-	import {
-		addOpenAIConnection,
-		removeOpenAIConnection,
-		addTerminalConnection,
-		removeTerminalConnection
-	} from '$lib/utils/connections';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
 	import { bestMatchingLanguage, displayFileHandler, getUserTimezone } from '$lib/utils';
@@ -781,37 +775,11 @@
 			return;
 		}
 
-		const token = localStorage.token;
-		if (!token) return;
-
-		// Only admins can modify system-level connections
-		if ($user?.role !== 'admin') return;
-
-		try {
-			if (event.type === 'connections:terminal') {
-				if (event.data.action === 'add') {
-					await addTerminalConnection(token, {
-						url: event.data.url,
-						key: event.data.key,
-						name: 'Local Open Terminal'
-					});
-				} else if (event.data.action === 'remove') {
-					await removeTerminalConnection(token, event.data.url);
-				}
-			} else if (event.type === 'connections:openai') {
-				if (event.data.action === 'add') {
-					await addOpenAIConnection(token, {
-						url: event.data.url,
-						key: event.data.key,
-						config: event.data.config
-					});
-				} else if (event.data.action === 'remove') {
-					await removeOpenAIConnection(token, event.data.url);
-				}
-			}
-		} catch (e) {
-			console.error('Desktop connection update failed:', e);
-		}
+		// Sunway: the system-level connection handlers were removed here (hardening plan Item 7).
+		// They let the Open WebUI DESKTOP client add a local terminal or OpenAI connection by
+		// writing process-global config over HTTP. schat ships no desktop client, and the endpoints
+		// behind them (/openai/config/update, /configs/terminal_servers) are deleted -- connections
+		// come from the chart now. The rest of desktopEventHandler is untouched.
 	};
 
 	const windowMessageEventHandler = async (event) => {

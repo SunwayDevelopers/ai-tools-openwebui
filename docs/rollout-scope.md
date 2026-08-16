@@ -570,9 +570,25 @@ now closed by construction rather than by masking.
 chart-level path, because the value is `PersistentConfig` and the endpoint that writes it still
 existed. That endpoint is now deleted, so the pin is a complete control.
 
-**Residual.** `src/lib/apis/configs/index.ts` and the Admin Settings pages still call these
-endpoints. They fail closed — a deleted route is a 404 — but the UI is dangling and should be
-removed (deletion manifest, Part 3).
+**The frontend went with it** (deletion manifest, Part 3). Eleven Admin Settings tab components
+were deleted — General, Connections, Documents, Images, Integrations, Web Search, Code Execution,
+Audio, Database, Interface, and the model-config modal — along with `utils/connections.ts` and 17
+of the 20 clients in `src/lib/apis/configs/index.ts`. `HIDDEN_ADMIN_SETTINGS_TAB_IDS` is now
+**empty**, because there is nothing left to hide: every tab it listed configured settings at
+runtime, and those endpoints are gone. Three clients stayed — `getBanners` and
+`getModelsDefaults`, which back the two surviving read-only routes, and
+`getOAuthClientAuthorizationUrl`, which only builds a URL and is used by the live composer.
+
+**Admin Settings is now a single tab: Models.** It survives because `POST /api/v1/models/import`
+is still the only way to seed presets into a tenant, and stays so until Item 9 makes model
+definitions code. Its **Settings** button is gone with the rest; Import/Export remain.
+
+Two components needed surgery rather than deletion — `AddToolServerModal.svelte` and
+`AddTerminalServerModal.svelte` are shared with the **user-facing** Settings → Integrations tab,
+which is in scope.
+
+Result: **301 routes** (from 482 at the start of the review), against the deletion manifest's
+target of ~330.
 
 ### 3.11 Retained, gated — terminals
 

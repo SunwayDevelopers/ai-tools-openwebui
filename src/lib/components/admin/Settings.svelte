@@ -6,19 +6,9 @@
 
 	import { config } from '$lib/stores';
 	import { getBackendConfig } from '$lib/apis';
-	import Database from './Settings/Database.svelte';
 
-	import General from './Settings/General.svelte';
-	import Audio from './Settings/Audio.svelte';
-	import Images from './Settings/Images.svelte';
-	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
-	import Connections from './Settings/Connections.svelte';
-	import Documents from './Settings/Documents.svelte';
-	import WebSearch from './Settings/WebSearch.svelte';
 
-	import CodeExecution from './Settings/CodeExecution.svelte';
-	import Integrations from './Settings/Integrations.svelte';
 
 	import {
 		DEFAULT_ADMIN_SETTINGS_TAB,
