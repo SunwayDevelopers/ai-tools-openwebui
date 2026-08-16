@@ -210,48 +210,15 @@ def test_unmask_form_secrets_leaves_real_edits_alone():
 
 
 # ------------------------------------------------------------------ endpoint regressions
-
-
-def _config_endpoints():
-    """(label, coroutine factory) for every admin config GET that returns credentials."""
-    from open_webui.routers.audio import get_audio_config
-    from open_webui.routers.images import get_config as get_images_config
-    from open_webui.routers.openai import get_config as get_openai_config
-    from open_webui.routers.retrieval import get_embedding_config, get_rag_config
-
-    return [
-        ('openai:/config', get_openai_config),
-        ('images:/config', get_images_config),
-        ('audio:/config', get_audio_config),
-        ('retrieval:/embedding', get_embedding_config),
-        ('retrieval:/config', get_rag_config),
-    ]
-
-
-@pytest.mark.parametrize('label,handler', _config_endpoints(), ids=lambda v: v if isinstance(v, str) else '')
-def test_config_endpoint_returns_no_credentials(label, handler):
-    payload = run(handler(make_request(), user=None))
-
-    leaked = leaked_secrets(payload)
-    assert not leaked, f'{label} returned these credentials in cleartext: {leaked}'
-
-
-@pytest.mark.parametrize('label,handler', _config_endpoints(), ids=lambda v: v if isinstance(v, str) else '')
-def test_config_endpoint_still_returns_its_non_secret_config(label, handler):
-    """Guards against the masking test passing vacuously on an empty/failed response."""
-    payload = run(handler(make_request(), user=None))
-
-    assert returned_attrs(payload), f'{label} returned no config at all -- the mask test above proves nothing'
-
-
-@pytest.mark.parametrize('label,handler', _config_endpoints(), ids=lambda v: v if isinstance(v, str) else '')
-def test_config_endpoint_marks_configured_secrets_as_set(label, handler):
-    """Every credential field is present and shows the placeholder, not silently dropped.
-
-    The Admin Settings form needs to know a key IS configured, or an admin saving the page
-    would clear it.
-    """
-    payload = run(handler(make_request(), user=None))
-    text = json.dumps(payload, default=str)
-
-    assert SECRET_PLACEHOLDER in text, f'{label} returned no masked credential -- is anything being withheld?'
+#
+# Sunway: the three parametrised endpoint tests were removed here (hardening plan Item 7).
+# They asserted that GET /openai/config, /images/config, /audio/config, /retrieval/embedding
+# and /retrieval/config withheld credentials. All five endpoints are now DELETED -- config
+# comes from the chart, so there is no admin endpoint left that returns a stored credential.
+#
+# Note what that means for utils/secret_masking.py: it has no callers any more. It is kept,
+# with the unit tests above, because it is the correct tool the moment any endpoint returns
+# stored config again -- and because those tests document a subtle contract (an empty secret
+# must stay distinguishable from a masked one, and unmasking must survive a reordered or
+# deleted connection). backend/open_webui/test/test_removed_routes.py is what now guards the
+# endpoints themselves: it fails if any of them come back.

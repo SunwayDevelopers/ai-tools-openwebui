@@ -8,25 +8,21 @@ import logging
 import mimetypes
 import re
 import uuid
-from pathlib import Path
-from typing import Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from open_webui.config import (
-    IMAGE_AUTO_SIZE_MODELS_REGEX_PATTERN,
     IMAGE_URL_RESPONSE_MODELS_REGEX_PATTERN,
 )
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import AIOHTTP_CLIENT_ALLOW_REDIRECTS, AIOHTTP_CLIENT_SESSION_SSL, ENABLE_FORWARD_USER_INFO_HEADERS
-from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.retrieval.web.utils import validate_url
 from open_webui.routers.files import get_file_content_by_id, upload_file_handler
 from open_webui.utils.access_control import has_permission
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.images.comfyui import (
     ComfyUICreateImageForm,
@@ -36,10 +32,8 @@ from open_webui.utils.images.comfyui import (
     comfyui_edit_image,
     comfyui_upload_image,
 )
-from open_webui.utils.secret_masking import mask_secrets, unmask_form_secrets
 from open_webui.utils.session_pool import get_session
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
@@ -158,160 +152,22 @@ class ImagesConfig(BaseModel):
     IMAGES_EDIT_COMFYUI_WORKFLOW_NODES: list[dict]
 
 
-@router.get('/config', response_model=ImagesConfig)
-async def get_config(request: Request, user=Depends(get_admin_user)):
-    config_payload = {
-        'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
-        'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
-        'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
-        'IMAGE_GENERATION_MODEL': request.app.state.config.IMAGE_GENERATION_MODEL,
-        'IMAGE_SIZE': request.app.state.config.IMAGE_SIZE,
-        'IMAGE_STEPS': request.app.state.config.IMAGE_STEPS,
-        'IMAGES_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_OPENAI_API_BASE_URL,
-        'IMAGES_OPENAI_API_KEY': request.app.state.config.IMAGES_OPENAI_API_KEY,
-        'IMAGES_OPENAI_API_VERSION': request.app.state.config.IMAGES_OPENAI_API_VERSION,
-        'IMAGES_OPENAI_API_PARAMS': request.app.state.config.IMAGES_OPENAI_API_PARAMS,
-        'AUTOMATIC1111_BASE_URL': request.app.state.config.AUTOMATIC1111_BASE_URL,
-        'AUTOMATIC1111_API_AUTH': request.app.state.config.AUTOMATIC1111_API_AUTH,
-        'AUTOMATIC1111_PARAMS': request.app.state.config.AUTOMATIC1111_PARAMS,
-        'COMFYUI_BASE_URL': request.app.state.config.COMFYUI_BASE_URL,
-        'COMFYUI_API_KEY': request.app.state.config.COMFYUI_API_KEY,
-        'COMFYUI_WORKFLOW': request.app.state.config.COMFYUI_WORKFLOW,
-        'COMFYUI_WORKFLOW_NODES': request.app.state.config.COMFYUI_WORKFLOW_NODES,
-        'IMAGES_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_GEMINI_API_BASE_URL,
-        'IMAGES_GEMINI_API_KEY': request.app.state.config.IMAGES_GEMINI_API_KEY,
-        'IMAGES_GEMINI_ENDPOINT_METHOD': request.app.state.config.IMAGES_GEMINI_ENDPOINT_METHOD,
-        'ENABLE_IMAGE_EDIT': request.app.state.config.ENABLE_IMAGE_EDIT,
-        'IMAGE_EDIT_ENGINE': request.app.state.config.IMAGE_EDIT_ENGINE,
-        'IMAGE_EDIT_MODEL': request.app.state.config.IMAGE_EDIT_MODEL,
-        'IMAGE_EDIT_SIZE': request.app.state.config.IMAGE_EDIT_SIZE,
-        'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
-        'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,
-        'IMAGES_EDIT_OPENAI_API_VERSION': request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION,
-        'IMAGES_EDIT_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL,
-        'IMAGES_EDIT_GEMINI_API_KEY': request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY,
-        'IMAGES_EDIT_COMFYUI_BASE_URL': request.app.state.config.IMAGES_EDIT_COMFYUI_BASE_URL,
-        'IMAGES_EDIT_COMFYUI_API_KEY': request.app.state.config.IMAGES_EDIT_COMFYUI_API_KEY,
-        'IMAGES_EDIT_COMFYUI_WORKFLOW': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW,
-        'IMAGES_EDIT_COMFYUI_WORKFLOW_NODES': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES,
-    }
-    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
-    return mask_secrets(config_payload)
-
-
-@router.post('/config/update')
-async def update_config(request: Request, form_data: ImagesConfig, user=Depends(get_admin_user)):
-    # Sunway: resolve any credential the admin did not retype back to its stored value
-    # before the assignments below. Form field names match the config attribute names.
-    unmask_form_secrets(form_data, request.app.state.config)
-
-    request.app.state.config.ENABLE_IMAGE_GENERATION = form_data.ENABLE_IMAGE_GENERATION
-
-    # Create Image
-    request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION = form_data.ENABLE_IMAGE_PROMPT_GENERATION
-
-    request.app.state.config.IMAGE_GENERATION_ENGINE = form_data.IMAGE_GENERATION_ENGINE
-    await set_image_model(request, form_data.IMAGE_GENERATION_MODEL)
-    if form_data.IMAGE_SIZE == 'auto' and not re.match(
-        IMAGE_AUTO_SIZE_MODELS_REGEX_PATTERN, form_data.IMAGE_GENERATION_MODEL
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=ERROR_MESSAGES.INCORRECT_FORMAT(
-                f'  (auto is only allowed with models matching {IMAGE_AUTO_SIZE_MODELS_REGEX_PATTERN}).'
-            ),
-        )
-
-    pattern = r'^\d+x\d+$'
-    if form_data.IMAGE_SIZE == 'auto' or form_data.IMAGE_SIZE == '' or re.match(pattern, form_data.IMAGE_SIZE):
-        request.app.state.config.IMAGE_SIZE = form_data.IMAGE_SIZE
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=ERROR_MESSAGES.INCORRECT_FORMAT('  (e.g., 512x512).'),
-        )
-
-    if form_data.IMAGE_STEPS >= 0:
-        request.app.state.config.IMAGE_STEPS = form_data.IMAGE_STEPS
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=ERROR_MESSAGES.INCORRECT_FORMAT('  (e.g., 50).'),
-        )
-
-    request.app.state.config.IMAGES_OPENAI_API_BASE_URL = form_data.IMAGES_OPENAI_API_BASE_URL
-    request.app.state.config.IMAGES_OPENAI_API_KEY = form_data.IMAGES_OPENAI_API_KEY
-    request.app.state.config.IMAGES_OPENAI_API_VERSION = form_data.IMAGES_OPENAI_API_VERSION
-    request.app.state.config.IMAGES_OPENAI_API_PARAMS = form_data.IMAGES_OPENAI_API_PARAMS
-
-    request.app.state.config.AUTOMATIC1111_BASE_URL = form_data.AUTOMATIC1111_BASE_URL
-    request.app.state.config.AUTOMATIC1111_API_AUTH = form_data.AUTOMATIC1111_API_AUTH
-    request.app.state.config.AUTOMATIC1111_PARAMS = form_data.AUTOMATIC1111_PARAMS
-
-    request.app.state.config.COMFYUI_BASE_URL = form_data.COMFYUI_BASE_URL.strip('/')
-    request.app.state.config.COMFYUI_API_KEY = form_data.COMFYUI_API_KEY
-    request.app.state.config.COMFYUI_WORKFLOW = form_data.COMFYUI_WORKFLOW
-    request.app.state.config.COMFYUI_WORKFLOW_NODES = form_data.COMFYUI_WORKFLOW_NODES
-
-    request.app.state.config.IMAGES_GEMINI_API_BASE_URL = form_data.IMAGES_GEMINI_API_BASE_URL
-    request.app.state.config.IMAGES_GEMINI_API_KEY = form_data.IMAGES_GEMINI_API_KEY
-    request.app.state.config.IMAGES_GEMINI_ENDPOINT_METHOD = form_data.IMAGES_GEMINI_ENDPOINT_METHOD
-
-    # Edit Image
-    request.app.state.config.ENABLE_IMAGE_EDIT = form_data.ENABLE_IMAGE_EDIT
-    request.app.state.config.IMAGE_EDIT_ENGINE = form_data.IMAGE_EDIT_ENGINE
-    request.app.state.config.IMAGE_EDIT_MODEL = form_data.IMAGE_EDIT_MODEL
-    request.app.state.config.IMAGE_EDIT_SIZE = form_data.IMAGE_EDIT_SIZE
-
-    request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL = form_data.IMAGES_EDIT_OPENAI_API_BASE_URL
-    request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY = form_data.IMAGES_EDIT_OPENAI_API_KEY
-    request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION = form_data.IMAGES_EDIT_OPENAI_API_VERSION
-
-    request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL = form_data.IMAGES_EDIT_GEMINI_API_BASE_URL
-    request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY = form_data.IMAGES_EDIT_GEMINI_API_KEY
-
-    request.app.state.config.IMAGES_EDIT_COMFYUI_BASE_URL = form_data.IMAGES_EDIT_COMFYUI_BASE_URL.strip('/')
-    request.app.state.config.IMAGES_EDIT_COMFYUI_API_KEY = form_data.IMAGES_EDIT_COMFYUI_API_KEY
-    request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW
-    request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES = form_data.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES
-
-    config_payload = {
-        'ENABLE_IMAGE_GENERATION': request.app.state.config.ENABLE_IMAGE_GENERATION,
-        'ENABLE_IMAGE_PROMPT_GENERATION': request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION,
-        'IMAGE_GENERATION_ENGINE': request.app.state.config.IMAGE_GENERATION_ENGINE,
-        'IMAGE_GENERATION_MODEL': request.app.state.config.IMAGE_GENERATION_MODEL,
-        'IMAGE_SIZE': request.app.state.config.IMAGE_SIZE,
-        'IMAGE_STEPS': request.app.state.config.IMAGE_STEPS,
-        'IMAGES_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_OPENAI_API_BASE_URL,
-        'IMAGES_OPENAI_API_KEY': request.app.state.config.IMAGES_OPENAI_API_KEY,
-        'IMAGES_OPENAI_API_VERSION': request.app.state.config.IMAGES_OPENAI_API_VERSION,
-        'IMAGES_OPENAI_API_PARAMS': request.app.state.config.IMAGES_OPENAI_API_PARAMS,
-        'AUTOMATIC1111_BASE_URL': request.app.state.config.AUTOMATIC1111_BASE_URL,
-        'AUTOMATIC1111_API_AUTH': request.app.state.config.AUTOMATIC1111_API_AUTH,
-        'AUTOMATIC1111_PARAMS': request.app.state.config.AUTOMATIC1111_PARAMS,
-        'COMFYUI_BASE_URL': request.app.state.config.COMFYUI_BASE_URL,
-        'COMFYUI_API_KEY': request.app.state.config.COMFYUI_API_KEY,
-        'COMFYUI_WORKFLOW': request.app.state.config.COMFYUI_WORKFLOW,
-        'COMFYUI_WORKFLOW_NODES': request.app.state.config.COMFYUI_WORKFLOW_NODES,
-        'IMAGES_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_GEMINI_API_BASE_URL,
-        'IMAGES_GEMINI_API_KEY': request.app.state.config.IMAGES_GEMINI_API_KEY,
-        'IMAGES_GEMINI_ENDPOINT_METHOD': request.app.state.config.IMAGES_GEMINI_ENDPOINT_METHOD,
-        'ENABLE_IMAGE_EDIT': request.app.state.config.ENABLE_IMAGE_EDIT,
-        'IMAGE_EDIT_ENGINE': request.app.state.config.IMAGE_EDIT_ENGINE,
-        'IMAGE_EDIT_MODEL': request.app.state.config.IMAGE_EDIT_MODEL,
-        'IMAGE_EDIT_SIZE': request.app.state.config.IMAGE_EDIT_SIZE,
-        'IMAGES_EDIT_OPENAI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL,
-        'IMAGES_EDIT_OPENAI_API_KEY': request.app.state.config.IMAGES_EDIT_OPENAI_API_KEY,
-        'IMAGES_EDIT_OPENAI_API_VERSION': request.app.state.config.IMAGES_EDIT_OPENAI_API_VERSION,
-        'IMAGES_EDIT_GEMINI_API_BASE_URL': request.app.state.config.IMAGES_EDIT_GEMINI_API_BASE_URL,
-        'IMAGES_EDIT_GEMINI_API_KEY': request.app.state.config.IMAGES_EDIT_GEMINI_API_KEY,
-        'IMAGES_EDIT_COMFYUI_BASE_URL': request.app.state.config.IMAGES_EDIT_COMFYUI_BASE_URL,
-        'IMAGES_EDIT_COMFYUI_API_KEY': request.app.state.config.IMAGES_EDIT_COMFYUI_API_KEY,
-        'IMAGES_EDIT_COMFYUI_WORKFLOW': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW,
-        'IMAGES_EDIT_COMFYUI_WORKFLOW_NODES': request.app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES,
-    }
-    # Sunway: the update response echoes the config back, so it needs masking too.
-    return mask_secrets(config_payload)
+# Sunway: configuration endpoints deleted here (hardening plan Item 7).
+#
+# These read and WROTE process-global configuration over HTTP. Two reasons they go, and
+# the second is the stronger one:
+#
+#   1. Config now comes from the chart. The values are seeded in values.staging.yaml
+#      (see docs/item7-seed-block.md), so these endpoints have nothing left to own.
+#   2. app.state.config is a SINGLE process-global instance -- no tenant component, no
+#      TTL. A write by one tenant admin changed behaviour for EVERY tenant on that pod.
+#      Under multi-tenancy `admin` is a per-tenant IAM role, so that was reachable by any
+#      departmental admin. Deleting the write path is a cross-tenant integrity fix, not
+#      just tidiness.
+#
+# ENABLE_PERSISTENT_CONFIG=false stops a stored value being READ at boot; it does not stop
+# a write mutating app.state.config in memory for the rest of the process lifetime. Only
+# deleting the route stops that.
 
 
 def get_automatic1111_api_auth(request: Request):
@@ -322,39 +178,6 @@ def get_automatic1111_api_auth(request: Request):
         auth1111_base64_encoded_bytes = base64.b64encode(auth1111_byte_string)
         auth1111_base64_encoded_string = auth1111_base64_encoded_bytes.decode('utf-8')
         return f'Basic {auth1111_base64_encoded_string}'
-
-
-@router.get('/config/url/verify')
-async def verify_url(request: Request, user=Depends(get_admin_user)):
-    if request.app.state.config.IMAGE_GENERATION_ENGINE == 'automatic1111':
-        try:
-            session = await get_session()
-            async with session.get(
-                url=f'{request.app.state.config.AUTOMATIC1111_BASE_URL}/sdapi/v1/options',
-                headers={'authorization': get_automatic1111_api_auth(request)},
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as r:
-                r.raise_for_status()
-                return True
-        except Exception:
-            raise HTTPException(status_code=400, detail=ERROR_MESSAGES.INVALID_URL)
-    elif request.app.state.config.IMAGE_GENERATION_ENGINE == 'comfyui':
-        headers = None
-        if request.app.state.config.COMFYUI_API_KEY:
-            headers = {'Authorization': f'Bearer {request.app.state.config.COMFYUI_API_KEY}'}
-        try:
-            session = await get_session()
-            async with session.get(
-                url=f'{request.app.state.config.COMFYUI_BASE_URL}/object_info',
-                headers=headers,
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as r:
-                r.raise_for_status()
-                return True
-        except Exception:
-            raise HTTPException(status_code=400, detail=ERROR_MESSAGES.INVALID_URL)
-    else:
-        return True
 
 
 @router.get('/models')

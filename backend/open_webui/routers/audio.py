@@ -10,7 +10,6 @@ import logging
 import mimetypes
 import os
 import uuid
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional
 
@@ -29,7 +28,6 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pydub import AudioSegment
-from pydub.silence import split_on_silence
 from pydub.utils import mediainfo
 
 from open_webui.config import (
@@ -37,7 +35,6 @@ from open_webui.config import (
     ELEVENLABS_API_BASE_URL,
     WHISPER_COMPUTE_TYPE,
     WHISPER_LANGUAGE,
-    WHISPER_MODEL_AUTO_UPDATE,
     WHISPER_MODEL_DIR,
     WHISPER_MULTILINGUAL,
     WHISPER_VAD_FILTER,
@@ -46,18 +43,15 @@ from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import ENABLE_VOICE
 from open_webui.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
-    AIOHTTP_CLIENT_TIMEOUT,
     AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
     BYPASS_PYDUB_PREPROCESSING,
     DEVICE_TYPE,
     ENABLE_FORWARD_USER_INFO_HEADERS,
-    ENV,
 )
 from open_webui.utils.access_control import has_permission
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.misc import strict_match_mime_type
-from open_webui.utils.secret_masking import mask_secrets, unmask_secret
 from open_webui.utils.session_pool import get_session
 
 log = logging.getLogger(__name__)
@@ -256,140 +250,22 @@ class AudioConfigUpdateForm(BaseModel):
     stt: STTConfigForm
 
 
-@router.get('/config')
-async def get_audio_config(request: Request, user=Depends(get_admin_user)):
-    config_payload = {
-        'tts': {
-            'OPENAI_API_BASE_URL': request.app.state.config.TTS_OPENAI_API_BASE_URL,
-            'OPENAI_API_KEY': request.app.state.config.TTS_OPENAI_API_KEY,
-            'OPENAI_PARAMS': request.app.state.config.TTS_OPENAI_PARAMS,
-            'API_KEY': request.app.state.config.TTS_API_KEY,
-            'ENGINE': request.app.state.config.TTS_ENGINE,
-            'MODEL': request.app.state.config.TTS_MODEL,
-            'VOICE': request.app.state.config.TTS_VOICE,
-            'SPLIT_ON': request.app.state.config.TTS_SPLIT_ON,
-            'AZURE_SPEECH_REGION': request.app.state.config.TTS_AZURE_SPEECH_REGION,
-            'AZURE_SPEECH_BASE_URL': request.app.state.config.TTS_AZURE_SPEECH_BASE_URL,
-            'AZURE_SPEECH_OUTPUT_FORMAT': request.app.state.config.TTS_AZURE_SPEECH_OUTPUT_FORMAT,
-            'MISTRAL_API_KEY': request.app.state.config.TTS_MISTRAL_API_KEY,
-            'MISTRAL_API_BASE_URL': request.app.state.config.TTS_MISTRAL_API_BASE_URL,
-        },
-        'stt': {
-            'OPENAI_API_BASE_URL': request.app.state.config.STT_OPENAI_API_BASE_URL,
-            'OPENAI_API_KEY': request.app.state.config.STT_OPENAI_API_KEY,
-            'ENGINE': request.app.state.config.STT_ENGINE,
-            'MODEL': request.app.state.config.STT_MODEL,
-            'SUPPORTED_CONTENT_TYPES': request.app.state.config.STT_SUPPORTED_CONTENT_TYPES,
-            'ALLOWED_EXTENSIONS': request.app.state.config.STT_ALLOWED_EXTENSIONS,
-            'WHISPER_MODEL': request.app.state.config.WHISPER_MODEL,
-            'DEEPGRAM_API_KEY': request.app.state.config.DEEPGRAM_API_KEY,
-            'AZURE_API_KEY': request.app.state.config.AUDIO_STT_AZURE_API_KEY,
-            'AZURE_REGION': request.app.state.config.AUDIO_STT_AZURE_REGION,
-            'AZURE_LOCALES': request.app.state.config.AUDIO_STT_AZURE_LOCALES,
-            'AZURE_BASE_URL': request.app.state.config.AUDIO_STT_AZURE_BASE_URL,
-            'AZURE_MAX_SPEAKERS': request.app.state.config.AUDIO_STT_AZURE_MAX_SPEAKERS,
-            'MISTRAL_API_KEY': request.app.state.config.AUDIO_STT_MISTRAL_API_KEY,
-            'MISTRAL_API_BASE_URL': request.app.state.config.AUDIO_STT_MISTRAL_API_BASE_URL,
-            'MISTRAL_USE_CHAT_COMPLETIONS': request.app.state.config.AUDIO_STT_MISTRAL_USE_CHAT_COMPLETIONS,
-        },
-    }
-    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
-    return mask_secrets(config_payload)
-
-
-@router.post('/config/update')
-async def update_audio_config(request: Request, form_data: AudioConfigUpdateForm, user=Depends(get_admin_user)):
-    # TTS settings
-    request.app.state.config.TTS_OPENAI_API_BASE_URL = form_data.tts.OPENAI_API_BASE_URL
-    # Sunway: audio maps form.tts/stt.X -> <PREFIX>_X, so the names do not line up
-    # for unmask_form_secrets; resolve each masked credential explicitly.
-    request.app.state.config.TTS_OPENAI_API_KEY = unmask_secret(
-        form_data.tts.OPENAI_API_KEY, request.app.state.config.TTS_OPENAI_API_KEY
-    )
-    request.app.state.config.TTS_OPENAI_PARAMS = form_data.tts.OPENAI_PARAMS
-    request.app.state.config.TTS_API_KEY = unmask_secret(form_data.tts.API_KEY, request.app.state.config.TTS_API_KEY)
-    request.app.state.config.TTS_ENGINE = form_data.tts.ENGINE
-    request.app.state.config.TTS_MODEL = form_data.tts.MODEL
-    request.app.state.config.TTS_VOICE = form_data.tts.VOICE
-    request.app.state.config.TTS_SPLIT_ON = form_data.tts.SPLIT_ON
-    request.app.state.config.TTS_AZURE_SPEECH_REGION = form_data.tts.AZURE_SPEECH_REGION
-    request.app.state.config.TTS_AZURE_SPEECH_BASE_URL = form_data.tts.AZURE_SPEECH_BASE_URL
-    request.app.state.config.TTS_AZURE_SPEECH_OUTPUT_FORMAT = form_data.tts.AZURE_SPEECH_OUTPUT_FORMAT
-    request.app.state.config.TTS_MISTRAL_API_KEY = unmask_secret(
-        form_data.tts.MISTRAL_API_KEY, request.app.state.config.TTS_MISTRAL_API_KEY
-    )
-    request.app.state.config.TTS_MISTRAL_API_BASE_URL = form_data.tts.MISTRAL_API_BASE_URL
-
-    # STT settings
-    request.app.state.config.STT_OPENAI_API_BASE_URL = form_data.stt.OPENAI_API_BASE_URL
-    request.app.state.config.STT_OPENAI_API_KEY = unmask_secret(
-        form_data.stt.OPENAI_API_KEY, request.app.state.config.STT_OPENAI_API_KEY
-    )
-    request.app.state.config.STT_ENGINE = form_data.stt.ENGINE
-    request.app.state.config.STT_MODEL = form_data.stt.MODEL
-    request.app.state.config.STT_SUPPORTED_CONTENT_TYPES = form_data.stt.SUPPORTED_CONTENT_TYPES
-    request.app.state.config.STT_ALLOWED_EXTENSIONS = form_data.stt.ALLOWED_EXTENSIONS
-    request.app.state.config.WHISPER_MODEL = form_data.stt.WHISPER_MODEL
-    request.app.state.config.DEEPGRAM_API_KEY = unmask_secret(
-        form_data.stt.DEEPGRAM_API_KEY, request.app.state.config.DEEPGRAM_API_KEY
-    )
-    request.app.state.config.AUDIO_STT_AZURE_API_KEY = unmask_secret(
-        form_data.stt.AZURE_API_KEY, request.app.state.config.AUDIO_STT_AZURE_API_KEY
-    )
-    request.app.state.config.AUDIO_STT_AZURE_REGION = form_data.stt.AZURE_REGION
-    request.app.state.config.AUDIO_STT_AZURE_LOCALES = form_data.stt.AZURE_LOCALES
-    request.app.state.config.AUDIO_STT_AZURE_BASE_URL = form_data.stt.AZURE_BASE_URL
-    request.app.state.config.AUDIO_STT_AZURE_MAX_SPEAKERS = form_data.stt.AZURE_MAX_SPEAKERS
-    request.app.state.config.AUDIO_STT_MISTRAL_API_KEY = unmask_secret(
-        form_data.stt.MISTRAL_API_KEY, request.app.state.config.AUDIO_STT_MISTRAL_API_KEY
-    )
-    request.app.state.config.AUDIO_STT_MISTRAL_API_BASE_URL = form_data.stt.MISTRAL_API_BASE_URL
-    request.app.state.config.AUDIO_STT_MISTRAL_USE_CHAT_COMPLETIONS = form_data.stt.MISTRAL_USE_CHAT_COMPLETIONS
-
-    if request.app.state.config.STT_ENGINE == '':
-        request.app.state.faster_whisper_model = set_faster_whisper_model(
-            form_data.stt.WHISPER_MODEL, WHISPER_MODEL_AUTO_UPDATE
-        )
-    else:
-        request.app.state.faster_whisper_model = None
-
-    config_payload = {
-        'tts': {
-            'ENGINE': request.app.state.config.TTS_ENGINE,
-            'MODEL': request.app.state.config.TTS_MODEL,
-            'VOICE': request.app.state.config.TTS_VOICE,
-            'OPENAI_API_BASE_URL': request.app.state.config.TTS_OPENAI_API_BASE_URL,
-            'OPENAI_API_KEY': request.app.state.config.TTS_OPENAI_API_KEY,
-            'OPENAI_PARAMS': request.app.state.config.TTS_OPENAI_PARAMS,
-            'API_KEY': request.app.state.config.TTS_API_KEY,
-            'SPLIT_ON': request.app.state.config.TTS_SPLIT_ON,
-            'AZURE_SPEECH_REGION': request.app.state.config.TTS_AZURE_SPEECH_REGION,
-            'AZURE_SPEECH_BASE_URL': request.app.state.config.TTS_AZURE_SPEECH_BASE_URL,
-            'AZURE_SPEECH_OUTPUT_FORMAT': request.app.state.config.TTS_AZURE_SPEECH_OUTPUT_FORMAT,
-            'MISTRAL_API_KEY': request.app.state.config.TTS_MISTRAL_API_KEY,
-            'MISTRAL_API_BASE_URL': request.app.state.config.TTS_MISTRAL_API_BASE_URL,
-        },
-        'stt': {
-            'OPENAI_API_BASE_URL': request.app.state.config.STT_OPENAI_API_BASE_URL,
-            'OPENAI_API_KEY': request.app.state.config.STT_OPENAI_API_KEY,
-            'ENGINE': request.app.state.config.STT_ENGINE,
-            'MODEL': request.app.state.config.STT_MODEL,
-            'SUPPORTED_CONTENT_TYPES': request.app.state.config.STT_SUPPORTED_CONTENT_TYPES,
-            'ALLOWED_EXTENSIONS': request.app.state.config.STT_ALLOWED_EXTENSIONS,
-            'WHISPER_MODEL': request.app.state.config.WHISPER_MODEL,
-            'DEEPGRAM_API_KEY': request.app.state.config.DEEPGRAM_API_KEY,
-            'AZURE_API_KEY': request.app.state.config.AUDIO_STT_AZURE_API_KEY,
-            'AZURE_REGION': request.app.state.config.AUDIO_STT_AZURE_REGION,
-            'AZURE_LOCALES': request.app.state.config.AUDIO_STT_AZURE_LOCALES,
-            'AZURE_BASE_URL': request.app.state.config.AUDIO_STT_AZURE_BASE_URL,
-            'AZURE_MAX_SPEAKERS': request.app.state.config.AUDIO_STT_AZURE_MAX_SPEAKERS,
-            'MISTRAL_API_KEY': request.app.state.config.AUDIO_STT_MISTRAL_API_KEY,
-            'MISTRAL_API_BASE_URL': request.app.state.config.AUDIO_STT_MISTRAL_API_BASE_URL,
-            'MISTRAL_USE_CHAT_COMPLETIONS': request.app.state.config.AUDIO_STT_MISTRAL_USE_CHAT_COMPLETIONS,
-        },
-    }
-    # Sunway: the update response echoes the config back, so it needs masking too.
-    return mask_secrets(config_payload)
+# Sunway: configuration endpoints deleted here (hardening plan Item 7).
+#
+# These read and WROTE process-global configuration over HTTP. Two reasons they go, and
+# the second is the stronger one:
+#
+#   1. Config now comes from the chart. The values are seeded in values.staging.yaml
+#      (see docs/item7-seed-block.md), so these endpoints have nothing left to own.
+#   2. app.state.config is a SINGLE process-global instance -- no tenant component, no
+#      TTL. A write by one tenant admin changed behaviour for EVERY tenant on that pod.
+#      Under multi-tenancy `admin` is a per-tenant IAM role, so that was reachable by any
+#      departmental admin. Deleting the write path is a cross-tenant integrity fix, not
+#      just tidiness.
+#
+# ENABLE_PERSISTENT_CONFIG=false stops a stored value being READ at boot; it does not stop
+# a write mutating app.state.config in memory for the rest of the process lifetime. Only
+# deleting the route stops that.
 
 
 def load_speech_pipeline(request):

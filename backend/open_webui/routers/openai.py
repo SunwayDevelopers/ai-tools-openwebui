@@ -5,7 +5,6 @@ import hashlib
 import json
 import logging
 import re
-from typing import Optional
 from urllib.parse import quote, urlparse
 
 import aiohttp
@@ -32,14 +31,13 @@ from open_webui.env import (
     FORWARD_SESSION_INFO_HEADER_CHAT_ID,
     MODELS_CACHE_TTL,
 )
-from open_webui.internal.db import get_async_session
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.groups import Groups
 from open_webui.models.models import Models
 from open_webui.models.users import UserModel
-from open_webui.utils.access_control import check_model_access, has_connection_access
+from open_webui.utils.access_control import check_model_access
 from open_webui.utils.anthropic import get_anthropic_models, is_anthropic_url
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.headers import get_custom_headers, include_user_info_headers
 from open_webui.utils.misc import (
     convert_logit_bias_input_to_json,
@@ -49,14 +47,12 @@ from open_webui.utils.payload import (
     apply_model_params_to_body_openai,
     apply_system_prompt_to_body,
 )
-from open_webui.utils.secret_masking import mask_secrets, unmask_secret
 from open_webui.utils.session_pool import (
     cleanup_response,
     get_session,
     stream_wrapper,
 )
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
@@ -238,16 +234,22 @@ def get_microsoft_entra_id_access_token():
 router = APIRouter()
 
 
-@router.get('/config')
-async def get_config(request: Request, user=Depends(get_admin_user)):
-    config_payload = {
-        'ENABLE_OPENAI_API': request.app.state.config.ENABLE_OPENAI_API,
-        'OPENAI_API_BASE_URLS': request.app.state.config.OPENAI_API_BASE_URLS,
-        'OPENAI_API_KEYS': request.app.state.config.OPENAI_API_KEYS,
-        'OPENAI_API_CONFIGS': request.app.state.config.OPENAI_API_CONFIGS,
-    }
-    # Sunway: upstream returns stored credentials in cleartext; withhold them. See utils/secret_masking.py.
-    return mask_secrets(config_payload)
+# Sunway: configuration endpoints deleted here (hardening plan Item 7).
+#
+# These read and WROTE process-global configuration over HTTP. Two reasons they go, and
+# the second is the stronger one:
+#
+#   1. Config now comes from the chart. The values are seeded in values.staging.yaml
+#      (see docs/item7-seed-block.md), so these endpoints have nothing left to own.
+#   2. app.state.config is a SINGLE process-global instance -- no tenant component, no
+#      TTL. A write by one tenant admin changed behaviour for EVERY tenant on that pod.
+#      Under multi-tenancy `admin` is a per-tenant IAM role, so that was reachable by any
+#      departmental admin. Deleting the write path is a cross-tenant integrity fix, not
+#      just tidiness.
+#
+# ENABLE_PERSISTENT_CONFIG=false stops a stored value being READ at boot; it does not stop
+# a write mutating app.state.config in memory for the rest of the process lifetime. Only
+# deleting the route stops that.
 
 
 class OpenAIConfigForm(BaseModel):
@@ -255,45 +257,6 @@ class OpenAIConfigForm(BaseModel):
     OPENAI_API_BASE_URLS: list[str]
     OPENAI_API_KEYS: list[str]
     OPENAI_API_CONFIGS: dict
-
-
-@router.post('/config/update')
-async def update_config(request: Request, form_data: OpenAIConfigForm, user=Depends(get_admin_user)):
-    request.app.state.config.ENABLE_OPENAI_API = form_data.ENABLE_OPENAI_API
-    # Sunway: get_config() masked these, so the form returns SECRET_PLACEHOLDER for any key
-    # the admin did not retype. Resolve BEFORE the assignment below overwrites the stored
-    # list, or saving an unrelated field would wipe every key.
-    resolved_keys = unmask_secret(form_data.OPENAI_API_KEYS, request.app.state.config.OPENAI_API_KEYS)
-    request.app.state.config.OPENAI_API_BASE_URLS = form_data.OPENAI_API_BASE_URLS
-    request.app.state.config.OPENAI_API_KEYS = resolved_keys
-
-    # Check if API KEYS length is same than API URLS length
-    if len(request.app.state.config.OPENAI_API_KEYS) != len(request.app.state.config.OPENAI_API_BASE_URLS):
-        if len(request.app.state.config.OPENAI_API_KEYS) > len(request.app.state.config.OPENAI_API_BASE_URLS):
-            request.app.state.config.OPENAI_API_KEYS = request.app.state.config.OPENAI_API_KEYS[
-                : len(request.app.state.config.OPENAI_API_BASE_URLS)
-            ]
-        else:
-            request.app.state.config.OPENAI_API_KEYS += [''] * (
-                len(request.app.state.config.OPENAI_API_BASE_URLS) - len(request.app.state.config.OPENAI_API_KEYS)
-            )
-
-    request.app.state.config.OPENAI_API_CONFIGS = form_data.OPENAI_API_CONFIGS
-
-    # Remove the API configs that are not in the API URLS
-    keys = list(map(str, range(len(request.app.state.config.OPENAI_API_BASE_URLS))))
-    request.app.state.config.OPENAI_API_CONFIGS = {
-        key: value for key, value in request.app.state.config.OPENAI_API_CONFIGS.items() if key in keys
-    }
-
-    config_payload = {
-        'ENABLE_OPENAI_API': request.app.state.config.ENABLE_OPENAI_API,
-        'OPENAI_API_BASE_URLS': request.app.state.config.OPENAI_API_BASE_URLS,
-        'OPENAI_API_KEYS': request.app.state.config.OPENAI_API_KEYS,
-        'OPENAI_API_CONFIGS': request.app.state.config.OPENAI_API_CONFIGS,
-    }
-    # Sunway: the update response echoes the config back, so it needs masking too.
-    return mask_secrets(config_payload)
 
 
 @router.post('/audio/speech')
@@ -670,94 +633,6 @@ class ConnectionVerificationForm(BaseModel):
     key: str
 
     config: dict | None = None
-
-
-@router.post('/verify')
-async def verify_connection(
-    request: Request,
-    form_data: ConnectionVerificationForm,
-    user=Depends(get_admin_user),
-):
-    url = form_data.url
-    key = form_data.key
-
-    api_config = form_data.config or {}
-
-    async with aiohttp.ClientSession(
-        trust_env=True,
-        timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST),
-    ) as session:
-        try:
-            headers, cookies = await get_headers_and_cookies(request, url, key, api_config, user=user)
-
-            if api_config.get('azure') or api_config.get('provider') == 'azure':
-                # Only set api-key header if not using Azure Entra ID authentication
-                auth_type = api_config.get('auth_type', 'bearer')
-                if auth_type not in ('azure_ad', 'microsoft_entra_id'):
-                    headers['api-key'] = key
-
-                # Azure v1 format: base URL already ends with /openai/v1,
-                # use standard /models endpoint without api-version.
-                is_azure_v1 = bool(re.search(r'/openai/v1(?:/|$)', url))
-
-                if is_azure_v1:
-                    verify_url = f'{url.rstrip("/")}/models'
-                else:
-                    api_version = api_config.get('api_version', '') or '2023-03-15-preview'
-                    verify_url = f'{url}/openai/models?api-version={api_version}'
-
-                async with session.get(
-                    url=verify_url,
-                    headers=headers,
-                    cookies=cookies,
-                    ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                ) as r:
-                    try:
-                        response_data = await r.json()
-                    except Exception:
-                        response_data = await r.text()
-
-                    if r.status != 200:
-                        if isinstance(response_data, (dict, list)):
-                            return JSONResponse(status_code=r.status, content=response_data)
-                        else:
-                            return PlainTextResponse(status_code=r.status, content=response_data)
-
-                    return response_data
-            elif is_anthropic_url(url):
-                result = await get_anthropic_models(url, key)
-                if result is None:
-                    raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
-                if 'error' in result:
-                    raise HTTPException(status_code=500, detail=result['error'])
-                return result
-            else:
-                async with session.get(
-                    f'{url}/models',
-                    headers=headers,
-                    cookies=cookies,
-                    ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                ) as r:
-                    try:
-                        response_data = await r.json()
-                    except Exception:
-                        response_data = await r.text()
-
-                    if r.status != 200:
-                        if isinstance(response_data, (dict, list)):
-                            return JSONResponse(status_code=r.status, content=response_data)
-                        else:
-                            return PlainTextResponse(status_code=r.status, content=response_data)
-
-                    return response_data
-
-        except aiohttp.ClientError as e:
-            # ClientError covers all aiohttp requests issues
-            log.exception(f'Client error: {str(e)}')
-            raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
-        except Exception as e:
-            log.exception(f'Unexpected error: {e}')
-            raise HTTPException(status_code=500, detail=ERROR_MESSAGES.SERVER_CONNECTION_ERROR)
 
 
 def get_azure_allowed_params(api_version: str) -> set[str]:

@@ -525,7 +525,56 @@ so an unconfigured deferred feature was downloading a model and running inferenc
 and writing artifacts into the directory §3.4 exposed cross-tenant. Unconfigured is not the same
 as inert.
 
-### 3.10 Retained, gated — terminals
+### 3.10 Removed — the runtime configuration surface
+
+| | |
+|---|---|
+| **What** | 35 admin endpoints that read or wrote process-global configuration, plus four destructive maintenance routes |
+| **Class** | Removed |
+| **Mechanism** | routes deleted; configuration seeded in the chart |
+
+**Justification.** Two reasons, and the second is the stronger one.
+
+Configuration now comes from the chart — the values are pinned in `values.staging.yaml`, derived
+from a capture of the running system and verified against real code defaults
+(`docs/item7-seed-block.md`). So these endpoints have nothing left to own.
+
+More importantly, **`app.state.config` is a single process-global instance** with no tenant
+component and no TTL. A write by one tenant's admin changed behaviour for **every tenant on that
+pod**. Under multi-tenancy `admin` is a per-tenant IAM role, so that was reachable by any
+departmental admin. Deleting the write path is a cross-tenant integrity fix, not tidiness.
+
+Note that `ENABLE_PERSISTENT_CONFIG=false` alone would **not** have been enough: it stops a stored
+value being read at boot, but a write still mutates `app.state.config` in memory for the rest of
+the process lifetime. Only removing the route stops that.
+
+**What went:** the whole admin surface of `configs.py` (connections, tool servers, terminal
+servers and policy, code execution, models, suggestions, banners POST, OAuth client
+registration); the config endpoints of `openai.py`, `retrieval.py`, `images.py`, `audio.py` and
+`tasks.py`; and four destructive routes — `retrieval/delete`, `retrieval/reset/db`,
+`retrieval/reset/uploads`, `models/delete/all` — each of which wiped a collection, the vector
+database, or every uploaded file from one request, unscoped to a tenant.
+
+**What stayed:** `GET /configs/banners` and `GET /configs/models/defaults` (both
+`get_verified_user`, read-only, used by the app itself), `GET /models/base`, `POST /models/sync`,
+`GET /tasks/config`, and the retrieval processing endpoints.
+
+**A side effect worth recording: this made the H4 masking fix redundant.**
+`utils/secret_masking.py` was written so admin config endpoints would stop returning stored
+credentials in cleartext. With those endpoints deleted, it has **no callers left**. It is kept —
+along with its 17 unit tests — because it is the right tool the moment any endpoint returns stored
+config again, and because those tests document a subtle contract. But the finding it addressed is
+now closed by construction rather than by masking.
+
+**Terminals, completed.** 3.11 noted that pinning `TERMINAL_SERVER_CONNECTIONS` closed only the
+chart-level path, because the value is `PersistentConfig` and the endpoint that writes it still
+existed. That endpoint is now deleted, so the pin is a complete control.
+
+**Residual.** `src/lib/apis/configs/index.ts` and the Admin Settings pages still call these
+endpoints. They fail closed — a deleted route is a 404 — but the UI is dangling and should be
+removed (deletion manifest, Part 3).
+
+### 3.11 Retained, gated — terminals
 
 | | |
 |---|---|

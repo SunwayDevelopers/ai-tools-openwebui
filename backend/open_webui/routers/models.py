@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
-import json
 import logging
 import posixpath
-from typing import Optional
 from urllib.parse import unquote
 
 from fastapi import (
@@ -28,7 +25,6 @@ from open_webui.models.models import (
     ModelAccessListResponse,
     ModelAccessResponse,
     ModelForm,
-    ModelListResponse,
     ModelMeta,
     ModelModel,
     ModelParams,
@@ -798,7 +794,8 @@ async def delete_model_by_id(
     return result
 
 
-@router.delete('/delete/all', response_model=bool)
-async def delete_all_models(user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)):
-    result = await Models.delete_all_models(db=db)
-    return result
+# Sunway: destructive maintenance endpoints deleted here (deletion manifest).
+# They wiped the vector database, every uploaded file, or a whole collection from one
+# admin request, with nothing scoped to a tenant. Operator actions at the cluster
+# layer, not HTTP endpoints -- and under multi-tenancy the caller could be any
+# departmental admin.
