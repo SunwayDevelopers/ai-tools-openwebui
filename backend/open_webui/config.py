@@ -2935,10 +2935,43 @@ DEFAULT_USER_PERMISSIONS = {
     },
 }
 
+# Sunway: USER_PERMISSIONS gains an env var (hardening plan Item 7).
+#
+# It was the only setting in the permission path with no environment backing, which made it the
+# one blocker for `ENABLE_PERSISTENT_CONFIG=false`: with the flag on, the whole permission matrix
+# would reset to DEFAULT_USER_PERMISSIONS on every boot, because there was no env value for it to
+# fall back to. Every other Item 7 setting can be pinned in the ConfigMap; this one could not.
+#
+# The env var takes a JSON object and is merged OVER the defaults rather than replacing them, so a
+# deployment only has to state the keys it wants to change. A full replacement would silently drop
+# any permission key added by a later upstream version, which is exactly the failure mode the
+# `?? true` frontend gates already punish.
+#
+# Malformed JSON logs and falls back to the defaults rather than raising -- a bad permissions
+# string should not prevent the pod from starting, since that would take the whole deployment down
+# to fix a typo. See docs/item7-seed-block.md for the curated value.
+try:
+    _user_permissions_override = json.loads(os.getenv('USER_PERMISSIONS', '{}'))
+except Exception as e:
+    log.exception(f'Error loading USER_PERMISSIONS, using defaults: {e}')
+    _user_permissions_override = {}
+
+
+def _merge_permissions(base: dict, override: dict) -> dict:
+    """Deep-merge one level of permission groups (workspace, chat, features, ...)."""
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for group, values in (override or {}).items():
+        if isinstance(values, dict) and isinstance(merged.get(group), dict):
+            merged[group].update(values)
+        else:
+            merged[group] = values
+    return merged
+
+
 USER_PERMISSIONS = ConfigVar(
     'USER_PERMISSIONS',
     'user.permissions',
-    DEFAULT_USER_PERMISSIONS,
+    _merge_permissions(DEFAULT_USER_PERMISSIONS, _user_permissions_override),
 )
 
 ENABLE_FOLDERS = ConfigVar(
