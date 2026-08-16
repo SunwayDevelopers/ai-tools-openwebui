@@ -607,6 +607,65 @@ enabling the feature requires a template change a reviewer sees rather than a va
 `PersistentConfig`, so a stored value outranks the environment, and the configuration endpoint
 that writes it still exists. It becomes a complete control once that endpoint is deleted.
 
+### 3.12 Fixed — every feature gate now fails closed
+
+| | |
+|---|---|
+| **What** | Eight frontend gates that read a **missing** feature flag as permission |
+| **Class** | Fixed |
+| **Mechanism** | `?? true` → `?? false`, `!== false` → `=== true` |
+
+**Justification.** This is the standing principle of the whole review — a hidden button is not a
+security boundary — applied to its own enforcement layer. A gate written `?? true` renders the
+feature whenever the flag is *absent*, which is exactly what happens when a flag is not emitted at
+all. Two independent bugs had to line up for this to matter, and they did: the backend stopped
+sending the flags, and the frontend read their absence as a yes.
+
+The backend half is already fixed — `/api/config` no longer resolves a user, and the authenticated
+flags moved to `GET /api/v1/auths/` (`utils/app_config.py`), which runs in tenant context. So for
+a signed-in user these gates now receive real values and the `??` never fires. Flipping them is
+defence for the window before the session resolves, and against the same class recurring.
+
+**Sites:** `Settings/Account.svelte` ×3 (`enable_api_keys`), `Messages/CodeBlock.svelte`
+(`enable_code_execution`), `layout/Sidebar.svelte` ×2 (`enable_user_status`),
+`chat/FileNav.svelte` ×2 (`terminal`).
+
+**One of the eight was not cosmetic.** `CodeBlock.svelte` gates the **Run** button on Python code
+blocks, and that button executes in a browser Pyodide worker — no backend call, therefore no
+backend gate. The UI check was the *only* check. So code execution was live for every user while
+`ENABLE_CODE_EXECUTION` was `False`. The other seven were UI-truthfulness: the API-key form
+rendered but the backend refused the key (`utils/auth.py:485`), and terminals is unconfigured.
+
+**Deliberately not flipped:** `routes/auth/+page.svelte` reads `features.auth !== false`. Here
+fail-open *is* fail-secure — absence means "assume authentication is on", which shows the login
+form. Rewriting it to `=== true` would make a missing flag skip authentication, and would lock
+every user out if the flag were ever dropped. Fail-closed is a direction, not a syntax rule.
+
+### 3.13 Removed — the SQLCipher keying path
+
+| | |
+|---|---|
+| **What** | The `sqlite+sqlcipher://` branch in `internal/db.py` and `migrations/env.py` |
+| **Class** | Removed |
+| **Mechanism** | branch deleted; the URL scheme is now rejected with a clear error |
+
+**Justification.** Both sites formatted `DATABASE_PASSWORD` directly into a SQLite keying
+statement with an f-string. Neither was reachable — the branch is gated on a `sqlite+sqlcipher://`
+URL and schat runs Postgres for the control plane and every tenant — and the interpolated value is
+operator-supplied, never user-supplied, so it was not injection in the attacker sense even when
+reached.
+
+It was deleted rather than documented for a reason worth stating: **a static scanner flags the
+pattern regardless of reachability**, so leaving it in means re-arguing "yes, we know, it is dead"
+at every assessment. Removal costs nothing — SQLCipher was never a schat feature and `sqlcipher3`
+is not in `pyproject.toml`. For the same reason the explanatory comments avoid quoting the literal
+statement, or they would match the same scanner rule.
+
+**The URL is rejected, not ignored.** `'sqlite' in URL` also matches `sqlite+sqlcipher://`, so
+without an explicit guard an encrypted database would fall through to the plain-SQLite branch —
+failing confusingly, or silently creating a new **unencrypted** file at a path that looks correct.
+The async engine already rejected the scheme (`_make_async_url`); the sync path now matches it.
+
 ---
 
 ## 4. Guardrails — state the limits plainly

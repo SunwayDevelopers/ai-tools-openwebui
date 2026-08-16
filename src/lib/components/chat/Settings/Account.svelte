@@ -111,7 +111,7 @@
 		// Only fetch API key if the feature is enabled and user has permission
 		if (
 			user &&
-			($config?.features?.enable_api_keys ?? true) &&
+			($config?.features?.enable_api_keys ?? false) &&
 			(user?.role === 'admin' || (user?.permissions?.features?.api_keys ?? false))
 		) {
 			APIKey = await getAPIKey(localStorage.token).catch((error) => {
@@ -254,7 +254,7 @@
 			</div>
 		{/if}
 
-		{#if ($config?.features?.enable_api_keys ?? true) && ($user?.role === 'admin' || ($user?.permissions?.features?.api_keys ?? false))}
+		{#if ($config?.features?.enable_api_keys ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.api_keys ?? false))}
 			<div class="flex justify-between items-center text-sm mt-2">
 				<div class="  font-medium">{$i18n.t('API keys')}</div>
 				<button
@@ -325,7 +325,7 @@
 						</div>
 					{/if}
 
-					{#if ($config?.features?.enable_api_keys ?? true) && ($user?.role === 'admin' || ($user?.permissions?.features?.api_keys ?? false))}
+					{#if ($config?.features?.enable_api_keys ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.api_keys ?? false))}
 						<div class="justify-between w-full mt-2">
 							{#if $user?.role === 'admin'}
 								<div class="flex justify-between w-full">

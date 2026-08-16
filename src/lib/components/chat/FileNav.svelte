@@ -277,7 +277,7 @@
 				(async () => {
 					if (terminalChanged) {
 						const config = await getTerminalConfig(terminal.url, terminal.key);
-						terminalEnabled = config?.features?.terminal !== false;
+						terminalEnabled = config?.features?.terminal === true;
 					}
 
 					const rawCwd = await getCwd(terminal.url, terminal.key, chatId ?? undefined);
@@ -831,7 +831,7 @@
 
 			// Discover server features on initial mount
 			const config = await getTerminalConfig(terminal.url, terminal.key);
-			terminalEnabled = config?.features?.terminal !== false;
+			terminalEnabled = config?.features?.terminal === true;
 
 			if (chatId || savedPath === '/') {
 				// Fetch session-specific cwd from the server (or global default for new chats)

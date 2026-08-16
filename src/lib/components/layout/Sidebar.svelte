@@ -878,7 +878,7 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status ?? false}
 							showActiveUsers={false}
 							on:show={(e) => {
 								if (e.detail === 'archived-chat') {
@@ -1495,7 +1495,7 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status ?? false}
 							showActiveUsers={false}
 							className="w-[calc(var(--sidebar-width)-1rem)]"
 							on:show={(e) => {
