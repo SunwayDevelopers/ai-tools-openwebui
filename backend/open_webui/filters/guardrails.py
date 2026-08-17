@@ -194,16 +194,27 @@ INJECTION_HIGH: list[tuple[str, re.Pattern]] = [
 # calculation" is a normal thing to say. Warn, do not block, unless an operator
 # deliberately raises injection_action to "block".
 INJECTION_HEURISTIC: list[tuple[str, re.Pattern]] = [
+    # Sunway: the possessive/determiner alternation was WIDENED (to-be-reviewed-later §3).
+    # It previously read `(?:your\s+|the\s+|any\s+)?`, so "ignore MY previous instruction"
+    # did not match -- a real production chat defeated the pattern with one word. `my`,
+    # `our`, `those`, `these` and `that` are now covered, and the noun list takes an
+    # optional plural.
+    #
+    # This is still a HEURISTIC and still warn-by-default. Widening an alternation does not
+    # make natural-language detection reliable; it closes the phrasings actually observed.
+    # Treat any claim that this "catches jailbreaks" as false -- see the class-2 note above.
     (
         "override",
         _c(
-            r"\bignore\s+(?:all\s+)?(?:your\s+|the\s+|any\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instruction|prompt|rule|direction|command)"
+            r"\bignore\s+(?:all\s+)?(?:your\s+|the\s+|any\s+|my\s+|our\s+|those\s+|these\s+|that\s+)?"
+            r"(?:previous|prior|above|earlier|preceding)\s+(?:instruction|prompt|rule|direction|command)s?"
         ),
     ),
     (
         "disregard",
         _c(
-            r"\bdisregard\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier|system)\b"
+            r"\bdisregard\s+(?:all\s+)?(?:the\s+|your\s+|my\s+|our\s+|those\s+|these\s+)?"
+            r"(?:previous|prior|above|earlier|system)\b"
         ),
     ),
     (
@@ -285,6 +296,14 @@ class Filter:
         scan_documents_for_injection: bool = Field(
             default=False,
             description="Also scan retrieved document/web context for injected instructions (indirect injection). Costs more per request on large contexts.",
+        )
+        scan_system_prompt: bool = Field(
+            default=True,
+            description=(
+                "Also scan the per-chat system prompt (body.params.system). ON by default: it is "
+                "user-controllable text that reaches the model at operator level, so it is the "
+                "higher-value injection surface of the two."
+            ),
         )
 
         # ── Class 3 ──
@@ -462,6 +481,59 @@ class Filter:
             # ── Class 2: injection, evaluated BEFORE redaction so patterns see
             # the original text. A block here aborts the request entirely.
             if self.valves.enable_injection_detection:
+                # Sunway: the per-chat system prompt is scanned SEPARATELY, before the
+                # messages (to-be-reviewed-later §4). Two reasons it is not simply appended
+                # to the same scan string:
+                #
+                #   1. The block message has to name the right place. This text lives in the
+                #      preferences panel, not the composer, and it PERSISTS for the whole
+                #      chat -- so a shared message would tell the user their message was
+                #      blocked while the offending text sits somewhere they are not looking,
+                #      and every subsequent message in that chat would be blocked too.
+                #   2. It is a different trust position. Message text is plainly user input;
+                #      params.system is user input that arrives at OPERATOR level, which is
+                #      exactly why it is worth scanning.
+                #
+                # Structural containment already exists and is separate from this:
+                # utils/system_prompt.py fences and caps the value. This adds detection on
+                # top of that isolation -- neither replaces the other.
+                if self.valves.scan_system_prompt:
+                    sys_text = self._extract_text(
+                        ((body.get("params") or {}) if isinstance(body.get("params"), dict) else {}).get("system")
+                    )
+                    if sys_text:
+                        sys_high, sys_heur = self._detect_injection(sys_text)
+                        if sys_high:
+                            log.warning(
+                                "[guardrails] BLOCK injection in system prompt user=%s chat=%s patterns=%s",
+                                uid,
+                                chat_id,
+                                sys_high,
+                            )
+                            raise GuardrailBlock(
+                                "The system prompt for this chat contains formatting reserved for "
+                                "system instructions. Edit it in the chat's Controls panel and "
+                                "rephrase it as ordinary text."
+                            )
+                        if sys_heur:
+                            log.warning(
+                                "[guardrails] injection heuristic in system prompt user=%s chat=%s patterns=%s",
+                                uid,
+                                chat_id,
+                                sys_heur,
+                            )
+                            if self.valves.injection_action == "block":
+                                raise GuardrailBlock(
+                                    "The system prompt for this chat appears to try to override the "
+                                    "assistant's instructions. Edit it in the chat's Controls panel."
+                                )
+                            await self._notify(
+                                __event_emitter__,
+                                "warning",
+                                "This chat's system prompt looks like it is trying to change the "
+                                "assistant's instructions. It cannot override them.",
+                            )
+
                 scan = "\n".join(
                     self._extract_text(messages[i].get("content")) for i in targets
                 )

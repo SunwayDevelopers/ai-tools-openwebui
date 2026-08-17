@@ -783,6 +783,68 @@ Result: **299 routes**, 44 admin-gated. Thirteen of those 44 are `groups.py` and
 `tenant_members.py`, which did not exist when the manifest set its ~36 target; excluding them the
 figure is 31.
 
+### 3.16 Hardened — the per-chat system prompt as an injection surface
+
+| | |
+|---|---|
+| **What** | User-supplied system prompts reaching the model at operator level |
+| **Class** | Retained, hardened |
+| **Mechanism** | structural isolation + injection detection + a pinned escape corpus |
+
+**Why this exists.** Enabling per-chat system prompts handed every user a way to place text in
+front of the model at **operator** level. That is a jailbreak surface, and the obvious first
+target for a penetration tester. It was raised as `schat-ba-docs` **CL-016** with an honest
+finding: "guardrail / content filter / input filter / moderation" appear **nowhere** in the PRS,
+FRS, decisions or scope audit. The only workspace hit is *"retention guardrails"* — the
+30-chat/30-day caps — a **term collision** that made the topic look covered.
+
+**The control objective**, which is what CL-016 was missing:
+
+> A user-supplied system prompt cannot amend, replace or escape the operating instructions
+> given outside it.
+
+**Three layers, none of which replaces another.**
+
+1. **Structural isolation** (`utils/system_prompt.py`, on by default) caps at 4,000 chars, fences
+   the text in `<user_preferences>`, strips fences the user typed, frames the contents as *input,
+   not policy*, and appends a precedence reminder. The operator gets the first and last word.
+2. **Injection detection** (`filters/guardrails.py`) now scans `body.params.system` as a
+   **separate** pass from the messages. Separate because the block message must name the
+   *Controls panel* rather than the composer — the text persists for the whole chat, so a
+   misdirected message would send the user hunting in the wrong place while every subsequent
+   message in that chat was blocked.
+3. **The model's own prompt** asserts precedence. Defence by prompt design, and explicitly the
+   weakest of the three.
+
+**A weakness was found by attacking the code, not reading it.** The fence-strip was a literal
+`.replace()` of two exact tags. Structural containment held — nothing escaped — but **four
+variants survived inside the block**: a trailing space in the tag, different case, an embedded
+newline, and a zero-width space between the words. A model does not parse XML; a fence-shaped
+token mid-block is a plausible cue that the user's section has ended, which is the exact
+confusion the fence exists to prevent. The strip is now pattern-based with invisible characters
+removed first, and all nine escape payloads are contained.
+
+**§3, the one-word evasion, is closed.** The override heuristic did not include `my`, so *"ignore
+my previous instruction"* — a phrasing found in a real production chat — sailed through. The
+alternation now covers `my`, `our`, `those`, `these`, `that` and plural nouns, with tests
+asserting it does **not** fire on ordinary English ("Please ignore my typos").
+
+**Evidence.** `test_system_prompt_isolation.py` (31 tests) carries the escape corpus, and
+`test_guardrails.py` grew to 70. Both mutation-tested: reverting the fence hardening fails 7,
+reverting the pattern widening fails 6.
+
+**What is deliberately NOT claimed.** This is mitigation, not a boundary. Detection is heuristic
+and warn-by-default outside the control-token tier; the filter fails open. A determined user can
+still influence the model with persuasive text *inside* the fence — no fencing prevents that.
+
+**Out of scope, with reasons.** **Content moderation** (blocking abusive or harmful text) is
+**not built and not scheduled**: it has no requirement, needs a classifier on the hot path of
+every request, and — decisively — flagging an employee creates a conduct record on 10,000 people
+with no owner. HR, Legal and PDPA must accept ownership before a line is written. **Model output
+safety** resolved to what `outlet` already does: it runs *after* streaming, so it redacts the
+persisted record and every re-render, and cannot block text the user has already read. Blocking
+output would mean disabling streaming for everyone.
+
 ---
 
 ## 4. Guardrails — state the limits plainly
