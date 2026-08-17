@@ -845,6 +845,60 @@ safety** resolved to what `outlet` already does: it runs *after* streaming, so i
 persisted record and every re-render, and cannot block text the user has already read. Blocking
 output would mean disabling streaming for everyone.
 
+### 3.17 Fixed — PII redaction now reaches the database
+
+| | |
+|---|---|
+| **What** | The stored chat record kept the unredacted text the model never saw |
+| **Class** | Fixed |
+| **Mechanism** | `ENABLE_STORAGE_REDACTION` (plain env, default on) at all three chat write paths |
+
+**The defect.** `inlet` rewrote the request body on its way to the model provider, but the chat
+record is written by a **separate frontend call** carrying the frontend's own unfiltered copy of
+history. The two paths never met. A real NRIC therefore reached the production `chat` table, its
+backups and its exports, while the provider only ever saw `[REDACTED_NRIC]`.
+
+**Why it was worse than a plain gap.** `notify_on_redaction` is on by default, so the user was
+shown *"Sensitive data was removed before sending"* and reasonably concluded it was gone. The
+platform was announcing a protection it did not deliver to storage.
+
+**Both halves are fixed.** Storage is now redacted through the **same shared filter instance** as
+the request path, so the valves cannot drift between "what the model saw" and "what we stored" —
+that divergence was the whole bug. And the toast now claims only what the filter itself
+guarantees: *"removed from your message before it was sent to the model."* It deliberately does
+**not** mention storage, because storage redaction is on its own switch and the claim would go
+false the moment that flag is turned off — the same bug in a new place. The filter also cannot
+read that flag: it imports nothing beyond the stdlib and pydantic, which is what keeps it
+unit-testable.
+
+**Applied at all three write paths** — `POST /chats/new`, `POST /chats/{id}`, and
+`POST /chats/{id}/messages/{message_id}`. A redaction that covers two of three does not hold.
+
+**The trade, taken deliberately.** A user can no longer re-read exactly what they typed; their own
+NRIC returns as `[REDACTED_NRIC]` after a reload. In-flight the frontend still shows the original,
+so the change is visible only once the text has become a stored record — which is the point at
+which it is the thing being protected. It is a flag rather than hard-wired because "may users see
+their own raw input?" is a policy question that may be answered differently later.
+
+**Assistant messages are left alone** — the outlet owns those and already persists its own
+redaction; rewriting model output here would make the stored record disagree with what was
+streamed. Multimodal content redacts text parts only, never image payloads. Redaction is
+idempotent, so re-saving a clean message is a no-op.
+
+**Coverage was widened at the same time**, because the gaps were found by testing rather than
+assumed. `my password is Hunter2Sunway!` passed straight through — pattern 1 needs a `:` or `=`,
+and pattern 2 read the intervening "is" as the value and rejected it at its 12-char floor. Two
+patterns were added: a **copula** form (`password is …`) and a **numeric** form for bank accounts,
+PINs, OTPs and CVVs, which are digits-only and so were invisible to the alphanumeric patterns.
+
+The copula form initially fired on *"your password is **required** to proceed"* — exactly the
+false-positive class the file's own note warns about. It now requires the value to contain a
+digit, borrowing pattern 2's test. Known trade, recorded in the code: an all-letter password is
+missed, which is the trade pattern 2 already makes.
+
+**Still not covered, and documented rather than hidden:** unhyphenated NRIC, landlines, and
+natural-language disclosure with no key word at all.
+
 ---
 
 ## 4. Guardrails — state the limits plainly

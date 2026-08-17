@@ -5,7 +5,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from open_webui.env import ENABLE_CHAT_ARCHIVE, MAX_CHATS_PER_USER
+from open_webui.filters.guardrails import redact_history_for_storage, redact_text_for_storage
+from open_webui.env import ENABLE_CHAT_ARCHIVE, ENABLE_STORAGE_REDACTION, MAX_CHATS_PER_USER
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.access_grants import AccessGrants
@@ -548,6 +549,28 @@ async def get_chat_count(
 ############################
 
 
+# Sunway: apply the guardrails redaction to what is STORED, not only to what is sent to the
+# model (to-be-reviewed-later §2). See ENABLE_STORAGE_REDACTION in env.py for the full
+# rationale and the trade it accepts.
+#
+# Applied at EVERY chat write path rather than one, because the frontend reaches the record
+# through three of them -- /new, /{id}, and /{id}/messages/{message_id} -- and a redaction
+# that covers two out of three is a redaction that does not hold.
+def _redact_chat_for_storage(chat_blob: dict, where: str, user_id: str) -> dict:
+    """Redact user-authored PII in a chat blob before it is persisted. No-op when disabled."""
+    if not ENABLE_STORAGE_REDACTION or not isinstance(chat_blob, dict):
+        return chat_blob
+    history = chat_blob.get('history')
+    if not isinstance(history, dict):
+        return chat_blob
+    _history, found = redact_history_for_storage(history)
+    if found:
+        # Deliberately no user id in the message beyond the caller's own -- this line exists
+        # to show the control firing, not to build a record of who typed what.
+        log.info('[storage-redaction] %s: redacted %s for user=%s', where, sorted(found), user_id)
+    return chat_blob
+
+
 @router.post('/new', response_model=ChatResponse | None)
 async def create_new_chat(
     form_data: ChatForm,
@@ -581,6 +604,7 @@ async def create_new_chat(
             )
 
     try:
+        form_data.chat = _redact_chat_for_storage(form_data.chat, 'chats/new', user.id)
         chat = await Chats.insert_new_chat(str(uuid4()), user.id, form_data, db=db)
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -1004,6 +1028,7 @@ async def update_chat_by_id(
                 if msg.get('output') != existing_messages.get(msg_id, {}).get('output'):
                     msg['content'] = serialize_output(msg['output'])
 
+        updated_chat = _redact_chat_for_storage(updated_chat, 'chats/update', user.id)
         chat = await Chats.update_chat_by_id(id, updated_chat, db=db)
 
         # Reconcile chat_message rows with the committed blob.
@@ -1056,11 +1081,20 @@ async def update_chat_message_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
+    # Sunway: this path writes a single message body, so it redacts the string directly
+    # rather than walking a history blob. Only the caller's OWN chat is reachable here
+    # (ownership is checked above), and the frontend uses it to save an edited user message.
+    content = form_data.content
+    if ENABLE_STORAGE_REDACTION:
+        content, found = redact_text_for_storage(content)
+        if found:
+            log.info('[storage-redaction] chats/message: redacted %s for user=%s', sorted(found), user.id)
+
     chat = await Chats.upsert_message_to_chat_by_id_and_message_id(
         id,
         message_id,
         {
-            'content': form_data.content,
+            'content': content,
         },
     )
 

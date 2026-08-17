@@ -30,7 +30,12 @@ from open_webui.filters import (
     get_builtin_filter_ids,
     is_builtin_filter,
 )
-from open_webui.filters.guardrails import Filter, GuardrailBlock
+from open_webui.filters.guardrails import (
+    Filter,
+    GuardrailBlock,
+    redact_history_for_storage,
+    redact_text_for_storage,
+)
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -526,3 +531,86 @@ def test_the_widened_pattern_does_not_fire_on_ordinary_english():
     ):
         _high, heur = f._detect_injection(benign)
         assert not heur, f'false positive on: {benign!r}'
+
+
+# ── §2: redaction reaches STORAGE, not only the provider ─────────────────────
+#
+# The gap this closes: inlet rewrote the request body, but the chat record was
+# saved by a separate frontend call carrying unfiltered history, so a real NRIC
+# reached the production chat table while the provider saw only [REDACTED_NRIC].
+
+
+def test_storage_redaction_rewrites_user_messages():
+    hist = {'messages': {'a': {'role': 'user', 'content': 'my ic is 030202-10-1234'}}}
+    _out, found = redact_history_for_storage(hist)
+    assert hist['messages']['a']['content'] == 'my ic is [REDACTED_NRIC]'
+    assert 'NRIC' in found
+
+
+def test_storage_redaction_leaves_assistant_messages_alone():
+    """The outlet owns assistant output and already persists its own redaction.
+    Rewriting it here would make the stored record disagree with what was streamed."""
+    hist = {'messages': {'a': {'role': 'assistant', 'content': 'reach me on 012-3456789'}}}
+    redact_history_for_storage(hist)
+    assert hist['messages']['a']['content'] == 'reach me on 012-3456789'
+
+
+def test_storage_redaction_handles_multimodal_without_touching_images():
+    hist = {
+        'messages': {
+            'a': {
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': 'pin is 4823'},
+                    {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,AAAA'}},
+                ],
+            }
+        }
+    }
+    redact_history_for_storage(hist)
+    parts = hist['messages']['a']['content']
+    assert parts[0]['text'] == 'pin is [REDACTED_ACCOUNT_NUMBER]'
+    assert parts[1]['image_url']['url'] == 'data:image/png;base64,AAAA'
+
+
+def test_storage_redaction_is_idempotent():
+    """Every save re-walks the whole history, so a clean message must survive untouched."""
+    once, _ = redact_text_for_storage('my ic is 030202-10-1234')
+    twice, found = redact_text_for_storage(once)
+    assert twice == once
+    assert not found
+
+
+def test_storage_redaction_tolerates_malformed_history():
+    for junk in (None, {}, {'messages': None}, {'messages': []}, 'not-a-dict', {'messages': {'a': None}}):
+        redact_history_for_storage(junk)  # must not raise
+
+
+def test_storage_and_provider_redaction_agree():
+    """The whole point of §2: what we stored must match what the model saw. Both paths
+    go through the same shared filter instance so the valves cannot drift apart."""
+    text = 'ic 030202-10-1234, email ali@sunway.com.my, password: Hunter2Sunway!'
+    provider = inlet(text)
+    stored, _ = redact_text_for_storage(text)
+    assert provider == stored
+
+
+# ── the toast must not over-promise ──────────────────────────────────────────
+
+
+def test_redaction_notice_claims_only_the_provider_hop():
+    """It previously said "was removed before sending", which reads as "it is gone" —
+    and it was not, because storage was a separate unfiltered path. Storage redaction is
+    on its own switch, so this message must not speak for it."""
+    seen = []
+
+    async def emitter(event):
+        seen.append(event)
+
+    f = Filter()
+    run(f.inlet(body('my ic is 030202-10-1234'), __event_emitter__=emitter))
+    notices = [e for e in seen if e.get('type') == 'notification']
+    assert notices, 'no toast emitted'
+    content = notices[0]['data']['content']
+    assert 'sent to the model' in content
+    assert 'saved' not in content, 'the toast must not claim anything about storage'

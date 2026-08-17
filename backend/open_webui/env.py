@@ -778,6 +778,28 @@ except (ValueError, TypeError):
     CHAT_SYSTEM_PROMPT_MAX_CHARS = 4000
 
 
+# Sunway: apply the guardrails PII redaction to the STORED chat record, not only to the
+# copy sent to the model provider (security review, to-be-reviewed-later §2).
+#
+# Why this exists. The guardrails filter rewrites the request body on its way to the
+# provider, but the chat record is saved by a SEPARATE frontend call carrying the
+# frontend's own unfiltered history. The two paths never met, so a real NRIC reached the
+# production `chat` table, its backups and its exports while the provider only ever saw
+# the redacted form. Worse, `notify_on_redaction` had already told the user "Sensitive
+# data was removed before sending" — the platform was announcing a protection it was not
+# delivering to storage.
+#
+# THE TRADE, taken deliberately: with this on, a user can no longer re-read exactly what
+# they typed. Their own NRIC comes back as [REDACTED_NRIC] after a reload. In-flight the
+# frontend still shows the original, so the change is visible only once the text has
+# become a stored record — which is the point at which it is the thing being protected.
+#
+# Default ON because it is the PDPA-defensible posture, and a flag rather than hard-wired
+# because "can users see their own raw input?" is a policy question that may be answered
+# differently later. Plain env — takes effect on restart, no PersistentConfig trap.
+ENABLE_STORAGE_REDACTION = os.getenv('ENABLE_STORAGE_REDACTION', 'True').lower() == 'true'
+
+
 # Retention: max chats a user may keep (ALL roles incl. admins), enforced as a
 # hard cap on chat creation ("delete one to create a new one"). 0 disables the
 # cap. The 1-month rolling expiry sweep is a separate mechanism.

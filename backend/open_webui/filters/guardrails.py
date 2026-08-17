@@ -143,6 +143,41 @@ GENERIC_SECRET_BARE = _c(
     rf'\b{_SECRET_KEY}\b(\s+)["\']?((?=[A-Za-z0-9_\-\.]*\d)[A-Za-z0-9_\-\.]{{12,}})["\']?'
 )
 
+# 3. COPULA form — Sunway addition. "my password is Tr0ub4dor&3" was NOT caught by
+#    either pattern above: 1 needs ':' or '=', and 2 sees the intervening "is" as the
+#    value and rejects it at the 12-char floor. Verified against the live filter before
+#    adding — the colon form redacted, the sentence form passed straight through, and
+#    people type sentences.
+#
+#    The value class is the wide one from pattern 1 (punctuation allowed, since real
+#    passwords contain it) BUT it must contain a DIGIT, borrowing pattern 2's test.
+#    Without that requirement this fired on "your password is required to proceed" —
+#    caught in testing, and precisely the false-positive class the note above warns
+#    about. Digits are near-universal in credentials and near-absent in English words.
+#
+#    Known trade: an all-letter password is missed. That is the same trade pattern 2
+#    already makes, and the alternative reintroduces the false positive.
+GENERIC_SECRET_COPULA = _c(
+    rf'\b{_SECRET_KEY}\b(\s+(?:is|are|was|were)\s+)["\']?'
+    rf'((?=[A-Za-z0-9_\-\.\+/~!@#$%^&*]*\d)[A-Za-z0-9_\-\.\+/~!@#$%^&*]{{8,}})["\']?'
+)
+
+# 4. NUMERIC secrets — Sunway addition. Bank account numbers, PINs, OTPs and card
+#    verification codes are digits only, so the alphanumeric patterns above never see
+#    them: "my maybank account is 512345678901" passed through untouched.
+#
+#    Kept SEPARATE from _SECRET_KEY rather than merged into it, because these keys are
+#    ordinary English words. "account" in particular appears constantly — "my account is
+#    locked", "the account is overdue". Requiring an ALL-DIGIT value is what makes it
+#    safe: those sentences have no digits and cannot match.
+_NUMERIC_SECRET_KEY = (
+    r'(account(?:\s+(?:number|no\.?|num))?|acc(?:ount)?\s*(?:no\.?|number)'
+    r'|pin|otp|cvv|cvc)'
+)
+NUMERIC_SECRET = _c(
+    rf'\b{_NUMERIC_SECRET_KEY}\b(\s*(?:is|are|was|:|=)\s*)["\']?(\d{{3,20}})["\']?'
+)
+
 # Written so the final character is always a DIGIT. The obvious form,
 # (?:\d[ -]?){13,19}, lets the last repetition swallow the trailing space and
 # the redaction then runs into the next word ("[REDACTED_CARD]expires").
@@ -404,6 +439,15 @@ class Filter:
 
             text = GENERIC_SECRET_ASSIGN.sub(_generic, text)
             text = GENERIC_SECRET_BARE.sub(_generic, text)
+            # Sunway additions — see the notes on patterns 3 and 4. Applied after the
+            # two originals so an explicit "password: x" still wins the match.
+            text = GENERIC_SECRET_COPULA.sub(_generic, text)
+
+            def _numeric(m: re.Match) -> str:
+                found.add("ACCOUNT_NUMBER")
+                return f"{m.group(1)}{m.group(2)}[REDACTED_ACCOUNT_NUMBER]"
+
+            text = NUMERIC_SECRET.sub(_numeric, text)
 
         for label, pat in PII_PATTERNS:
             if label == "NRIC" and not v.redact_nric:
@@ -596,12 +640,25 @@ class Filter:
                         chat_id,
                     )
                     if self.valves.notify_on_redaction:
+                        # Sunway: wording corrected. It previously read "was removed before
+                        # sending", which a user reasonably reads as "it is gone" -- and it
+                        # was not: the chat record was saved by a separate frontend call
+                        # carrying the unredacted text, so the platform was announcing a
+                        # protection it did not deliver to storage.
+                        #
+                        # It now says exactly what THIS filter guarantees and nothing more.
+                        # Storage redaction is a separate control on a separate switch
+                        # (ENABLE_STORAGE_REDACTION), so the toast deliberately does not speak
+                        # for it -- claiming "and before it was saved" here would be false the
+                        # moment that flag is turned off, which is the same bug in a new place.
+                        # The filter also cannot read the flag: it imports nothing beyond the
+                        # stdlib and pydantic, which is what keeps it unit-testable.
                         await self._notify(
                             __event_emitter__,
                             "warning",
                             "Sensitive data ("
                             + ", ".join(sorted(found)).lower().replace("_", " ")
-                            + ") was removed before sending.",
+                            + ") was removed from your message before it was sent to the model.",
                         )
 
             return body
@@ -702,3 +759,84 @@ class Filter:
             log.error("[guardrails] outlet defect, returning response unchanged: %s", e)
             traceback.print_exc()
             return body
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sunway: redaction on the PERSISTENCE path (to-be-reviewed-later §2).
+#
+# THE PROBLEM. `inlet` rewrites body['messages'] on the way to the model provider,
+# but the chat RECORD is written by a separate frontend call
+# (Chat.svelte -> updateChatById) carrying the frontend's own, unfiltered copy of
+# history. The two paths never meet. So a real NRIC found its way into the
+# production `chat` table, its backups, and its exports, while the provider only
+# ever saw [REDACTED_NRIC].
+#
+# WHY THAT IS WORSE THAN A PLAIN GAP. `notify_on_redaction` is on by default, so the
+# user was shown "Sensitive data was removed before sending" — and reasonably
+# concluded it was gone. It was not. The control was announcing protection it did
+# not provide.
+#
+# THE TRADE, and it is a real one: once storage is redacted the user can no longer
+# re-read exactly what they typed. Their own NRIC comes back as [REDACTED_NRIC] on
+# reload. That is the documented cost of option 2 in the parked note, taken
+# deliberately — the alternative is retaining personal data nobody chose to store.
+# In-flight the frontend still shows the original text; the change is visible only
+# after a reload, which is also when the record becomes the thing being protected.
+#
+# The same shared filter instance is used as the request path, so the valves cannot
+# drift between "what the model saw" and "what we stored" — that divergence is the
+# entire bug being fixed here.
+
+
+def redact_text_for_storage(text: str) -> tuple[str, set]:
+    """Apply the request-path redaction rules to a single string.
+
+    Returns (redacted_text, labels_found). Idempotent: a `[REDACTED_*]` marker
+    matches none of the patterns, so re-saving an already-clean message is a no-op.
+    """
+    if not isinstance(text, str) or not text:
+        return text, set()
+
+    from open_webui.filters import get_builtin_filter
+
+    # 'schat_guardrails' is the registry key in filters/__init__.py -- the same id the
+    # filter carried as a DB row. Imported lazily to avoid a circular import at module load.
+    instance = get_builtin_filter('schat_guardrails') or Filter()
+    found: set = set()
+    return instance._redact(text, found), found
+
+
+def redact_history_for_storage(history: dict) -> tuple[dict, set]:
+    """Redact user-authored content in a chat `history` blob, in place.
+
+    USER messages only. Assistant output is the outlet's job — it already persists
+    its own redaction — and rewriting model output here would make the stored record
+    disagree with what was streamed, which is a different kind of wrong.
+    """
+    found: set = set()
+    if not isinstance(history, dict):
+        return history, found
+
+    messages = history.get('messages')
+    if not isinstance(messages, dict):
+        return history, found
+
+    for message in messages.values():
+        if not isinstance(message, dict) or message.get('role') != 'user':
+            continue
+        content = message.get('content')
+        if isinstance(content, str):
+            redacted, labels = redact_text_for_storage(content)
+            if labels:
+                message['content'] = redacted
+                found |= labels
+        elif isinstance(content, list):
+            # Multimodal: redact only the text parts, never image payloads.
+            for part in content:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    redacted, labels = redact_text_for_storage(part.get('text'))
+                    if labels:
+                        part['text'] = redacted
+                        found |= labels
+
+    return history, found
