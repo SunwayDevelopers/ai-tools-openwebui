@@ -304,7 +304,17 @@ MODEL_CATALOGUE: list[dict] = [
         'base_model_id': 'deepseek-ai/DeepSeek-V4-Flash-0731',
         'is_active': True,
         'system': system_prompt(tail=CODING_TAIL),
-        'params': {'function_calling': 'native', 'reasoning_effort': 'low'},
+        # Sunway: raised from 'low' to 'high' (2026-08-17). DeepSeek-V4-Flash names its effort
+        # levels low / high / max -- there is NO 'medium' -- so 'low' was the bottom rung, a
+        # bigger step down than the word suggests, on the tier whose own description is
+        # "writing, debugging and reviewing". Current guidance puts debugging and review at
+        # medium-to-high; low is for mechanical single-file work.
+        #
+        # 'max' is deliberately not used anywhere: effort-to-accuracy is not monotonic and the
+        # ranking differs per model family, and nobody has measured max on this one. Revisit
+        # for Deepthink only, and only with a measurement -- it is the one tier whose
+        # description already promises the latency.
+        'params': {'function_calling': 'native', 'reasoning_effort': 'high'},
         'meta': {
             'builtinTools': {
                 'automations': False,

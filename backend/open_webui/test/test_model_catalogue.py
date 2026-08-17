@@ -151,8 +151,21 @@ def test_tiers_are_differentiated_by_parameters_not_by_prose():
     assert BY_ID['schat-quick']['system'] == BY_ID['schat-deepthink']['system']
     quick = BY_ID['schat-quick']['params']['custom_params']['chat_template_kwargs']
     assert quick['thinking'] is False
-    assert BY_ID['schat-deepthink']['params']['reasoning_effort'] in ('low', 'high', 'max')
-    assert BY_ID['schat-coding']['params']['reasoning_effort'] in ('low', 'high', 'max')
+
+
+def test_effort_ladder_is_the_decided_one():
+    """Pinned, not merely range-checked.
+
+    Coder shipped at 'low' -- the bottom rung on a model whose levels are low/high/max with no
+    'medium' -- and nobody noticed, because a plausible-looking value in a data blob reads as
+    intentional. Pinning makes a change to the ladder a reviewed decision, the same gate the
+    golden prompt hashes provide. Update these alongside a measurement, not casually.
+    """
+    assert BY_ID['schat-coding']['params']['reasoning_effort'] == 'high'
+    assert BY_ID['schat-deepthink']['params']['reasoning_effort'] == 'high'
+    # 'max' is unmeasured on this model family; keep it out until someone measures it.
+    efforts = [m['params'].get('reasoning_effort') for m in MODEL_CATALOGUE]
+    assert 'max' not in efforts
 
 
 def test_builtin_tools_are_written_out_rather_than_omitted():
