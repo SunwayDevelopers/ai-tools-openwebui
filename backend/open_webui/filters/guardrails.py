@@ -94,11 +94,25 @@ def _c(pattern: str) -> re.Pattern:
 # pattern so a recognised key is labelled by type rather than as CREDENTIAL.
 
 PII_PATTERNS: list[tuple[str, re.Pattern]] = [
-    # Malaysian NRIC, hyphenated. The unhyphenated 12-digit form is deliberately
-    # NOT matched: it is indistinguishable from an order number, an invoice ref
-    # or a phone number with a country code, and the false-positive rate made it
-    # unusable in testing.
-    ("NRIC", re.compile(r"\b\d{6}-\d{2}-\d{4}\b")),
+    # Malaysian NRIC. The unhyphenated 12-digit form is deliberately NOT matched: it is
+    # indistinguishable from an order number, an invoice ref or a phone number with a
+    # country code, and the false-positive rate made it unusable in testing.
+    #
+    # Sunway: the SEPARATOR class was widened from a literal '-' to the whole DASH family
+    # (to-be-reviewed-later §2 follow-up). `030202‑10‑1234` passed straight through, and
+    # that is not an evasion attempt — U+2011 is what Word autocorrect and PDF copy-paste
+    # produce. Accidental disclosure is the threat model, so typographic variants belong in.
+    #
+    # SPACE IS DELIBERATELY EXCLUDED, and this was measured rather than assumed. Allowing
+    # it looked reasonable — same 6-2-4 grouping, and `030202 10 1234` is how people type
+    # an IC — but it immediately matched `invoice 123456 78 9012`, `ref 987654 32 1098`
+    # and `total 100000 10 2000 units`. Spaces are how people group ANY long number, so
+    # the grouping stops carrying signal the moment the separator is a space. A dash in
+    # 6-2-4 is an identifier; a space in 6-2-4 is just formatting.
+    #
+    # Net: this closes the typographic variants and does not reopen the false-positive
+    # problem the bare 12-digit form has.
+    ("NRIC", re.compile(r"\b\d{6}[-‐‑‒–—−]\d{2}[-‐‑‒–—−]\d{4}\b")),
     ("EMAIL", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     # Malaysian mobile: 01x-xxx xxxx, with or without +60 and separators.
     ("PHONE", re.compile(r"(?:\+?60|\b0)1\d[-\s]?\d{3,4}[-\s]?\d{4}\b")),

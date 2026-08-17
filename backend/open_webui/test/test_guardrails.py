@@ -113,6 +113,38 @@ def test_does_not_redact_unhyphenated_nric():
     assert '880101145566' in inlet('my ic is 880101145566')
 
 
+@pytest.mark.parametrize(
+    'sep',
+    ['-', '‐', '‑', '‒', '–', '—', '−'],
+    ids=['ascii-hyphen', 'hyphen', 'non-breaking', 'figure-dash', 'en-dash', 'em-dash', 'minus'],
+)
+def test_nric_matches_every_dash_variant(sep):
+    """U+2011 is what Word autocorrect and PDF copy-paste produce, so a typographic
+    variant is an ACCIDENT — which is exactly the threat model — not an evasion."""
+    text = f'my ic is 030202{sep}10{sep}1234'
+    assert inlet(text) == 'my ic is [REDACTED_NRIC]'
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        'invoice 123456 78 9012 was paid',
+        'ref 987654 32 1098',
+        'total 100000 10 2000 units',
+        'my ic is 030202 10 1234',
+    ],
+)
+def test_space_separated_groups_are_deliberately_not_nric(text):
+    """SPACE is excluded from the separator class on purpose, and this was measured.
+
+    Allowing it looked right — same 6-2-4 grouping — but it matched all three invoice and
+    reference numbers above. Spaces are how people group ANY long number, so the grouping
+    stops carrying signal. The last case is a REAL NRIC that goes undetected as a result:
+    a knowing trade, recorded here so it is not "fixed" without re-measuring.
+    """
+    assert inlet(text) == text
+
+
 def test_redacts_email():
     assert inlet('write to ali@sunway.edu.my') == 'write to [REDACTED_EMAIL]'
 
