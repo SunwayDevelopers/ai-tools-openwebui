@@ -27,8 +27,10 @@
 	// The guardrail filter it used to host is now a code module under
 	// backend/open_webui/filters/, which cannot be installed, re-valved or toggled over HTTP.
 	//
-	// Settings remains flag-driven via ENABLE_ADMIN_SETTINGS_UI — PLAIN env (see env.py for why
-	// it must never be PersistentConfig).
+	// SETTINGS DELETED 2026-08-17 (hardening plan Items 7 and 9). Configuration comes from the
+	// chart and models from backend/open_webui/model_catalogue.py, so the page had nothing left
+	// to edit; ENABLE_ADMIN_SETTINGS_UI is retired with it. There is now no runtime admin
+	// surface that writes process-global config -- which was the whole reason it was gated.
 	//
 	// FAIL CLOSED (changed 2026-08-12). This used to read `=== false`, i.e. "hide only when
 	// the backend explicitly says false", so an ABSENT flag meant visible. That is precisely
@@ -44,11 +46,10 @@
 	//   config loaded, flag not exactly true → hide, including direct-URL access
 	$: configLoaded = $config !== null && $config !== undefined;
 
-	$: hiddenAdminPaths = [
-		...(configLoaded && $config?.features?.enable_admin_settings_ui !== true
-			? ['/admin/settings']
-			: [])
-	];
+	// Nothing left to hide: every flag-gated admin page has been deleted rather than gated.
+	// Kept as an empty list, and the guard below with it, so re-introducing a gated page is a
+	// one-line change and cannot reintroduce the fail-open bug described above.
+	$: hiddenAdminPaths = [];
 
 	$: if (browser && hiddenAdminPaths.some((path) => $page.url.pathname.includes(path))) {
 		loaded = false;
@@ -136,20 +137,8 @@
 						     (backend/open_webui/filters/), so nothing needs this install surface.
 						     ENABLE_ADMIN_FUNCTIONS_UI is retired with it. -->
 
-						<!-- Sunway: Admin Settings writes PROCESS-GLOBAL config — no tenant component,
-						     no TTL — so a single BU admin's change propagates to every pod for every
-						     tenant. Gated on ENABLE_ADMIN_SETTINGS_UI (plain env; it must never be
-						     PersistentConfig, since this is the only screen that could turn it back
-						     on). Individual tabs stay filtered by HIDDEN_ADMIN_SETTINGS_TAB_IDS. -->
-						{#if $config?.features?.enable_admin_settings_ui ?? false}
-							<a
-								draggable="false"
-								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/settings')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
-								href="/admin/settings">{$i18n.t('Settings')}</a
-							>
-						{/if}
+						<!-- Sunway: the Settings nav entry was deleted here (Items 7 and 9). See the
+						     note at the top of this file. -->
 					</div>
 				</div>
 			</div>

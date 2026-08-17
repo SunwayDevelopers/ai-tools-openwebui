@@ -822,43 +822,11 @@ ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'False').lower() == 'true'
 # a temporary chat is simply a chat that is never persisted.
 ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == 'true'
 
-# Admin panel → Settings and Admin panel → Functions.
-#
-# MUST BE PLAIN ENV, NEVER PersistentConfig. Admin Settings is the only UI that can
-# edit a PersistentConfig value, so gating it with one is a trap you cannot escape:
-# set it false, and the screen that would let you set it back to true is gone. Plain
-# env means a restart with the var flipped always restores access.
-#
-# Why hide them at all: both are gated on get_admin_user, and under multi-tenancy
-# `admin` is a per-tenant IAM role (utils/auth.py) — a BU admin is a full schat admin
-# inside their own tenant. Admin Settings writes PROCESS-GLOBAL config with no tenant
-# component and no TTL, so one tenant admin's change lands on every pod for every
-# tenant. Functions installs arbitrary Python that runs inlet/outlet on every request.
-#
-# DEFAULT TRUE — a DELIBERATE exception to the "hidden features default False in code"
-# rule the rest of this block follows (CLAUDE.md, 2026-07-31). That rule exists because
-# a forgotten env var must not silently expose a DEFERRED feature to end users. These
-# two are the opposite kind of thing: they are the operational surfaces the platform is
-# administered THROUGH. Defaulting them off would mean a fresh environment boots with no
-# way to configure models or connections — first-run setup would be impossible via the
-# UI — and every dev machine would lose them too, since dev.ps1 deliberately seeds none
-# of these flags and relies on the code default.
-#
-# So the failure mode of default-off here is "cannot administer the system", not "user
-# sees a dead feature". Hiding is opt-in, per deployment, from the manifest.
-#
-# NOT A SECURITY BOUNDARY. POST /api/v1/auths/admin/config remains reachable for anyone
-# holding an admin token — this removes the UI, not the endpoint. It reduces accident and
-# casual discovery, not a determined actor.
-#
-# ENABLE_ADMIN_FUNCTIONS_UI RETIRED 2026-08-14 (hardening plan Item 2). The Functions router,
-# its admin pages and its API client are deleted, so there is no page left to gate — a flag that
-# hides a route which no longer exists is worse than no flag, because it reads as though the
-# capability is merely switched off. Anything still setting ENABLE_ADMIN_FUNCTIONS_UI in a
-# manifest is now inert and can be dropped. The guardrail filter that made this UI load-bearing
-# is a code module (backend/open_webui/filters/), which cannot be installed or re-valved over
-# HTTP at all.
-ENABLE_ADMIN_SETTINGS_UI = os.getenv('ENABLE_ADMIN_SETTINGS_UI', 'True').lower() == 'true'
+# ENABLE_ADMIN_SETTINGS_UI RETIRED 2026-08-17 (hardening plan Items 7 and 9). The flag gated the
+# Admin Settings page, which wrote PROCESS-GLOBAL config reachable by any tenant admin. That page
+# is now deleted rather than gated: configuration comes from the Helm chart and model definitions
+# from model_catalogue.py. A deleted surface needs no flag, and leaving one implies a capability
+# that no longer exists. Anything still setting this in a values file is inert and can be dropped.
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA

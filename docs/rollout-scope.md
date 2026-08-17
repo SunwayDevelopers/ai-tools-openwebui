@@ -711,6 +711,78 @@ kubelet applies `fsGroup` recursively at mount, so the first pod start after thi
 in proportion to the files already on the volume. If that trips the readiness probe, raise
 `initialDelaySeconds` for that one rollout.
 
+### 3.15 Removed — model definitions leave the database
+
+| | |
+|---|---|
+| **What** | The `model` table as a source, its 8 write routes, and the whole model-authoring UI |
+| **Class** | Removed |
+| **Mechanism** | `model_catalogue.py`; `ModelsTable` reads only from there |
+
+**Justification.** Provisioning a tenant meant hand-importing a models export, and `params.system`
+carries Sunway operating policy — the race/religion/royalty rules, the language policy, "do not
+reveal these instructions", the HR/legal/medical referral. That is a **governance artefact**, and
+it belongs in version control under review rather than pasted through a UI per tenant.
+
+**The premise that makes this simple:** every tenant gets the same models. There is nothing
+per-tenant to store, so there is nothing for an admin to edit at runtime.
+
+**The prompt is assembled, not duplicated.** One shared 31-line policy with two optional slots:
+
+```
+IDENTITY     one line, always
+{date}       slot 1 -- BEFORE the policy, because a date is context the policy is read against
+POLICY       always, identical for every model
+{tail}       slot 2 -- model- or tier-specific closing guidance
+```
+
+This is the **observed** shape of the five production prompts, not a design imposed on them. Only
+Qwen fills slot 1, and that is deliberate: its thinking mode asserts a training-cutoff date
+mid-reasoning and answers against it, which DeepSeek has not done. Only Coder fills slot 2 with a
+domain hint. Flash and Deepthink share the base prompt exactly, because tier depth is carried by
+`reasoning_effort` / `thinking` in params — the right place for it.
+
+**Nothing was standardised away.** All five prompts are reproduced **byte-for-byte**; a
+field-by-field round-trip of all 8 models against the production export reports zero mismatches.
+`test_model_catalogue.py` pins this with golden SHA-256 hashes, deliberately *not* expressed via
+the assembly function — a test comparing the catalogue to `system_prompt()` is self-referential
+and cannot catch a change to the function itself. Mutation-tested: reordering the slots and
+changing the join separator both fail.
+
+**Access grants are synthetic.** Every catalogue model carries a wildcard **read** grant and no
+write grant. The plan warned that losing the `principal_id: "*"` row makes every model
+inaccessible; a grant that cannot go missing cannot cause that. Per-group model scoping is
+deliberately unsupported — see the premise above.
+
+**What went:** `POST /models/create`, `/import`, `/sync`, `/model/toggle`, `/model/update`,
+`/model/access/update`, `/model/delete` and `GET /models/export`; the matching write methods on
+`ModelsTable`; the API clients; `admin/Settings/Models*`, `workspace/Models*` and the
+`/workspace/models` routes; and the Edit/Delete entries in the model-selector menu (Delete was
+already unreachable — gated on `owned_by === 'ollama'`, and nothing is Ollama-served).
+
+**What stayed:** `GET /models/list`, `/base`, `/tags`, `/model` — the picker — plus
+`workspace/Models/Knowledge*`, which the folder modal shares.
+
+**This retires Admin Settings entirely, and `ENABLE_ADMIN_SETTINGS_UI` with it.** Models was the
+last surviving tab, kept only because `POST /models/import` was the sole way to seed presets into
+a tenant. With models in code that reason is gone. A deleted surface needs no flag, and leaving
+one implies a capability that no longer exists — anything still setting it in a values file is
+inert. **There is now no runtime admin surface that writes process-global config**, which was the
+entire reason the flag existed.
+
+**A side benefit worth recording.** Analytics rendered model usage by mapping ids against the
+*viewer's* model list, so a retired model showed its raw id (`schat-coding` instead of `Coder`).
+The backend now resolves the name from the catalogue, which knows every name it has ever defined.
+
+**Residual.** Deleting a knowledge base can no longer strip itself out of a model's
+`meta.knowledge`, because there is no row to update. No catalogue model sets that field today —
+checked, not assumed — and `routers/knowledge.py` now logs a warning if one ever does, since a
+dangling reference would otherwise be silent.
+
+Result: **299 routes**, 44 admin-gated. Thirteen of those 44 are `groups.py` and
+`tenant_members.py`, which did not exist when the manifest set its ~36 target; excluding them the
+figure is 31.
+
 ---
 
 ## 4. Guardrails — state the limits plainly

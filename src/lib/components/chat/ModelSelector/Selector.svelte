@@ -546,15 +546,10 @@
 									<div class="text-xs text-gray-500 dark:text-gray-400 mb-4">
 										{$i18n.t('Connect to an AI provider to start chatting')}
 									</div>
-									<a
-										href="/admin/settings/connections"
-										class="px-4 py-1.5 rounded-xl text-xs font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 transition"
-										on:click={() => {
-											show = false;
-										}}
-									>
-										{$i18n.t('Manage Connections')}
-									</a>
+									<!-- Sunway: the "Manage Connections" link was deleted here (hardening plan Item 7).
+									     Admin Settings -> Connections is gone; provider connections come from the
+									     chart. An empty model list is now an infrastructure problem, not something
+									     a user or a BU admin can fix from this dropdown. -->
 								</div>
 							{:else}
 								<div class="">

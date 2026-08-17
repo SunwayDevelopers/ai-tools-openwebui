@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from open_webui.internal.db import get_async_session
 from open_webui.models.chat_messages import ChatMessages
 from open_webui.models.users import Users
+from open_webui.models.models import catalogue_display_names
 from open_webui.utils.auth import get_admin_user
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,11 @@ router = APIRouter()
 class ModelAnalyticsEntry(BaseModel):
     model_id: str
     count: int
+    # Sunway: resolved server-side from the code catalogue (hardening plan Item 9). The dashboard
+    # used to map ids to names against the VIEWER's model list, which cannot name a model that has
+    # since been retired -- those rows fell back to the raw id (`schat-coding` instead of `Coder`).
+    # The catalogue knows every name it has ever defined, so history stays readable.
+    name: str | None = None
 
 
 class ModelAnalyticsResponse(BaseModel):
@@ -60,8 +66,9 @@ async def get_model_analytics(
     counts = await ChatMessages.get_message_count_by_model(
         start_date=start_date, end_date=end_date, group_id=group_id, db=db
     )
+    display_names = catalogue_display_names()
     models = [
-        ModelAnalyticsEntry(model_id=model_id, count=count)
+        ModelAnalyticsEntry(model_id=model_id, count=count, name=display_names.get(model_id))
         for model_id, count in sorted(counts.items(), key=lambda x: -x[1])
     ]
     return ModelAnalyticsResponse(models=models)

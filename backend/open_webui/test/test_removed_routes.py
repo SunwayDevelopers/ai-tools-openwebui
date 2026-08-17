@@ -76,6 +76,22 @@ REMOVED_ROUTES: dict[str, list[tuple[str, str]]] = {
         ('GET', '/export'),
         ('POST', '/import'),
     ],
+    # model AUTHORING and every other write into the `model` table (hardening plan Item 9).
+    # Models are defined in backend/open_webui/model_catalogue.py and ModelsTable reads only
+    # from there, so each of these wrote to a table no read path consults. /export went with
+    # them: it dumped the same rows, and the catalogue is already the readable copy.
+    # The four GET routes deliberately survive -- /list, /base, /tags and /model are how the
+    # frontend renders the model picker.
+    'models': [
+        ('POST', '/create'),
+        ('POST', '/import'),
+        ('GET', '/export'),
+        ('POST', '/sync'),
+        ('POST', '/model/toggle'),
+        ('POST', '/model/update'),
+        ('POST', '/model/access/update'),
+        ('POST', '/model/delete'),
+    ],
     # ran a `function` row of type `action` through exec()
     'main': [
         ('POST', '/api/chat/actions/{action_id}'),
@@ -190,3 +206,18 @@ def test_no_python_exec_in_backend():
         'Python exec() reappeared in the backend — the whole point of hardening plan Item 2 was '
         'that database content can no longer become running code:\n  ' + '\n  '.join(offenders)
     )
+
+
+def test_surviving_model_read_routes_are_intact():
+    """The inverse guard for Item 9: the model READ routes must survive.
+
+    Models moved into code, and the write routes went with the table. These four are what the
+    frontend uses to render the picker and resolve a model -- delete them and the app has no
+    models at all, which the removal tests above would happily call a success.
+    """
+    declared = _declared_routes(ROUTERS / 'models.py')
+    for method, route in (('GET', '/list'), ('GET', '/base'), ('GET', '/tags'), ('GET', '/model')):
+        assert (method, route) in declared, (
+            f'{method} {route} is missing from models.py. Only model AUTHORING was removed; '
+            f'reading the catalogue is how the picker is populated.'
+        )

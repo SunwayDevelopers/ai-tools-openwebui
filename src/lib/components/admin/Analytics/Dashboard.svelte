@@ -106,10 +106,14 @@
 
 			summary = summaryRes ?? summary;
 
+			// Sunway: prefer the name the backend resolved from the code catalogue (Item 9). It can
+			// name a retired model; the viewer's own $models list cannot, and those rows used to
+			// fall back to the raw id. $models stays as the second source for anything the
+			// catalogue does not define.
 			const modelsMap = new Map($models.map((m) => [m.id, m.name || m.id]));
 			modelStats = (modelsRes?.models ?? []).map((entry) => ({
 				...entry,
-				name: modelsMap.get(entry.model_id) || entry.model_id
+				name: entry.name || modelsMap.get(entry.model_id) || entry.model_id
 			}));
 
 			userStats = usersRes?.users ?? [];

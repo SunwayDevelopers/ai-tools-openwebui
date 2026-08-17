@@ -196,7 +196,7 @@
 									class="p-0.5 rounded-md text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
 									on:click|stopPropagation={() => {
 										show = false;
-										goto('/admin/settings/integrations');
+										goto('/'); // Sunway: Admin Settings is gone (Item 7); terminal servers come from the chart.
 									}}
 								>
 									<svg
