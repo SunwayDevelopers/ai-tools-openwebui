@@ -320,7 +320,7 @@
 							class="shrink-0 px-3 py-1 text-xs rounded-md transition-colors
 								{selectedExcelSheet === sheet
 								? 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium'
-								: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+								: 'text-gray-500 dark:text-gray-400 brand-nav-item'}"
 							on:click={() => onSheetChange?.(sheet)}
 						>
 							{sheet}
@@ -348,7 +348,7 @@
 					class="flex items-center justify-center gap-3 py-2 px-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500"
 				>
 					<button
-						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+						class="p-1 rounded brand-nav-item disabled:opacity-30"
 						disabled={currentSlide === 0}
 						on:click={() => {
 							resetImageView();
@@ -370,7 +370,7 @@
 					</button>
 					<span>{currentSlide + 1} / {fileOfficeSlides.length}</span>
 					<button
-						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+						class="p-1 rounded brand-nav-item disabled:opacity-30"
 						disabled={currentSlide === fileOfficeSlides.length - 1}
 						on:click={() => {
 							resetImageView();

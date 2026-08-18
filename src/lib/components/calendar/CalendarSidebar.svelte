@@ -108,10 +108,7 @@
 		<div class="flex items-center justify-between px-1 mb-1.5 mt-1.5">
 			<div class="text-[11px] font-medium">{miniMonthNames[miniMonth]} {miniYear}</div>
 			<div class="flex items-center gap-0.5">
-				<button
-					class="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-					on:click={() => navigateMini(-1)}
-				>
+				<button class="p-0.5 rounded brand-nav-item transition" on:click={() => navigateMini(-1)}>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
@@ -126,10 +123,7 @@
 						/></svg
 					>
 				</button>
-				<button
-					class="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-					on:click={() => navigateMini(1)}
-				>
+				<button class="p-0.5 rounded brand-nav-item transition" on:click={() => navigateMini(1)}>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
@@ -162,9 +156,7 @@
 						{day.toDateString() === currentDate.toDateString() && !isToday(day)
 						? 'bg-gray-200 dark:bg-gray-700'
 						: ''}
-						{!isToday(day) && day.toDateString() !== currentDate.toDateString()
-						? 'hover:bg-gray-100 dark:hover:bg-gray-800'
-						: ''}"
+						{!isToday(day) && day.toDateString() !== currentDate.toDateString() ? 'brand-nav-item' : ''}"
 					on:click={() => onDateSelect(day)}
 				>
 					{day.getDate()}
@@ -180,7 +172,7 @@
 				{$i18n.t('Calendars')}
 			</div>
 			<button
-				class="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+				class="p-0.5 rounded brand-nav-item transition"
 				title={$i18n.t('New calendar')}
 				on:click={onCreateCalendar}
 			>
@@ -200,7 +192,7 @@
 			<div class="group flex items-center w-full">
 				<button
 					class="flex items-center gap-2 px-2 py-1 rounded-lg text-xs transition
-						hover:bg-gray-50 dark:hover:bg-gray-800/50 flex-1 text-left min-w-0"
+						brand-nav-item/50 flex-1 text-left min-w-0"
 					on:click={() => onToggle(cal.id)}
 				>
 					<span

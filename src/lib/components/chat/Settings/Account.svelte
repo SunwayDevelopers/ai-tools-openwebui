@@ -248,7 +248,19 @@
 
 		<hr class="border-gray-50 dark:border-gray-850/30 my-4" />
 
-		{#if $config?.features.enable_login_form && $config?.features.enable_password_change_form}
+		<!-- Sunway: Change Password hidden for EVERYONE incl. admins. Identity is IAM's
+		     (Keycloak) under multi-tenancy, so a schat-local password is not the credential
+		     anyone signs in with -- changing it here succeeds, changes nothing a user can
+		     observe, and produces a support ticket. Hidden with an inert guard rather than
+		     by flipping ENABLE_PASSWORD_CHANGE_FORM: that is PersistentConfig, so the env
+		     default would only seed a FRESH DB, and the one UI that can edit a stored
+		     PersistentConfig value -- Admin Settings -> General -- is itself hidden here
+		     (HIDDEN_ADMIN_SETTINGS_TAB_IDS). A guard applies everywhere on restart.
+		     Original gate was: config.features.enable_login_form &&
+		     config.features.enable_password_change_form
+		     NOTE: POST /api/v1/auths/update/password stays reachable -- it never consulted
+		     that flag either, so this was only ever a UI control, not a boundary. -->
+		{#if false}
 			<div class="mt-2">
 				<UpdatePassword />
 			</div>
@@ -278,7 +290,7 @@
 								<SensitiveInput value={localStorage.token} readOnly={true} />
 
 								<button
-									class="ml-1.5 px-1.5 py-1 dark:hover:bg-gray-850 transition rounded-lg"
+									class="ml-1.5 px-1.5 py-1 brand-nav-item transition rounded-lg"
 									aria-label={$i18n.t('Copy Token')}
 									on:click={() => {
 										copyToClipboard(localStorage.token);
@@ -337,7 +349,7 @@
 									<SensitiveInput value={APIKey} readOnly={true} />
 
 									<button
-										class="ml-1.5 px-1.5 py-1 dark:hover:bg-gray-850 transition rounded-lg"
+										class="ml-1.5 px-1.5 py-1 brand-nav-item transition rounded-lg"
 										aria-label={$i18n.t('Copy API Key')}
 										on:click={() => {
 											copyToClipboard(APIKey);
@@ -383,7 +395,7 @@
 
 									<Tooltip content={$i18n.t('Create new key')}>
 										<button
-											class=" px-1.5 py-1 dark:hover:bg-gray-850transition rounded-lg"
+											class=" px-1.5 py-1 brand-nav-item transition rounded-lg"
 											aria-label={$i18n.t('Create new key')}
 											on:click={() => {
 												createAPIKeyHandler();
@@ -407,7 +419,7 @@
 									</Tooltip>
 								{:else}
 									<button
-										class="flex gap-1.5 items-center font-medium px-3.5 py-1.5 rounded-lg bg-gray-100/70 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-850 transition"
+										class="flex gap-1.5 items-center font-medium px-3.5 py-1.5 rounded-lg bg-gray-100/70 brand-nav-item dark:bg-gray-850 brand-nav-item transition"
 										on:click={() => {
 											createAPIKeyHandler();
 										}}
@@ -427,7 +439,7 @@
 
 	<div class="flex justify-end pt-3 text-sm font-medium">
 		<button
-			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+			class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full"
 			on:click={async () => {
 				const res = await submitHandler();
 

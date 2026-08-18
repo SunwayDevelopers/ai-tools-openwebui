@@ -830,6 +830,18 @@ except (ValueError, TypeError):
 # unarchiving an already-archived chat is still allowed so any can be recovered.
 ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'False').lower() == 'true'
 
+# Sdeck (Presenton) MCP tool server. Default OFF: the team deferred the rollout to Sdeck
+# phase 2, so the deck-generation tools must not reach users yet. When false, the catalogue
+# attaches no toolIds to any model (model_catalogue.py), which is the whole mechanism -- a
+# model only reaches an MCP server through its own meta.toolIds.
+#
+# NOTHING is removed by turning this off. The MCP connection stays configured in Admin
+# Settings -> Integrations, Open WebUI's MCP client is upstream code that is not touched, and
+# schat never had Sdeck-specific code of its own (see CLAUDE.md -- the whole integration is
+# config on this side, and the code changes all live in the Sdeck repo). Phase 2 is this flag
+# plus a restart.
+ENABLE_SDECK_MCP = os.getenv('ENABLE_SDECK_MCP', 'False').lower() == 'true'
+
 # Voice features (STT mic, TTS read-aloud, Call mode). Default on. When false the
 # voice UI is hidden for EVERYONE incl. admins (the per-user chat.stt/tts/call
 # permissions only hide it for non-admins). Code is kept — reversible by flipping

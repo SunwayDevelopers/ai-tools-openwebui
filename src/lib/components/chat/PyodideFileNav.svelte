@@ -417,7 +417,7 @@
 	>
 		<!-- File action buttons when a file is selected (slot content) -->
 		<button
-			class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+			class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 			on:click={() => selectedFile && downloadFile(selectedFile)}
 			aria-label={$i18n.t('Download')}
 		>

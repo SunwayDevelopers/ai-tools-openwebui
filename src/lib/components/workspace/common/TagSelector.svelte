@@ -20,7 +20,7 @@
 	{items}
 	{placeholder}
 	triggerClass="relative w-full flex items-center gap-0.5 px-2.5 py-1.5 rounded-xl "
-	itemClass="flex w-full gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl capitalize"
+	itemClass="flex w-full gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl capitalize"
 	onChange={() => onChange(value)}
 >
 	<svelte:fragment slot="trigger" let:selectedLabel>

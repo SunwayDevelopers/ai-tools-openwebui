@@ -529,7 +529,7 @@
 										className="shrink-0 flex items-center mr-1"
 									>
 										<button
-											class="self-center p-1 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
+											class="self-center p-1 bg-transparent brand-nav-item rounded-lg transition"
 											on:click={() => {
 												verifyHandler();
 											}}
@@ -710,7 +710,7 @@
 
 							{#if !direct}
 								<button
-									class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 object-cover rounded-full flex gap-1 items-center mt-2"
+									class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2 py-1 object-cover rounded-full flex gap-1 items-center mt-2"
 									type="button"
 									on:click={() => {
 										showAccessControlModal = true;
@@ -888,7 +888,7 @@
 						</div>
 
 						<button
-							class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
+							class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
 								? ' cursor-not-allowed'
 								: ''}"
 							type="submit"

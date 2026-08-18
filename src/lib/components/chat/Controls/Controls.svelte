@@ -124,15 +124,27 @@
 						     jargon to a general user, and it also states the SCOPE, which is the thing
 						     people get wrong: this applies to this conversation only and layers UNDER the
 						     model's configured prompt rather than replacing it. -->
-						<span>{$i18n.t('Tell SChat.ai how to respond in this chat')}</span>
+						<span>{$i18n.t('Tell AI how to respond in this chat')}</span>
 					</div>
-					<div class="" slot="content">
+					<div class="brand-surface rounded-2xl p-2.5 flex flex-col gap-2" slot="content">
+						<!-- Sunway: the layering rule stated in the UI, not just in the code. At the
+						     provider router the model's Admin-Settings prompt is prepended BEFORE this
+						     text (add_or_update_system_message(..., append=False) in routers/openai.py
+						     and ollama.py), so a per-chat prompt can only add context -- it cannot
+						     override model config or the served model. Without saying so, people write
+						     "ignore your previous instructions" here and read the result as a bug. -->
+						<div class="brand-info-box text-gray-700 dark:text-gray-300">
+							{$i18n.t(
+								'This is added to the model’s own instructions rather than replacing them, and applies to this chat only.'
+							)}
+						</div>
+
 						<textarea
 							bind:value={params.system}
 							maxlength={systemPromptMaxChars > 0 ? systemPromptMaxChars : null}
 							class="w-full text-xs outline-hidden resize-vertical {$settings.highContrastMode
 								? 'border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-2.5'
-								: 'py-1.5 bg-transparent'}"
+								: 'brand-field'}"
 							rows="4"
 							placeholder={$i18n.t(
 								'e.g. Act as a Financial Analyst and keep explainations brief and to the point.'

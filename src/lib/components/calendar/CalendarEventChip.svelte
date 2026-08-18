@@ -13,7 +13,7 @@
 	<button
 		class="w-full text-left text-xs flex items-start gap-1.5 py-[1px] px-0.5 rounded-md
 			{event.meta?.automation_id ? 'opacity-60' : ''}
-			hover:bg-gray-50 dark:hover:bg-gray-800/50 transition truncate"
+			brand-nav-item/50 transition truncate"
 		on:click|stopPropagation={() => dispatch('click', event)}
 	>
 		<span

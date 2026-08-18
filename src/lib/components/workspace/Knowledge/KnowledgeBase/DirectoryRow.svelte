@@ -58,10 +58,10 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
-	class="group flex cursor-pointer w-full px-2 bg-transparent dark:hover:bg-gray-850/50 hover:bg-white rounded-xl transition
+	class="group flex cursor-pointer w-full px-2 bg-transparent brand-nav-item rounded-xl transition
 		{dragOver
 		? 'bg-gray-100 dark:bg-gray-800 ring-1 ring-gray-300 dark:ring-gray-600'
-		: 'hover:bg-gray-100 dark:hover:bg-gray-850'}"
+		: 'brand-nav-item'}"
 	draggable="true"
 	on:dragstart={(e) => {
 		e.dataTransfer?.setData('application/x-kb-dir-move', JSON.stringify({ dirId: directory.id }));
@@ -156,10 +156,7 @@
 	{#if writeAccess}
 		<div class="flex items-center">
 			<Dropdown bind:show={showDropdown} align="end" sideOffset={4}>
-				<button
-					class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-					type="button"
-				>
+				<button class="p-1 rounded-full brand-nav-item transition" type="button">
 					<EllipsisHorizontal className="size-3.5" />
 				</button>
 
@@ -169,7 +166,7 @@
 					>
 						<button
 							type="button"
-							class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+							class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 							on:click={() => startRename()}
 						>
 							<Pencil className="size-3.5" />
@@ -177,7 +174,7 @@
 						</button>
 						<button
 							type="button"
-							class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+							class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 							on:click={() => onDelete(directory.id)}
 						>
 							<GarbageBin className="size-3.5" />

@@ -146,7 +146,7 @@
 	</div>
 {:else}
 	<div
-		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
+		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 brand-sticky-head"
 	>
 		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
 			<div class="flex-shrink-0">
@@ -198,16 +198,15 @@
 				</div>
 
 				<div>
-					<Tooltip content={$i18n.t('Add User')}>
-						<button
-							class=" p-2 rounded-xl hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 transition font-medium text-sm flex items-center space-x-1"
-							on:click={() => {
-								showAddUserModal = !showAddUserModal;
-							}}
-						>
-							<Plus className="size-3.5" />
-						</button>
-					</Tooltip>
+					<button
+						class="brand-pill-solid"
+						on:click={() => {
+							showAddUserModal = !showAddUserModal;
+						}}
+					>
+						<Plus className="size-3" strokeWidth="2.5" />
+						<div class="hidden md:block">{$i18n.t('Add User')}</div>
+					</button>
 				</div>
 			</div>
 		</div>
@@ -339,7 +338,7 @@
 			</thead>
 			<tbody class="">
 				{#each users as user, userIdx (user.id)}
-					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
+					<tr class="dark:border-gray-850 text-xs">
 						<td class="px-3 py-1 min-w-[7rem] w-28">
 							<!-- Sunway: the role badge is no longer a button (hardening plan Item 5). It opened
 							     the user-edit modal; role is resolved from IAM per request, so a local change
@@ -397,7 +396,7 @@
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Preview Access')}>
 										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											class="self-center w-fit text-sm px-2 py-2 brand-nav-item rounded-xl"
 											aria-label={$i18n.t('Preview Access')}
 											on:click={() => {
 												selectedUser = user;
@@ -433,7 +432,7 @@
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Delete User')}>
 										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											class="self-center w-fit text-sm px-2 py-2 brand-nav-item rounded-xl"
 											aria-label={$i18n.t('Delete User')}
 											on:click={async () => {
 												showDeleteConfirmDialog = true;

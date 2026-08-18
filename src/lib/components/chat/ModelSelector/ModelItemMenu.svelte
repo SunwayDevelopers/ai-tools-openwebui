@@ -54,7 +54,7 @@
 			<button
 				type="button"
 				aria-pressed={($settings?.pinnedModels ?? []).includes(model?.id)}
-				class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2"
+				class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2"
 				on:click={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
@@ -80,7 +80,7 @@
 
 			<button
 				type="button"
-				class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2"
+				class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2"
 				on:click={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
@@ -104,7 +104,7 @@
 
 				<button
 					type="button"
-					class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2"
+					class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2"
 					on:click={(e) => {
 						e.stopPropagation();
 						e.preventDefault();

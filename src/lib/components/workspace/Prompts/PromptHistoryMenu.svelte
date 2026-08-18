@@ -40,7 +40,7 @@
 	<Tooltip content={$i18n.t('More')}>
 		<slot>
 			<button
-				class="p-1 rounded-lg text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+				class="p-1 rounded-lg text-gray-500 brand-nav-item transition"
 				aria-label={$i18n.t('More Options')}
 			>
 				<EllipsisHorizontal className="size-5" />
@@ -63,7 +63,7 @@
 				</Tooltip>
 			{:else}
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						show = false;
 						showDeleteConfirmDialog = true;

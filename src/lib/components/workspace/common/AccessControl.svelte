@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Select from '$lib/components/common/Select.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import { getContext, onMount } from 'svelte';
 
 	const i18n = getContext('i18n');
@@ -489,19 +491,28 @@
 						? $i18n.t('You do not have permission to make this public')
 						: ''}
 				>
-					<select
-						id="models"
-						class="outline-none bg-transparent text-sm font-medium block w-fit pr-10 max-w-full placeholder-gray-400"
+					<!-- Sunway: the shared Select rather than a native <select>. The OS dropdown
+					     rendered its own blue-highlighted menu over the form, and on this screen it
+					     overlapped the description text beside it. Same values, same handler. -->
+					<Select
 						value={!hasPublicReadGrant(accessGrants ?? []) ? 'private' : 'public'}
-						on:change={(e) => {
-							setPublic((e.target as HTMLSelectElement).value === 'public');
+						items={[
+							{ value: 'private', label: $i18n.t('Private') },
+							...((share && sharePublic) || hasPublicReadGrant(accessGrants ?? [])
+								? [{ value: 'public', label: $i18n.t('Public') }]
+								: [])
+						]}
+						align="start"
+						triggerClass="brand-pill-outline"
+						onChange={(value) => {
+							setPublic(value === 'public');
 						}}
 					>
-						<option class=" text-gray-700" value="private">{$i18n.t('Private')}</option>
-						{#if (share && sharePublic) || hasPublicReadGrant(accessGrants ?? [])}
-							<option class=" text-gray-700" value="public">{$i18n.t('Public')}</option>
-						{/if}
-					</select>
+						<svelte:fragment slot="trigger" let:selectedLabel>
+							<span class="truncate">{selectedLabel}</span>
+							<ChevronDown className="size-3" strokeWidth="2.5" />
+						</svelte:fragment>
+					</Select>
 				</Tooltip>
 
 				<div class=" text-xs text-gray-400 font-medium">
@@ -514,7 +525,18 @@
 			</div>
 		</div>
 
-		{#if hasPublicReadGrant(accessGrants ?? []) && accessRoles.includes('write')}
+		<!-- Sunway: "Allow public write access" hidden. It grants `user:* -> write`, i.e.
+		     EVERY user in the tenant can upload, rename and delete files in the collection
+		     and edit its name/description -- not just read it. Knowledge bases are curated
+		     by BU admins for the rollout, so the only public grant that should exist is the
+		     read one set by the Public dropdown above. The label never said what "write"
+		     meant, and it sat one row under Public with no warning, so it was a single
+		     switch away from making a published corpus editable by 10K staff.
+		     Original gate was: hasPublicReadGrant(accessGrants ?? []) && accessRoles.includes('write')
+		     NOTE: this hides the only control for the grant, so a collection that ALREADY
+		     has `user:* -> write` keeps it. Setting Public -> Private -> Public clears it
+		     (setPublic() drops every user:* grant and re-adds read only). -->
+		{#if false}
 			<div class="flex w-full justify-between mt-2 ml-0.5">
 				<div class="self-center text-xs">
 					{$i18n.t('Allow public write access')}
@@ -536,13 +558,13 @@
 			</div>
 			<div class="flex gap-1">
 				<button
-					class="px-2 py-1 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-xs font-medium flex items-center gap-1"
+					class="brand-pill-outline"
 					type="button"
 					on:click={() => {
 						showAddAccessModal = true;
 					}}
 				>
-					<Plus className="size-3" />
+					<Plus className="size-3" strokeWidth="2.5" />
 					{$i18n.t('Add Access')}
 				</button>
 			</div>
@@ -586,7 +608,7 @@
 						</button>
 
 						<button
-							class=" rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+							class=" rounded-full p-1 brand-nav-item transition"
 							type="button"
 							on:click={() => {
 								removePrincipal('group', group.id);
@@ -634,7 +656,7 @@
 							</button>
 
 							<button
-								class=" rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+								class=" rounded-full p-1 brand-nav-item transition"
 								type="button"
 								on:click={() => {
 									removePrincipal('user', user.id);

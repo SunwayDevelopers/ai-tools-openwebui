@@ -151,29 +151,37 @@
 						submitHandler();
 					}}
 				>
-					<div
-						class="flex -mt-2 mb-1.5 gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent dark:text-gray-200"
-					>
-						<button
-							class="min-w-fit p-1.5 {tab === ''
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								tab = '';
-							}}>{$i18n.t('Form')}</button
+					<!-- Sunway: CSV Import is hidden, which leaves the form as the only tab, so the
+					     tab bar goes with it. The import path bulk-creates accounts from a file whose
+					     columns are Name, Email, Password, Role — passwords schat does not own under
+					     IAM, and a role column that would let a spreadsheet mint admins. The `import`
+					     branch, its parser and the sample-file link are left intact below and are
+					     simply unreachable while `tab` stays ''. -->
+					{#if false}
+						<div
+							class="flex -mt-2 mb-1.5 gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent dark:text-gray-200"
 						>
+							<button
+								class="min-w-fit p-1.5 {tab === ''
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								type="button"
+								on:click={() => {
+									tab = '';
+								}}>{$i18n.t('Form')}</button
+							>
 
-						<button
-							class="min-w-fit p-1.5 {tab === 'import'
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								tab = 'import';
-							}}>{$i18n.t('CSV Import')}</button
-						>
-					</div>
+							<button
+								class="min-w-fit p-1.5 {tab === 'import'
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								type="button"
+								on:click={() => {
+									tab = 'import';
+								}}>{$i18n.t('CSV Import')}</button
+							>
+						</div>
+					{/if}
 
 					<div class="px-1">
 						{#if tab === ''}
@@ -188,7 +196,10 @@
 										placeholder={$i18n.t('Enter Your Role')}
 										required
 									>
-										<option value="pending"> {$i18n.t('pending')} </option>
+										<!-- Sunway: "pending" removed from the picker. It is upstream's
+										     signup-approval state; schat provisions accounts from here (or from
+										     IAM), so creating one that cannot sign in is a support ticket, not a
+										     workflow. The role value itself still exists server-side. -->
 										<option value="user"> {$i18n.t('user')} </option>
 										<option value="admin"> {$i18n.t('admin')} </option>
 									</select>
@@ -228,7 +239,12 @@
 								</div>
 							</div>
 
-							{#if !$config?.features?.enable_multi_tenancy}
+							<!-- Sunway: the password field is hidden outright. It was already absent
+							     wherever ENABLE_MULTI_TENANCY is on (staging and production), so this only
+							     removes it from environments with MT off — dev machines — where a locally
+							     set password is not a credential anything honours. Identity comes from IAM.
+							     Original gate was: !config.features.enable_multi_tenancy -->
+							{#if false}
 								<div class="flex flex-col w-full mt-1">
 									<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Password')}</div>
 
@@ -257,7 +273,7 @@
 									/>
 
 									<button
-										class="w-full text-sm font-medium py-3 bg-transparent hover:bg-gray-100 border border-dashed dark:border-gray-850 dark:hover:bg-gray-850 text-center rounded-xl"
+										class="w-full text-sm font-medium py-3 bg-transparent brand-nav-item border border-dashed dark:border-gray-850 brand-nav-item text-center rounded-xl"
 										type="button"
 										on:click={() => {
 											document.getElementById('upload-user-csv-input')?.click();
@@ -288,7 +304,7 @@
 
 					<div class="flex justify-end pt-3 text-sm font-medium">
 						<button
-							class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
+							class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
 								? ' cursor-not-allowed'
 								: ''}"
 							type="submit"

@@ -81,7 +81,7 @@
 			{/if}
 			<Tooltip content={$i18n.t('Refresh')}>
 				<button
-					class="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+					class="p-0.5 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 					on:click|stopPropagation={loadPorts}
 					aria-label={$i18n.t('Refresh')}
 				>
@@ -111,7 +111,7 @@
 			{:else}
 				{#each ports as port}
 					<button
-						class="flex items-center w-full gap-2 px-1.5 py-1 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition group"
+						class="flex items-center w-full gap-2 px-1.5 py-1 text-xs rounded brand-nav-item transition group"
 						on:click={() => previewPort(port.port)}
 					>
 						<span class="font-mono text-blue-500 dark:text-blue-400 shrink-0">
@@ -125,7 +125,7 @@
 							<span
 								role="button"
 								tabindex="-1"
-								class="text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+								class="text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition shrink-0 p-0.5 rounded brand-nav-item"
 								on:click|stopPropagation={() => openPortExternal(port.port)}
 							>
 								<svg

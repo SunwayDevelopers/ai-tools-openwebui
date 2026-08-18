@@ -4,12 +4,17 @@
 	interface Props {
 		data: { date: string; models: Record<string, number> }[];
 		models: string[];
+		/* Sunway: served model IDs (schat-quick, schat-deepthink, ...) are meaningless to an
+		   admin -- the tables beside this chart already show the tier names. Map id -> label
+		   so the tooltip agrees with them. Falls back to the id when a model is retired and
+		   no longer resolvable. */
+		labels?: Record<string, string>;
 		colors: string[];
 		height?: number;
 		period?: 'hour' | 'week' | 'month' | 'year' | 'all';
 	}
 
-	let { data, models, colors, height = 300, period = 'week' }: Props = $props();
+	let { data, models, labels = {}, colors, height = 300, period = 'week' }: Props = $props();
 
 	let hoveredIdx: number | null = $state(null);
 	let mouseX = $state(0);
@@ -119,7 +124,7 @@
 					.sort(([, a], [, b]) => b - a)
 					.slice(0, 5) as [n, c]}
 					<div class="flex items-center justify-between gap-2 py-0.5">
-						<span class="min-w-0 truncate text-gray-600 dark:text-gray-300">{n}</span>
+						<span class="min-w-0 truncate text-gray-600 dark:text-gray-300">{labels[n] ?? n}</span>
 						<span class="shrink-0 text-gray-900 tabular-nums dark:text-white"
 							>{c.toLocaleString()}
 							<span class="text-gray-400">({total > 0 ? ((c / total) * 100).toFixed(0) : 0}%)</span

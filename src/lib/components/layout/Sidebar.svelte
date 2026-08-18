@@ -124,14 +124,14 @@
 					($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
 				);
 			case 'workspace':
-				return (
-					$user?.role === 'admin' ||
-					$user?.permissions?.workspace?.models ||
-					$user?.permissions?.workspace?.knowledge ||
-					$user?.permissions?.workspace?.prompts ||
-					$user?.permissions?.workspace?.tools ||
-					$user?.permissions?.workspace?.skills
-				);
+				// Sunway: Knowledge is the only workspace section left -- Models, Prompts, Skills are
+				// hidden and Tools is deleted -- so this entry is gated on workspace.knowledge alone.
+				// Upstream OR-ed all five, which on an existing DB (USER_PERMISSIONS is
+				// PersistentConfig, so a stored value beats the env default) could show a user the
+				// "Knowledge Base" entry off the back of, say, workspace.prompts, and then bounce
+				// them straight back to / from the route guard, because that guard checks
+				// workspace.knowledge. A visible link to nowhere.
+				return $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge;
 			case 'automations':
 				return (
 					$config?.features?.enable_automations &&
@@ -154,6 +154,10 @@
 	const getMenuItemMeta = (id) => {
 		const items = {
 			notes: { label: 'Notes', href: '/notes', iconType: 'note' },
+			// Sunway: reads "Knowledge Base" in the UI, not "Workspace". The key stays
+			// 'Workspace' and the three shipped locales translate it (en-GB/ms-MY/zh-CN
+			// translation.json), which also renames the user-menu entry and the page title
+			// in one place. Knowledge is the only section left in the workspace.
 			workspace: { label: 'Workspace', href: '/workspace', iconType: 'workspace' },
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
@@ -719,7 +723,7 @@
 
 {#if !$mobile && !$showSidebar}
 	<div
-		class=" pt-[7px] pb-2 px-2 flex flex-col justify-between text-black dark:text-white hover:bg-gray-50/30 dark:hover:bg-gray-950/30 h-full z-10 transition-all border-e-[0.5px] border-gray-50 dark:border-gray-850/30"
+		class=" pt-[7px] pb-2 px-2 flex flex-col justify-between text-black dark:text-white brand-nav-item h-full z-10 transition-all border-e-[0.5px] border-gray-50 dark:border-gray-850/30"
 		id="sidebar"
 	>
 		<button
@@ -734,7 +738,7 @@
 					placement="right"
 				>
 					<button
-						class="flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group {isWindows
+						class="flex rounded-xl brand-nav-item transition group {isWindows
 							? 'cursor-pointer'
 							: 'cursor-[e-resize]'}"
 						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
@@ -756,7 +760,7 @@
 				<div class="">
 					<Tooltip content={$i18n.t('New Chat')} placement="right">
 						<a
-							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 							href="/"
 							draggable="false"
 							on:click={async (e) => {
@@ -778,7 +782,7 @@
 				<div>
 					<Tooltip content={$i18n.t('Search')} placement="right">
 						<button
-							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 							on:click={(e) => {
 								e.stopImmediatePropagation();
 								e.preventDefault();
@@ -801,7 +805,7 @@
 						<div class="">
 							<Tooltip content={$i18n.t(meta.label)} placement="right">
 								<a
-									class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+									class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 									href={meta.href}
 									on:click={async (e) => {
 										e.stopImmediatePropagation();
@@ -888,7 +892,7 @@
 						>
 							<button
 								type="button"
-								class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+								class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class="self-center relative">
@@ -945,7 +949,7 @@
 				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-3"
 			>
 				<a
-					class="flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition no-drag-region hidden"
+					class="flex items-center rounded-xl size-8.5 h-full justify-center brand-nav-item transition no-drag-region hidden"
 					href="/"
 					draggable="false"
 					on:click={newChatHandler}
@@ -978,7 +982,7 @@
 					placement="bottom"
 				>
 					<button
-						class="flex rounded-xl size-8.5 justify-center items-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition {isWindows
+						class="flex rounded-xl size-8.5 justify-center items-center brand-nav-item transition {isWindows
 							? 'cursor-pointer'
 							: 'cursor-[w-resize]'}"
 						on:click={() => {
@@ -1016,7 +1020,7 @@
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<a
 							id="sidebar-new-chat-button"
-							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition outline-none"
 							href="/"
 							draggable="false"
 							on:click={newChatHandler}
@@ -1037,7 +1041,7 @@
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<button
 							id="sidebar-search-button"
-							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition outline-none"
 							on:click={() => {
 								showSearch.set(true);
 							}}
@@ -1065,7 +1069,7 @@
 								>
 									<a
 										id="sidebar-{itemId}-button"
-										class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+										class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition"
 										href={meta.href}
 										on:click={itemClickHandler}
 										draggable="false"
@@ -1166,7 +1170,7 @@
 						<div class="mt-0.5 pb-1.5">
 							{#each $pinnedNotes as note (note.id)}
 								<a
-									class="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition group text-sm"
+									class="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 brand-nav-item transition group text-sm"
 									href={`/notes/${note.id}`}
 									on:click={() => {
 										itemClickHandler();
@@ -1180,7 +1184,7 @@
 										{note.title}
 									</div>
 									<button
-										class="invisible group-hover:visible self-center p-0.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition"
+										class="invisible group-hover:visible self-center p-0.5 brand-nav-item rounded-lg transition"
 										on:click|preventDefault|stopPropagation={async () => {
 											await toggleNotePinnedStatusById(localStorage.token, note.id);
 											const _pinnedNotes = await getPinnedNoteList(localStorage.token).catch(
@@ -1506,7 +1510,7 @@
 						>
 							<button
 								type="button"
-								class=" flex items-center rounded-2xl py-2 px-1.5 w-full hover:bg-gray-100/50 dark:hover:bg-gray-900/50 transition"
+								class=" flex items-center rounded-2xl py-2 px-1.5 w-full brand-nav-item transition"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class=" self-center mr-3 relative flex-shrink-0">

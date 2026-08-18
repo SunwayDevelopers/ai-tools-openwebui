@@ -13,6 +13,7 @@
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ChartLine from './ChartLine.svelte';
+	import Select from '$lib/components/common/Select.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { formatNumber } from '$lib/utils';
@@ -54,6 +55,13 @@
 
 	// Data
 	let summary = { total_messages: 0, total_chats: 0, total_models: 0, total_users: 0 };
+
+	// Sunway: id -> display name for the chart tooltip, from the same resolution the Model
+	// Usage table uses (analytics payload first, the viewer's $models list second).
+	$: modelLabels = Object.fromEntries([
+		...$models.map((m) => [m.id, m.name || m.id]),
+		...modelStats.map((m) => [m.model_id, m.name || m.model_id])
+	]);
 	let modelStats: Array<{ model_id: string; count: number; name?: string }> = [];
 	let userStats: Array<{ user_id: string; name?: string; email?: string; count: number }> = [];
 	let dailyStats: Array<{ date: string; models: Record<string, number> }> = [];
@@ -193,31 +201,39 @@
 
 <!-- Header with title and period selector -->
 <div
-	class="pt-0.5 pb-1 gap-1 flex flex-row justify-between items-center sticky top-0 z-10 bg-white dark:bg-gray-900"
+	class="pt-0.5 pb-1 gap-1 flex flex-row justify-between items-center sticky top-0 z-10 brand-sticky-head"
 >
 	<div class="text-lg font-medium px-0.5 shrink-0">
 		{$i18n.t('Analytics')}
 	</div>
 	<div class="flex items-center gap-2 flex-wrap justify-end min-w-0">
 		{#if groups.length > 0}
-			<select
+			<Select
 				bind:value={selectedGroupId}
-				class="w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-none text-right"
+				items={[
+					{ value: null, label: $i18n.t('All Users') },
+					...groups.map((group) => ({ value: group.id, label: group.name }))
+				]}
+				align="end"
+				triggerClass="brand-pill-outline"
 			>
-				<option value={null}>{$i18n.t('All Users')}</option>
-				{#each groups as group}
-					<option value={group.id}>{group.name}</option>
-				{/each}
-			</select>
+				<svelte:fragment slot="trigger" let:selectedLabel>
+					<span class="truncate">{selectedLabel}</span>
+					<ChevronDown className="size-3" strokeWidth="2.5" />
+				</svelte:fragment>
+			</Select>
 		{/if}
-		<select
+		<Select
 			bind:value={selectedPeriod}
-			class="w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-none text-right"
+			items={periods}
+			align="end"
+			triggerClass="brand-pill-outline"
 		>
-			{#each periods as period}
-				<option value={period.value}>{period.label}</option>
-			{/each}
-		</select>
+			<svelte:fragment slot="trigger" let:selectedLabel>
+				<span class="truncate">{selectedLabel}</span>
+				<ChevronDown className="size-3" strokeWidth="2.5" />
+			</svelte:fragment>
+		</Select>
 	</div>
 </div>
 
@@ -279,6 +295,7 @@
 			<ChartLine
 				data={dailyStats}
 				models={topModels}
+				labels={modelLabels}
 				colors={chartColors}
 				height={200}
 				period={periodMap[selectedPeriod] || 'week'}
@@ -379,7 +396,7 @@
 					</thead>
 					<tbody>
 						{#each sortedModels as model, idx (model.model_id)}
-							<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
+							<tr class="dark:border-gray-850 text-xs">
 								<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
 								<td class="px-3 py-1 font-medium text-gray-900 dark:text-white">
 									<div class="flex items-center gap-2">
@@ -485,7 +502,7 @@
 					</thead>
 					<tbody>
 						{#each sortedUsers as user, idx (user.user_id)}
-							<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
+							<tr class="dark:border-gray-850 text-xs">
 								<td class="px-3 py-1 text-gray-400">{idx + 1}</td>
 								<td class="px-3 py-1 font-medium text-gray-900 dark:text-white">
 									<div class="flex items-center gap-2">

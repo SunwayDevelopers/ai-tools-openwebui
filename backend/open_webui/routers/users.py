@@ -715,7 +715,22 @@ async def get_user_preview(
         db=db,
     )
 
-    active_models = [m for m in all_models if m.is_active]
+    # Sunway: `meta.hidden` marks the raw served models -- the MLIS/vLLM base models the
+    # schat tiers chain to -- as not-for-humans. Every user-facing surface filters on it
+    # (the model selector, the '@' palette, Chat.svelte's list), but this endpoint did not,
+    # so an admin opening User Preview saw "Qwen" and "DeepSeek" listed as models the user
+    # can pick, next to the Flash / Coder / Deepthink tiers actually on offer.
+    #
+    # The fix is here and NOT a matter of making those base models private:
+    # has_base_model_access() walks the base_model_id chain and denies the whole chain the
+    # moment a registered base denies access, so revoking public read on
+    # deepseek-ai/DeepSeek-V4-Flash-0731 would take Flash, Coder AND Deepthink down with it
+    # for every user -- all three name it as their base_model_id.
+    def _is_hidden(model) -> bool:
+        meta = model.meta.model_dump() if model.meta else {}
+        return bool(meta.get('hidden', False))
+
+    active_models = [m for m in all_models if m.is_active and not _is_hidden(m)]
 
     return {
         'user': {'id': target_user.id, 'name': target_user.name},

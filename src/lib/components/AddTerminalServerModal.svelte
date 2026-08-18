@@ -291,7 +291,7 @@
 
 							<Tooltip content={$i18n.t('Verify Connection')} className="self-end -mb-1">
 								<button
-									class="self-center p-1 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-850 rounded-lg transition"
+									class="self-center p-1 bg-transparent brand-nav-item rounded-lg transition"
 									on:click={() => {
 										verifyHandler();
 									}}
@@ -554,7 +554,7 @@
 
 							{#if !direct}
 								<button
-									class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 object-cover rounded-full flex gap-1 items-center mt-2"
+									class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2 py-1 object-cover rounded-full flex gap-1 items-center mt-2"
 									type="button"
 									on:click={() => {
 										showAccessControlModal = true;
@@ -688,7 +688,7 @@
 							</div>
 
 							<button
-								class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full flex flex-row space-x-1 items-center"
+								class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full flex flex-row space-x-1 items-center"
 								type="submit"
 							>
 								{$i18n.t('Save')}

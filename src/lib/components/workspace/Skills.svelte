@@ -263,7 +263,7 @@
 
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.skills}
 					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
+						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 brand-nav-item dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition"
 						on:click={() => {
 							importInputElement.click();
 						}}
@@ -276,7 +276,7 @@
 
 				{#if total && ($user?.role === 'admin' || $user?.permissions?.workspace?.skills)}
 					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
+						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 brand-nav-item dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition"
 						on:click={async () => {
 							const _skills = await exportSkills(localStorage.token).catch((error) => {
 								toast.error(`${error}`);
@@ -298,7 +298,7 @@
 
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.skills}
 					<a
-						class=" px-2 py-1.5 rounded-xl bg-black text-white dark:bg-white dark:text-black transition font-medium text-sm flex items-center"
+						class=" px-2 py-1.5 rounded-xl brand-btn-primary transition font-medium text-sm flex items-center"
 						href="/workspace/skills/create"
 					>
 						<Plus className="size-3" strokeWidth="2.5" />
@@ -327,7 +327,7 @@
 				{#if query}
 					<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
 						<button
-							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							class="p-0.5 rounded-full brand-nav-item transition"
 							aria-label={$i18n.t('Clear search')}
 							on:click={() => {
 								query = '';
@@ -374,7 +374,7 @@
 					<Tooltip content={skill?.description ?? skill?.id}>
 						<div
 							class=" flex space-x-4 text-left w-full px-3 py-2.5 transition rounded-2xl {skill.write_access
-								? 'cursor-pointer dark:hover:bg-gray-850/50 hover:bg-gray-50'
+								? 'cursor-pointer brand-nav-item'
 								: 'cursor-not-allowed opacity-60'}"
 						>
 							{#if skill.write_access}
@@ -453,7 +453,7 @@
 									{#if shiftKey}
 										<Tooltip content={$i18n.t('Delete')}>
 											<button
-												class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+												class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 												type="button"
 												aria-label={$i18n.t('Delete')}
 												on:click={() => {
@@ -481,7 +481,7 @@
 											onClose={() => {}}
 										>
 											<button
-												class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+												class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 												type="button"
 											>
 												<EllipsisHorizontal className="size-5" />

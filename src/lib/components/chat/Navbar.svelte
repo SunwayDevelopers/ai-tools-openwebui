@@ -108,7 +108,7 @@
 					>
 						<Tooltip content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}>
 							<button
-								class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+								class=" cursor-pointer flex rounded-lg brand-nav-item transition"
 								on:click={() => {
 									showSidebar.set(!$showSidebar);
 								}}
@@ -139,7 +139,7 @@
 						{#if !chat?.id}
 							<Tooltip content={$i18n.t(`Temporary Chat`)}>
 								<button
-									class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 									id="temporary-chat-button"
 									on:click={async () => {
 										if (($settings?.temporaryChatByDefault ?? false) && $temporaryChatEnabled) {
@@ -173,7 +173,7 @@
 						{:else if $temporaryChatEnabled}
 							<Tooltip content={$i18n.t(`Save Chat`)}>
 								<button
-									class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 									id="save-temporary-chat-button"
 									on:click={async () => {
 										onSaveTempChat();
@@ -192,7 +192,7 @@
 							<button
 								class=" flex {$showSidebar
 									? 'md:hidden'
-									: ''} cursor-pointer px-2 py-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									: ''} cursor-pointer px-2 py-2 rounded-xl text-gray-600 dark:text-gray-400 brand-nav-item transition"
 								on:click={() => {
 									initNewChat();
 								}}
@@ -222,7 +222,7 @@
 							{moveChatHandler}
 						>
 							<button
-								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 								id="chat-context-menu-button"
 							>
 								<div class=" m-auto self-center">
@@ -243,7 +243,7 @@
 						     nothing about what the button does. aria-label kept in step with the tooltip. -->
 						<Tooltip content={$i18n.t('Chat Instructions')}>
 							<button
-								class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class=" flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 								on:click={async () => {
 									await showControls.set(!$showControls);
 								}}
@@ -269,7 +269,7 @@
 						>
 							<button
 								type="button"
-								class="select-none flex rounded-xl p-1.5 w-full hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class="select-none flex rounded-xl p-1.5 w-full brand-nav-item transition"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class=" self-center">

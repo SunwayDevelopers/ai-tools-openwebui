@@ -31,6 +31,14 @@ ENABLES that tool. Entries are written out in full for that reason -- do not "ti
 
 from __future__ import annotations
 
+from open_webui.env import ENABLE_SDECK_MCP
+
+# Sunway: the Sdeck (Presenton) MCP tool server, attached per model through meta.toolIds. A
+# model reaches an MCP server ONLY through this list, so an empty list detaches it cleanly --
+# no server is unconfigured, no code is removed, nothing to undo beyond the flag. Deferred to
+# Sdeck phase 2; see ENABLE_SDECK_MCP in env.py for the full note.
+SDECK_TOOL_IDS: list[str] = ['server:mcp:SDeck Staging'] if ENABLE_SDECK_MCP else []
+
 # Owner recorded on every catalogue model. Not a real account: these are platform models with no
 # creating admin. Kept because ModelModel requires the field.
 CATALOGUE_USER_ID = 'system'
@@ -132,7 +140,7 @@ MODEL_CATALOGUE: list[dict] = [
             'hidden': True,
             'profile_image_url': None,
             'suggestion_prompts': None,
-            'toolIds': ['server:mcp:SDeck Staging'],
+            'toolIds': list(SDECK_TOOL_IDS),
         },
         'created_at': 1786072587,
         'updated_at': 1786072587,
@@ -252,7 +260,7 @@ MODEL_CATALOGUE: list[dict] = [
             'profile_image_url': '/static/favicon.png',
             'suggestion_prompts': None,
             'tags': [],
-            'toolIds': ['server:mcp:SDeck Staging'],
+            'toolIds': list(SDECK_TOOL_IDS),
         },
         'created_at': 1786072587,
         'updated_at': 1786072587,
@@ -293,7 +301,7 @@ MODEL_CATALOGUE: list[dict] = [
             'profile_image_url': '/static/favicon.png',
             'suggestion_prompts': None,
             'tags': [],
-            'toolIds': ['server:mcp:SDeck Staging'],
+            'toolIds': list(SDECK_TOOL_IDS),
         },
         'created_at': 1786072587,
         'updated_at': 1786072587,
@@ -344,7 +352,7 @@ MODEL_CATALOGUE: list[dict] = [
             'profile_image_url': '/static/favicon.png',
             'suggestion_prompts': None,
             'tags': [],
-            'toolIds': ['server:mcp:SDeck Staging'],
+            'toolIds': list(SDECK_TOOL_IDS),
         },
         'created_at': 1786072587,
         'updated_at': 1786072587,
@@ -385,7 +393,7 @@ MODEL_CATALOGUE: list[dict] = [
             'profile_image_url': '/static/favicon.png',
             'suggestion_prompts': None,
             'tags': [],
-            'toolIds': ['server:mcp:SDeck Staging'],
+            'toolIds': list(SDECK_TOOL_IDS),
         },
         'created_at': 1786072587,
         'updated_at': 1786072587,

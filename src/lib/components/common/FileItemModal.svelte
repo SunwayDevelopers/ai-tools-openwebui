@@ -447,7 +447,7 @@
 						<div class="absolute top-2 right-2 z-10">
 							<Tooltip content={$i18n.t('Reset view')}>
 								<button
-									class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-850/80 backdrop-blur-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
+									class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-850/80 backdrop-blur-sm shadow-sm brand-nav-item transition text-gray-500 dark:text-gray-400"
 									on:click={resetImageView}
 								>
 									<Reset className="size-4" />
@@ -620,7 +620,7 @@
 								{#if pptxSlides.length > 1}
 									<div class="flex items-center justify-center gap-3 pb-3 text-sm text-gray-500">
 										<button
-											class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+											class="p-1.5 rounded-lg brand-nav-item disabled:opacity-30"
 											disabled={pptxCurrentSlide === 0}
 											on:click={() => (pptxCurrentSlide = Math.max(0, pptxCurrentSlide - 1))}
 										>
@@ -639,7 +639,7 @@
 										</button>
 										<span>{pptxCurrentSlide + 1} / {pptxSlides.length}</span>
 										<button
-											class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+											class="p-1.5 rounded-lg brand-nav-item disabled:opacity-30"
 											disabled={pptxCurrentSlide === pptxSlides.length - 1}
 											on:click={() =>
 												(pptxCurrentSlide = Math.min(pptxSlides.length - 1, pptxCurrentSlide + 1))}

@@ -653,9 +653,9 @@
 									selectedTab === 'general'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -677,9 +677,9 @@
 									selectedTab === 'interface'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -702,9 +702,9 @@
 									selectedTab === 'connections'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -728,9 +728,9 @@
 									selectedTab === 'tools'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -753,9 +753,9 @@
 									selectedTab === 'personalization'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -778,9 +778,9 @@
 									selectedTab === 'audio'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -803,9 +803,9 @@
 									selectedTab === 'data_controls'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -827,9 +827,9 @@
 									selectedTab === 'account'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -851,9 +851,9 @@
 									selectedTab === 'about'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {

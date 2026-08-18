@@ -82,7 +82,7 @@
 			? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 			: ' md:max-w-[calc(100%-49px)]'}  w-full max-w-full"
 	>
-		<nav class="   px-2.5 pt-1.5 backdrop-blur-xl drag-region select-none">
+		<nav class="   px-2.5 pt-1.5 pb-2 backdrop-blur-xl drag-region select-none">
 			<div class=" flex items-center gap-1">
 				{#if $mobile}
 					<div class="{$showSidebar ? 'md:hidden' : ''} flex flex-none items-center self-end">
@@ -92,7 +92,7 @@
 						>
 							<button
 								id="sidebar-toggle-button"
-								class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition cursor-"
+								class=" cursor-pointer flex rounded-lg brand-nav-item transition cursor-"
 								on:click={() => {
 									showSidebar.set(!$showSidebar);
 								}}
@@ -111,18 +111,18 @@
 					>
 						<a
 							draggable="false"
-							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/users')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+							class="min-w-fit select-none {$page.url.pathname.includes('/admin/users')
+								? 'brand-pill-solid'
+								: 'brand-pill-outline'}"
 							href="/admin">{$i18n.t('Users')}</a
 						>
 
 						{#if $config?.features.enable_admin_analytics ?? true}
 							<a
 								draggable="false"
-								class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/analytics')
-									? ''
-									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+								class="min-w-fit select-none {$page.url.pathname.includes('/admin/analytics')
+									? 'brand-pill-solid'
+									: 'brand-pill-outline'}"
 								href="/admin/analytics">{$i18n.t('Analytics')}</a
 							>
 						{/if}

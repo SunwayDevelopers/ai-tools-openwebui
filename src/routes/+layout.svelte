@@ -45,7 +45,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { updated } from '$app/state';
 
-	import i18n, { initI18n, getLanguages, changeLanguage } from '$lib/i18n';
+	import i18n, { initI18n, changeLanguage, FIRST_RUN_LOCALE, SUPPORTED_LOCALES } from '$lib/i18n';
 
 	import '../tailwind.css';
 	import '../app.css';
@@ -65,7 +65,7 @@
 	import { chatCompletion } from '$lib/apis/openai';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
-	import { bestMatchingLanguage, displayFileHandler, getUserTimezone } from '$lib/utils';
+	import { displayFileHandler, getUserTimezone } from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
 
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
@@ -952,13 +952,22 @@
 
 		initI18n(localStorage?.locale);
 		if (!localStorage.locale) {
-			const languages = await getLanguages();
-			const browserLanguages = navigator.languages
-				? navigator.languages
-				: [navigator.language || navigator.userLanguage];
-			const lang = backendConfig?.default_locale
-				? backendConfig.default_locale
-				: bestMatchingLanguage(languages, browserLanguages, 'en-US');
+			// Sunway: a first-time user starts on FIRST_RUN_LOCALE (en-GB), not on whatever
+			// their browser reports. Upstream called bestMatchingLanguage() over all ~60
+			// entries in languages.json with an 'en-US' fallback, so it could resolve to a
+			// locale schat does not ship: supportedLngs then rendered en-GB anyway, but the
+			// unsupported code still reached document.lang and dayjs.locale(), leaving the
+			// page announcing a language it was not written in. A deployment can still pin
+			// its own via the backend DEFAULT_LOCALE.
+			// Sunway: DEFAULT_LOCALE is only honoured when schat ships that locale. It is a
+			// backend config value a deployment can set to anything, and passing an unshipped
+			// code through here reached document.lang and dayjs.locale() even though the UI
+			// rendered en-GB -- a page announcing a language it was not written in.
+			const configuredLocale = backendConfig?.default_locale;
+			const lang =
+				configuredLocale && SUPPORTED_LOCALES.includes(configuredLocale)
+					? configuredLocale
+					: FIRST_RUN_LOCALE;
 			changeLanguage(lang);
 			dayjs.locale(lang);
 		}
@@ -1175,13 +1184,13 @@
 
 			<div class="mt-6 flex justify-center gap-2">
 				<button
-					class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+					class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition brand-nav-item dark:bg-gray-100 dark:text-gray-900 brand-nav-item"
 					on:click={() => location.reload()}
 				>
 					{$i18n.t('Try again')}
 				</button>
 				<button
-					class="rounded-full px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+					class="rounded-full px-4 py-2 text-sm font-medium text-gray-600 transition brand-nav-item dark:text-gray-300 brand-nav-item"
 					on:click={async () => {
 						// Best effort: signout is itself an API call and may also be down.
 						await endSession().catch(() => {});

@@ -31,7 +31,7 @@
 	triggerClass={className
 		? className
 		: 'flex shrink-0 items-center gap-2 bg-transparent px-0.5 text-sm placeholder-gray-400 outline-hidden focus:outline-hidden'}
-	itemClass="flex w-full gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl"
+	itemClass="flex w-full gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl"
 	onChange={(v) => {
 		onChange(v);
 	}}

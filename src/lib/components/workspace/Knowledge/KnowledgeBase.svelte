@@ -1134,14 +1134,49 @@
 			}}
 			accessRoles={['read', 'write']}
 		/>
+
+		<!-- Sunway: explicit way out of a knowledge base. The workspace tab bar's link was the
+		     only other exit, and on this route it renders in its ACTIVE state (the path still
+		     matches /workspace/knowledge), so it reads as a "you are here" label rather than a
+		     way back. Same Back-button pattern the create screen already uses, but labelled
+		     with the destination so it is obvious where it lands. -->
+		<div class="w-full px-2 mb-1.5">
+			<button
+				class="brand-backlink brand-pill-outline text-gray-600 dark:text-gray-300"
+				type="button"
+				on:click={() => {
+					goto('/workspace/knowledge');
+				}}
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					class="size-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+				<div>{$i18n.t('Knowledge Base')}</div>
+			</button>
+		</div>
+
 		<div class="w-full px-2">
 			<div class=" flex w-full">
 				<div class="flex-1">
 					<div class="flex items-center justify-between w-full">
+						<!-- Sunway: name + description are borderless transparent inputs upstream, so
+						     they read as static text and nothing tells a BU admin they can be edited.
+						     The classes below add hover/focus reveal (the click-to-edit pattern) and a
+						     text cursor; `enabled:` keeps them flat for read-only viewers. Both still
+						     autosave through changeDebounceHandler() -- unchanged. -->
 						<div class="w-full flex justify-between items-center">
 							<input
 								type="text"
-								class="text-left w-full text-lg bg-transparent outline-hidden flex-1"
+								class="text-left text-lg bg-transparent outline-hidden brand-editable"
 								bind:value={knowledge.name}
 								aria-label={$i18n.t('Knowledge Name')}
 								placeholder={$i18n.t('Knowledge Name')}
@@ -1164,21 +1199,28 @@
 						</div>
 
 						{#if knowledge?.write_access}
-							<div class="self-center shrink-0">
-								<button
-									class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
-									type="button"
-									on:click={() => {
-										showAccessControlModal = true;
-									}}
-								>
-									<LockClosed strokeWidth="2.5" className="size-3.5" />
+							<!-- Sunway: the Access button is hidden. Per-KB visibility is no longer a
+							     choice — a collection is readable by the users of the tenant that owns it
+							     (see CreateKnowledgeBase.svelte) — and leaving this here would let an
+							     admin quietly undo that one click after creating. The modal, its handler
+							     and the Read Only badge below are all left intact. -->
+							{#if false}
+								<div class="self-center shrink-0">
+									<button
+										class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
+										type="button"
+										on:click={() => {
+											showAccessControlModal = true;
+										}}
+									>
+										<LockClosed strokeWidth="2.5" className="size-3.5" />
 
-									<div class="text-sm font-medium shrink-0">
-										{$i18n.t('Access')}
-									</div>
-								</button>
-							</div>
+										<div class="text-sm font-medium shrink-0">
+											{$i18n.t('Access')}
+										</div>
+									</button>
+								</div>
+							{/if}
 						{:else}
 							<div class="text-xs shrink-0 text-gray-500">
 								{$i18n.t('Read Only')}
@@ -1189,7 +1231,7 @@
 					<div class="flex w-full items-center">
 						<input
 							type="text"
-							class="text-left text-xs w-full text-gray-500 bg-transparent outline-hidden flex-1"
+							class="text-left text-xs text-gray-500 bg-transparent outline-hidden brand-editable"
 							bind:value={knowledge.description}
 							aria-label={$i18n.t('Knowledge Description')}
 							placeholder={$i18n.t('Knowledge Description')}
@@ -1199,27 +1241,33 @@
 							}}
 						/>
 
-						<div class="hidden md:block">
-							<Tooltip content={$i18n.t('Click to copy ID')}>
-								<button
-									class="text-xs text-gray-500 font-mono shrink-0 px-2 py-1 rounded-lg cursor-pointer hover:underline transition whitespace-nowrap"
-									on:click={() => {
-										copyToClipboard(id);
-										toast.success($i18n.t('ID copied to clipboard'));
-									}}
-								>
-									{id}
-								</button>
-							</Tooltip>
-						</div>
+						<!-- Sunway: the raw collection UUID is hidden. Nothing a BU admin can reach
+						     consumes it -- there is no user-facing API surface -- so it was 36
+						     characters of developer debris sitting where the collection's status
+						     should be, in the one spot non-IT staff look to understand what they
+						     are editing. The copy handler is left intact for whenever an admin
+						     tool needs it back. -->
+						{#if false}
+							<div class="hidden md:block">
+								<Tooltip content={$i18n.t('Click to copy ID')}>
+									<button
+										class="text-xs text-gray-500 font-mono shrink-0 px-2 py-1 rounded-lg cursor-pointer hover:underline transition whitespace-nowrap"
+										on:click={() => {
+											copyToClipboard(id);
+											toast.success($i18n.t('ID copied to clipboard'));
+										}}
+									>
+										{id}
+									</button>
+								</Tooltip>
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<div
-			class="mt-2 mb-2.5 py-2 -mx-0 bg-white dark:bg-gray-900 rounded-3xl border border-gray-100/30 dark:border-gray-850/30 flex-1"
-		>
+		<div class="mt-2 mb-2.5 py-2 -mx-0 brand-surface rounded-3xl flex-1">
 			<div class="px-3.5 flex flex-1 items-center w-full space-x-2 py-0.5 pb-2">
 				<div class="flex flex-1 items-center">
 					<div class=" self-center ml-1 mr-3">
@@ -1246,7 +1294,7 @@
 					{#if false}
 						<Dropdown align="end">
 							<button
-								class="p-1.5 mr-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+								class="p-1.5 mr-1 rounded-xl text-gray-500 brand-nav-item transition"
 								type="button"
 							>
 								<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
@@ -1257,7 +1305,7 @@
 									class="min-w-[180px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
 								>
 									<button
-										class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+										class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 										type="button"
 										on:click={() => {
 											includeContent = !includeContent;
@@ -1320,23 +1368,33 @@
 					<div
 						class="flex gap-3 w-fit text-center text-sm rounded-full bg-transparent px-0.5 whitespace-nowrap"
 					>
-						<DropdownOptions
-							align="start"
-							className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-850 rounded-xl placeholder-gray-400 outline-hidden focus:outline-hidden"
-							bind:value={viewOption}
-							items={[
-								{ value: null, label: $i18n.t('All') },
-								{ value: 'created', label: $i18n.t('Created by you') },
-								{ value: 'shared', label: $i18n.t('Shared with you') }
-							]}
-							onChange={(value) => {
-								if (value) {
-									localStorage.workspaceViewOption = value;
-								} else {
-									delete localStorage.workspaceViewOption;
-								}
-							}}
-						/>
+						<!-- Sunway: the All / Created by you / Shared with you filter is hidden HERE. It
+						     stays on the collections list, where it belongs. Two reasons. In here it
+						     filters the FILES of one collection by who uploaded them, which is close to
+						     meaningless now that public write access is off -- uploads come from the
+						     owner and the few write grantees. And it persists to
+						     `localStorage.workspaceViewOption`, the SAME key the collections list reads
+						     on mount, so filtering files inside a collection silently changed which
+						     collections you saw when you went back. Sort stays. -->
+						{#if false}
+							<DropdownOptions
+								align="start"
+								className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-850 rounded-xl placeholder-gray-400 outline-hidden focus:outline-hidden"
+								bind:value={viewOption}
+								items={[
+									{ value: null, label: $i18n.t('All') },
+									{ value: 'created', label: $i18n.t('Created by you') },
+									{ value: 'shared', label: $i18n.t('Shared with you') }
+								]}
+								onChange={(value) => {
+									if (value) {
+										localStorage.workspaceViewOption = value;
+									} else {
+										delete localStorage.workspaceViewOption;
+									}
+								}}
+							/>
+						{/if}
 
 						<DropdownOptions
 							align="start"
@@ -1455,7 +1513,7 @@
 									<div class="shrink-0 flex items-center p-2">
 										<div class="mr-2">
 											<button
-												class="w-full text-left text-sm p-1.5 rounded-lg dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-gray-850"
+												class="w-full text-left text-sm p-1.5 rounded-lg dark:text-gray-300 dark:hover:text-white brand-nav-item"
 												aria-label={$i18n.t('Close')}
 												on:click={() => {
 													selectedFileId = null;
@@ -1472,7 +1530,7 @@
 										{#if knowledge?.write_access}
 											<div>
 												<button
-													class="flex self-center w-fit text-sm py-1 px-2.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+													class="flex self-center w-fit text-sm py-1 px-2.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
 													disabled={isSaving}
 													on:click={() => {
 														updateFileContentHandler();
