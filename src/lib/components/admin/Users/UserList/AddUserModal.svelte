@@ -79,17 +79,23 @@
 						const columns = row.split(',').map((col) => col.trim());
 						console.debug(idx, columns);
 
-						if (idx > 0) {
-							if (
-								columns.length === 4 &&
-								['admin', 'user', 'pending'].includes(columns[3].toLowerCase())
-							) {
+						// Sunway: the format is Name, Email, Role -- the Password column is gone (2026-08-21).
+						// schat does not own passwords: identity is IAM's, and the Add User form stopped
+						// collecting one for everyone. A password column in a bulk-import file is a
+						// plaintext credential list circulating as a spreadsheet, for a credential nothing
+						// honours. An empty string is passed instead and the backend generates an unusable
+						// random secret (routers/auths.py add_user).
+						//
+						// 'pending' is not accepted here, matching the Form tab's role picker: it is
+						// upstream's signup-approval state and an account created in it cannot sign in.
+						if (idx > 0 && row.trim() !== '') {
+							if (columns.length === 3 && ['admin', 'user'].includes(columns[2].toLowerCase())) {
 								const res = await addUser(
 									localStorage.token,
 									columns[0],
 									columns[1],
-									columns[2],
-									columns[3].toLowerCase(),
+									'',
+									columns[2].toLowerCase(),
 									generateInitialsImage(columns[0])
 								).catch((error) => {
 									toast.error(`Row ${idx + 1}: ${error}`);
@@ -151,13 +157,15 @@
 						submitHandler();
 					}}
 				>
-					<!-- Sunway: CSV Import is hidden, which leaves the form as the only tab, so the
-					     tab bar goes with it. The import path bulk-creates accounts from a file whose
-					     columns are Name, Email, Password, Role — passwords schat does not own under
-					     IAM, and a role column that would let a spreadsheet mint admins. The `import`
-					     branch, its parser and the sample-file link are left intact below and are
-					     simply unreachable while `tab` stays ''. -->
-					{#if false}
+					<!-- Sunway: CSV Import restored 2026-08-21, with the Password column dropped from
+					     the format (see the parser above). It was hidden because the file carried
+					     plaintext passwords schat does not own under IAM; without that column it is an
+					     ordinary bulk-provisioning list of Name, Email, Role.
+
+					     The Role column still admits 'admin', so this file can mint admins -- that is
+					     the point of it for an operator provisioning a tenant, and it is the same
+					     capability the Form tab's role picker already has. -->
+					{#if true}
 						<div
 							class="flex -mt-2 mb-1.5 gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent dark:text-gray-200"
 						>
@@ -289,7 +297,7 @@
 
 								<div class=" text-xs text-gray-500">
 									ⓘ {$i18n.t(
-										'Ensure your CSV file includes 4 columns in this order: Name, Email, Password, Role.'
+										'Ensure your CSV file includes 3 columns in this order: Name, Email, Role.'
 									)}
 									<a
 										class="underline dark:text-gray-200"

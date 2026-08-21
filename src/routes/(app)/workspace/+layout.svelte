@@ -38,6 +38,24 @@
 		goto('/');
 	}
 
+	// Sunway: /workspace/knowledge/create is gated on `workspace.knowledge_create`, which is a
+	// SEPARATE permission from the `workspace.knowledge` read grant checked in onMount below.
+	// Without this a user who can browse knowledge bases could still reach the create form by URL.
+	//
+	// Reactive for the same reason as the guard above, not onMount: navigating from
+	// /workspace/knowledge to /workspace/knowledge/create reuses this already-mounted layout, so an
+	// onMount-only check would never fire on exactly the navigation people actually make.
+	$: if (
+		browser &&
+		$page.url.pathname.includes('/knowledge/create') &&
+		$user &&
+		$user.role !== 'admin' &&
+		!$user?.permissions?.workspace?.knowledge_create
+	) {
+		loaded = false;
+		goto('/workspace/knowledge');
+	}
+
 	onMount(async () => {
 		// Sunway: the hidden-section check that used to live here is now the REACTIVE guard
 		// above — see the comment there for why onMount was not enough. Rationale for which

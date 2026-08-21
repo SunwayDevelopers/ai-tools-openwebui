@@ -533,6 +533,86 @@ async def get_user_active_status_by_id(
 
 
 ############################
+# UpdateUserRoleById
+############################
+
+
+class UserRoleUpdateForm(BaseModel):
+    id: str
+    role: str
+
+
+@router.post('/update/role', response_model=UserInfoResponse)
+async def update_user_role_by_id(
+    request: Request,
+    form_data: UserRoleUpdateForm,
+    user=Depends(get_admin_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Sunway: role-only reinstatement of the user edit that Item 5 removed (2026-08-21).
+
+    Item 5 deleted POST /{user_id}/update, which carried role, email and name together. Only
+    `email` was actually dangerous -- it is the IAM entitlement key, so changing it orphaned the
+    schat row and re-provisioned the user as a new account. This endpoint brings back the one
+    field an admin has a legitimate reason to change and leaves the other two gone.
+
+    ⚠️ UNDER MULTI-TENANCY THIS IS REFUSED, NOT SILENTLY IGNORED. `role` is re-read from IAM on
+    every authenticated request (utils/auth.py, resolve/provision) and written straight back over
+    the local column, so a change made here would appear to work and then revert the moment the
+    target user next did anything. Refusing with an explanation is the honest behaviour; the
+    place to promote someone in a tenant is their IAM group membership.
+    """
+    if ENABLE_MULTI_TENANCY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                'Roles are managed by IAM for this tenant. Change their group membership in IAM '
+                'instead -- a role set here is overwritten on their next request.'
+            ),
+        )
+
+    if form_data.role not in ('user', 'admin'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Role must be either "user" or "admin".',
+        )
+
+    # Changing your own role is refused in both directions: demoting yourself can leave a
+    # deployment with no reachable admin, and it is the one edit that needs no second party.
+    if form_data.id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACTION_PROHIBITED,
+        )
+
+    target = await Users.get_user_by_id(form_data.id, db=db)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.USER_NOT_FOUND,
+        )
+
+    # The first-created account keeps its role, mirroring the delete route above. It is the
+    # break-glass admin; demoting it is how an instance ends up with nobody who can administer it.
+    first_user = await Users.get_first_user(db=db)
+    if first_user and target.id == first_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ERROR_MESSAGES.ACTION_PROHIBITED,
+        )
+
+    updated = await Users.update_user_role_by_id(form_data.id, form_data.role, db=db)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ERROR_MESSAGES.DEFAULT(),
+        )
+
+    log.info(f'role change: {user.email} set {target.email} to {form_data.role}')
+    return updated
+
+
+############################
 # UpdateUserById -- DELETED (hardening plan Item 5)
 ############################
 #

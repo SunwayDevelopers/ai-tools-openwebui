@@ -101,6 +101,11 @@
 	let knowledge: Knowledge | null = null;
 	let knowledgeId = null;
 
+	// Sunway: set from ?file=<id> when arriving from a chat attachment (see FileItemModal). Held
+	// separately from selectedFileId because the file list loads asynchronously -- the id arrives
+	// with the navigation, the file it names does not exist client-side until fileItems populates.
+	let pendingFileId = null;
+
 	let selectedFileId = null;
 	let selectedFile = null;
 	let selectedFileContent = '';
@@ -236,6 +241,21 @@
 
 		return res;
 	};
+
+	// Resolve the deep link as soon as the list it refers into is available. Reactive rather than
+	// awaited in onMount: fileItems is filled by a separate fetch that also re-runs on directory
+	// navigation and pending-file polling, so there is no single point to hang this off.
+	// pendingFileId is cleared either way -- a file that is not in the list (deleted, or in another
+	// directory) must not leave the block retrying on every subsequent fileItems change.
+	$: if (pendingFileId && Array.isArray(fileItems)) {
+		const target = fileItems.find((file) => file.id === pendingFileId);
+		pendingFileId = null;
+
+		if (target) {
+			selectedFileId = target.id;
+			fileSelectHandler(target);
+		}
+	}
 
 	const fileSelectHandler = async (file) => {
 		try {
@@ -1018,6 +1038,7 @@
 		}
 
 		id = $page.params.id;
+		pendingFileId = $page.url.searchParams.get('file');
 		const res = await getKnowledgeById(localStorage.token, id).catch((e) => {
 			toast.error(`${e}`);
 			return null;

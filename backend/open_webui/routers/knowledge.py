@@ -256,8 +256,12 @@ async def create_new_knowledge(
     # Database operations (has_permission, filter_allowed_access_grants, insert_new_knowledge) manage their own sessions.
     # This prevents holding a connection during embed_knowledge_base_metadata()
     # which makes external embedding API calls (1-5+ seconds).
+    # Sunway: gated on `workspace.knowledge_create`, NOT `workspace.knowledge`. The latter is now
+    # a read grant -- it lets a user browse the Knowledge workspace and open a shared KB. Creating
+    # one is a separate permission, because the creator becomes the owner and every mutation route
+    # below admits the owner unconditionally. See config.py for the full note.
     if user.role != 'admin' and not await has_permission(
-        user.id, 'workspace.knowledge', request.app.state.config.USER_PERMISSIONS
+        user.id, 'workspace.knowledge_create', request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -215,6 +215,13 @@
 								{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 									<Image src={fileUrl} imageClassName=" max-h-96 rounded-lg" />
 								{:else}
+									<!-- Sunway: `modal` is forced on for collections so a knowledge base attached to a
+									     SENT message opens its document list. Without it the click fell through to the
+									     url branch, and a collection has no url -- so clicking a KB under a sent message
+									     did nothing at all, while the same chip in the composer opened fine.
+
+									     Scoped to collections deliberately: a regular file with a url still opens its
+									     content in a new tab, which is the existing behaviour here. -->
 									<FileItem
 										item={file}
 										url={file.url}
@@ -222,6 +229,7 @@
 										type={file.type}
 										size={file?.size}
 										small={true}
+										modal={file?.type === 'collection'}
 									/>
 								{/if}
 							</div>

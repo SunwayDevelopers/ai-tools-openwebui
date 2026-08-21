@@ -50,7 +50,36 @@
 	let showDeleteConfirmDialog = false;
 	let showAddUserModal = false;
 
+	// Sunway: role changes restored 2026-08-21 (they were removed with the user-edit modal in
+	// hardening Item 5). `pendingRole` is the role the confirm dialog will apply if accepted.
+	let showRoleUpdateConfirmDialog = false;
+	let pendingRole = '';
+
+	// Read the signed-in user's id HERE, at the top level. The table below iterates
+	// `{#each users as user}`, which shadows the `user` store inside the loop -- so `$user` in that
+	// markup is a compile error (svelte.dev/e/store_invalid_scoped_subscription), not a runtime
+	// mistake. Hoisting the one field the template needs is the fix; renaming the loop variable
+	// would touch every row in the table.
+	$: sessionUserId = $user?.id;
+
 	let showUserPreviewModal = false;
+
+	// Sunway: user <-> admin only. 'pending' is upstream's signup-approval state and is not
+	// offered anywhere in schat's UI, so it is not reachable from here either.
+	const updateRoleHandler = async (id, role) => {
+		const res = await updateUserRole(localStorage.token, id, role).catch((error) => {
+			// Under multi-tenancy the backend refuses with an explanation rather than accepting a
+			// change that IAM would overwrite on the target's next request. Surfacing the message
+			// verbatim is the point -- it names IAM as the place to make the change.
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (res) {
+			toast.success($i18n.t('Role updated successfully.'));
+			getUserList();
+		}
+	};
 
 	const deleteUserHandler = async (id) => {
 		const res = await deleteUserById(localStorage.token, id).catch((error) => {
@@ -116,6 +145,20 @@
 	bind:show={showDeleteConfirmDialog}
 	on:confirm={() => {
 		deleteUserHandler(selectedUser.id);
+	}}
+/>
+
+<RoleUpdateConfirmDialog
+	bind:show={showRoleUpdateConfirmDialog}
+	title={$i18n.t('Change role')}
+	message={selectedUser
+		? $i18n.t('Change {{name}} to {{role}}?', {
+				name: selectedUser.name,
+				role: pendingRole
+			})
+		: ''}
+	on:confirm={() => {
+		updateRoleHandler(selectedUser.id, pendingRole);
 	}}
 />
 
@@ -340,14 +383,38 @@
 				{#each users as user, userIdx (user.id)}
 					<tr class="dark:border-gray-850 text-xs">
 						<td class="px-3 py-1 min-w-[7rem] w-28">
-							<!-- Sunway: the role badge is no longer a button (hardening plan Item 5). It opened
-							     the user-edit modal; role is resolved from IAM per request, so a local change
-							     never held. The badge still shows the resolved role. -->
+							<!-- Sunway: the role badge is a button again (2026-08-21). Item 5 removed it along
+							     with the whole user-edit modal, whose genuinely damaging field was `email` --
+							     the IAM entitlement key, which orphaned the schat row when changed. Role is
+							     the one field on that form an admin has a real reason to change, so it comes
+							     back on its own endpoint (POST /users/update/role) without the other two.
+
+							     Clicking your own row does nothing: self-demotion is how a deployment ends up
+							     with no reachable admin, and the backend refuses it too. -->
 							<div class=" translate-y-0.5">
-								<Badge
-									type={user.role === 'admin' ? 'info' : user.role === 'user' ? 'success' : 'muted'}
-									content={$i18n.t(user.role)}
-								/>
+								{#if user.id === sessionUserId}
+									<Badge type="info" content={$i18n.t(user.role)} />
+								{:else}
+									<button
+										type="button"
+										class="cursor-pointer"
+										aria-label={$i18n.t("Click on the user role button to change a user's role.")}
+										on:click={() => {
+											selectedUser = user;
+											pendingRole = user.role === 'admin' ? 'user' : 'admin';
+											showRoleUpdateConfirmDialog = true;
+										}}
+									>
+										<Badge
+											type={user.role === 'admin'
+												? 'info'
+												: user.role === 'user'
+													? 'success'
+													: 'muted'}
+											content={$i18n.t(user.role)}
+										/>
+									</button>
+								{/if}
 							</div>
 						</td>
 						<td class="px-3 py-1 font-medium text-gray-900 dark:text-white max-w-48">

@@ -6,7 +6,8 @@
 
 	import { formatFileSize, getLineCount } from '$lib/utils';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
-	import { config, settings } from '$lib/stores';
+	import { goto } from '$app/navigation';
+	import { config, settings, user } from '$lib/stores';
 	import { getKnowledgeById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
 
@@ -27,10 +28,29 @@
 	import PDFViewer from './PDFViewer.svelte';
 	import PanzoomContainer from './PanzoomContainer.svelte';
 	import Reset from '../icons/Reset.svelte';
+	import ChevronRight from '../icons/ChevronRight.svelte';
 
 	export let item;
 	export let show = false;
 	export let edit = false;
+
+	// Sunway: a knowledge base's documents are opened in the Knowledge workspace, not inline here.
+	// Reading a KB document is a workspace activity -- you want the file tree, the other documents,
+	// search across them and the KB's own metadata around it. Rendering one document's text inside
+	// a chat attachment popover gives you the content stripped of all of that, and leaves you with
+	// nowhere to go next.
+	//
+	// The link is only offered to users who can actually reach the workspace; for anyone else the
+	// route guard in workspace/+layout.svelte would bounce them to '/', so a link would be a
+	// visible path to nowhere. They still see the document list, which is the useful part -- it
+	// answers "what is in this thing I just attached?".
+	$: canOpenKnowledge =
+		$user?.role === 'admin' || ($user?.permissions?.workspace?.knowledge ?? false);
+
+	const openKnowledgeFile = async (fileId: string) => {
+		show = false;
+		await goto(`/workspace/knowledge/${item.id}${fileId ? `?file=${fileId}` : ''}`);
+	};
 
 	let enableFullContent = false;
 	let loading = false;
@@ -359,7 +379,22 @@
 						{/if}
 					</div>
 
-					{#if edit}
+					<!-- Sunway: the Focused Retrieval / Entire Document switch is hidden (2026-08-21).
+					     ONE gate covers every surface, because this modal is the only place the control
+					     is rendered: the composer file chip, files under a sent user message, attached
+					     Knowledge Bases, per-chat Controls, Notes and Workspace -> Models all reach it
+					     through <FileItem edit={true}>.
+
+					     Why: it asks a retrieval-strategy question that staff have no basis to answer,
+					     it is per-file and non-obvious, and the wrong choice degrades answers silently.
+					     Focused (segmented) retrieval is the correct default for essentially all schat
+					     use, and is what an unset item.context already means.
+
+					     NOT a behaviour change and NOT a removal of full-context mode. Files still carry
+					     `context: 'full'` where the code sets it deliberately -- notably OCR'd images
+					     (Chat.svelte, MessageInput.svelte), which rely on whole-text injection. The
+					     tooLargeForFullContext reactive guard above stays live for exactly that path. -->
+					{#if false && edit}
 						<div class=" self-end">
 							{#if tooLargeForFullContext}
 								<Tooltip
@@ -405,14 +440,42 @@
 		<div class="max-h-[75vh] overflow-auto">
 			{#if !loading}
 				{#if item?.type === 'collection'}
-					<div>
-						{#each item?.files as file}
-							<div class="flex items-center gap-2 mb-2">
-								<div class="flex-shrink-0 text-xs">
-									{file?.meta?.name}
-								</div>
+					<div class="flex flex-col">
+						{#if (item?.files ?? []).length === 0}
+							<div class="text-xs text-gray-500 dark:text-gray-400 py-2">
+								{$i18n.t('This knowledge base has no documents yet.')}
 							</div>
+						{/if}
+
+						{#each item?.files ?? [] as file (file.id)}
+							{#if canOpenKnowledge}
+								<button
+									type="button"
+									class="flex items-center justify-between gap-2 w-full text-left px-2 py-2 rounded-xl brand-nav-item transition"
+									on:click={() => openKnowledgeFile(file.id)}
+								>
+									<div class="text-xs line-clamp-1">{file?.meta?.name}</div>
+									<div class="shrink-0 text-gray-400 dark:text-gray-500">
+										<ChevronRight className="size-3.5" />
+									</div>
+								</button>
+							{:else}
+								<div class="flex items-center gap-2 px-2 py-2">
+									<div class="text-xs line-clamp-1">{file?.meta?.name}</div>
+								</div>
+							{/if}
 						{/each}
+
+						{#if canOpenKnowledge && (item?.files ?? []).length > 0}
+							<button
+								type="button"
+								class="mt-1 self-start text-xs hover:underline px-2 py-1"
+								style="color: var(--brand-primary)"
+								on:click={() => openKnowledgeFile('')}
+							>
+								{$i18n.t('Open in Knowledge')}
+							</button>
+						{/if}
 					</div>
 				{/if}
 

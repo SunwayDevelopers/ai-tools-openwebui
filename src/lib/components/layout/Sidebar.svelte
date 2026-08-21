@@ -52,7 +52,7 @@
 	import { updateUserSettings } from '$lib/apis/users';
 	import { checkActiveChats } from '$lib/apis/tasks';
 	import { createNoteHandler } from '$lib/components/notes/utils';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, SCHAT_FEEDBACK_URL } from '$lib/constants';
+	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -73,7 +73,10 @@
 	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
 	import Note from '../icons/Note.svelte';
 	import Code from '../icons/Code.svelte';
-	import ChatBubbleOval from '../icons/ChatBubbleOval.svelte';
+	import QuestionMarkCircle from '../icons/QuestionMarkCircle.svelte';
+	import HelpCenterModal from './HelpCenterModal.svelte';
+
+	let showHelpCenter = false;
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
@@ -703,6 +706,10 @@
 	}}
 />
 
+<!-- Sunway: Help Center. Rendered once here rather than inside either sidebar variant, because
+     both the expanded footer row and the collapsed rail button open the same instance. -->
+<HelpCenterModal bind:show={showHelpCenter} />
+
 <button
 	id="sidebar-new-chat-button"
 	class="hidden"
@@ -879,24 +886,25 @@
 
 		<div>
 			<div>
-				<!-- Sunway: the collapsed rail's counterpart to the feedback row in the expanded
-				     footer. Both are needed: the rail is a distinct render, not the same markup at a
-				     narrower width, so a row added only to the expanded sidebar disappears entirely
-				     for anyone who works with the sidebar collapsed. -->
+				<!-- Sunway: the collapsed rail's counterpart to the Help row in the expanded footer.
+				     Both are needed: the rail is a distinct render, not the same markup at a narrower
+				     width, so a row added only to the expanded sidebar disappears entirely for anyone
+				     who works with the sidebar collapsed. -->
 				<div class=" py-1 flex justify-center items-center">
-					<Tooltip content={$i18n.t('Feedback')} placement="right">
-						<a
+					<Tooltip content={$i18n.t('Help')} placement="right">
+						<button
+							type="button"
 							class=" cursor-pointer flex rounded-xl brand-nav-item transition group text-gray-600 dark:text-gray-400"
-							href={SCHAT_FEEDBACK_URL}
-							target="_blank"
-							rel="noopener noreferrer"
 							draggable="false"
-							aria-label={$i18n.t('Send feedback (opens in a new tab)')}
+							aria-label={$i18n.t('Help')}
+							on:click={() => {
+								showHelpCenter = true;
+							}}
 						>
 							<div class=" self-center flex items-center justify-center size-9">
-								<ChatBubbleOval className="size-4.5" strokeWidth="1.5" />
+								<QuestionMarkCircle className="size-4.5" strokeWidth="1.5" />
 							</div>
-						</a>
+						</button>
 					</Tooltip>
 				</div>
 
@@ -1518,26 +1526,28 @@
 					class=" sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 dark:from-gray-950 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mt-6"
 				></div>
 				<div class="flex flex-col font-primary">
-					<!-- Sunway: feedback entry point. Deliberately a sibling of the profile row inside the
-					     STICKY footer, not an item in the chat list. The list above scrolls and is capped at
-					     MAX_CHATS_PER_USER, so anything placed in it would compete with the user's own chats
-					     and scroll out of reach; here it is one fixed row that is always on screen.
+					<!-- Sunway: Help Center entry point, modelled on sdeck's. Deliberately a sibling of
+					     the profile row inside the STICKY footer, not an item in the chat list. The list
+					     above scrolls and is capped at MAX_CHATS_PER_USER, so anything placed in it would
+					     compete with the user's own chats and scroll out of reach; here it is one fixed
+					     row that is always on screen.
 
-					     Opens the same Microsoft Form sdeck links from its Help Center footer, in a new tab.
-					     rel="noopener" is required: target="_blank" otherwise hands the opened page a live
-					     window.opener reference back into an authenticated session. -->
-					<a
-						href={SCHAT_FEEDBACK_URL}
-						target="_blank"
-						rel="noopener noreferrer"
+					     The feedback form lives in the modal's footer rather than being linked directly
+					     from here: a bare "Feedback" link invites reports of things that are documented
+					     answers, so the FAQ goes first and the form is what you reach past it. -->
+					<button
+						type="button"
 						class="flex items-center rounded-2xl py-2 px-1.5 w-full brand-nav-item transition text-gray-600 dark:text-gray-400"
-						aria-label={$i18n.t('Send feedback (opens in a new tab)')}
+						aria-label={$i18n.t('Help')}
+						on:click={() => {
+							showHelpCenter = true;
+						}}
 					>
 						<div class="self-center mr-3 flex-shrink-0 size-7 flex items-center justify-center">
-							<ChatBubbleOval className="size-5" strokeWidth="1.5" />
+							<QuestionMarkCircle className="size-5" strokeWidth="1.5" />
 						</div>
-						<div class="self-center text-sm truncate">{$i18n.t('Feedback')}</div>
-					</a>
+						<div class="self-center text-sm truncate">{$i18n.t('Help')}</div>
+					</button>
 
 					{#if $user !== undefined && $user !== null}
 						<UserMenu

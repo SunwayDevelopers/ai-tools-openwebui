@@ -2682,6 +2682,24 @@ USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS = (
     os.getenv('USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS', 'False').lower() == 'true'
 )
 
+# Sunway: splits CREATING a knowledge base from SEEING the Knowledge workspace.
+#
+# Upstream has one permission for both. `workspace.knowledge` gates the workspace page AND
+# POST /knowledge/create, so the only way to let staff browse the shared KBs their team relies on
+# was to also let all ~10K of them create their own -- and the creator of a KB is its owner, so
+# every mutation route (update, delete, file add/remove, reset, sync) then admits them for that
+# KB, because those routes check `knowledge.user_id != user.id` first.
+#
+# With this key, `workspace.knowledge` becomes a genuine read grant: browse the list, open a KB,
+# read its files. Creation is a separate decision. Nothing else needed changing -- KBs shared TO
+# a user were already safe, since mutations require the creator, an explicit `write` grant, or
+# admin, and `read` grants do not satisfy any of them.
+#
+# Default False, matching every other Sunway-added permission.
+USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE = (
+    os.getenv('USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE', 'False').lower() == 'true'
+)
+
 USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS = (
     os.getenv('USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS', 'False').lower() == 'true'
 )
@@ -2864,6 +2882,7 @@ DEFAULT_USER_PERMISSIONS = {
     'workspace': {
         'models': USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS,
         'knowledge': USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS,
+        'knowledge_create': USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE,
         'prompts': USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS,
         'tools': USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS,
         'skills': USER_PERMISSIONS_WORKSPACE_SKILLS_ACCESS,

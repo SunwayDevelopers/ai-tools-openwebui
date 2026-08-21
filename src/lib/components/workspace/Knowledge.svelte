@@ -176,11 +176,19 @@
 			</div>
 
 			<div class="flex w-full justify-end gap-1.5">
-				<a class="brand-pill-solid" href="/workspace/knowledge/create">
-					<Plus className="size-3" strokeWidth="2.5" />
+				<!-- Sunway: creating a KB is gated on `workspace.knowledge_create`, separate from the
+				     `workspace.knowledge` grant that lets a user reach this page at all. Users are
+				     meant to BROWSE the shared knowledge bases their team maintains, not author their
+				     own -- and the creator of a KB owns it, which grants every mutation route on it.
+				     The backend enforces the same key on POST /knowledge/create; this only removes the
+				     button. -->
+				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge_create}
+					<a class="brand-pill-solid" href="/workspace/knowledge/create">
+						<Plus className="size-3" strokeWidth="2.5" />
 
-					<div class=" hidden md:block">{$i18n.t('New Knowledge')}</div>
-				</a>
+						<div class=" hidden md:block">{$i18n.t('New Knowledge')}</div>
+					</a>
+				{/if}
 			</div>
 		</div>
 	</div>
