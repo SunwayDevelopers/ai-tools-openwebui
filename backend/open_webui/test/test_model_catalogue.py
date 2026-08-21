@@ -31,10 +31,10 @@ BY_ID = {entry['id']: entry for entry in MODEL_CATALOGUE}
 # The five models that carry a system prompt, and which slots each one fills.
 PROMPT_SHAPE = {
     'Qwen/Qwen3.6-35B-A3B': (AUTHORITATIVE_DATE, QWEN_REASONING_TAIL),
-    'deepseek-ai/DeepSeek-V4-Flash-0731': ('', ''),
-    'schat-quick': ('', ''),
-    'schat-deepthink': ('', ''),
-    'schat-coding': ('', CODING_TAIL),
+    'deepseek-ai/DeepSeek-V4-Flash-0731': (AUTHORITATIVE_DATE, ''),
+    'schat-quick': (AUTHORITATIVE_DATE, ''),
+    'schat-deepthink': (AUTHORITATIVE_DATE, ''),
+    'schat-coding': (AUTHORITATIVE_DATE, CODING_TAIL),
 }
 
 # Infrastructure models are invoked by the platform, never chosen by a user, so they carry no
@@ -42,8 +42,10 @@ PROMPT_SHAPE = {
 # model by mistake.
 NO_PROMPT = {'google/gemma-4-E4B-it', 'Qwen/Qwen-Image', 'BAAI/bge-m3'}
 
-# hidden=True keeps a model out of the selector. The three presets are the user-facing tiers and
-# must stay selectable; everything else must stay hidden.
+# hidden=True keeps a model out of the selector. Flash and Deepthink are the user-facing tiers and
+# must stay selectable; everything else must stay hidden. Coder joined the hidden set on
+# 2026-08-19 -- it is still a full catalogue entry (prompt, effort, builtinTools all pinned below),
+# just withdrawn from the picker, so un-hiding it is a one-line change here and in the catalogue.
 EXPECTED_HIDDEN = {
     'Qwen/Qwen3.6-35B-A3B': True,
     'google/gemma-4-E4B-it': True,
@@ -51,9 +53,13 @@ EXPECTED_HIDDEN = {
     'BAAI/bge-m3': True,
     'deepseek-ai/DeepSeek-V4-Flash-0731': True,
     'schat-quick': None,
-    'schat-coding': None,
+    'schat-coding': True,
     'schat-deepthink': None,
 }
+
+# Selectable by a user. Distinct from PRESETS: Coder is still a preset (it chains to the base
+# model and carries the full builtinTools map) but is no longer offered in the selector.
+SELECTABLE = ('schat-quick', 'schat-deepthink')
 
 PRESETS = ('schat-quick', 'schat-coding', 'schat-deepthink')
 BASE_MODEL = 'deepseek-ai/DeepSeek-V4-Flash-0731'
@@ -69,11 +75,11 @@ BASE_MODEL = 'deepseek-ai/DeepSeek-V4-Flash-0731'
 # "the prompt text changed, confirm that was intended and update the hash in the same commit",
 # which is exactly the review gate a governance artefact needs.
 GOLDEN_PROMPT_SHA256 = {
-    'Qwen/Qwen3.6-35B-A3B': ('406ffb3199318d34d89fa349e162c6d8aef127a4c461bdca1ece849fac145473', 2181),
-    'deepseek-ai/DeepSeek-V4-Flash-0731': ('7b5434d8e965ea77ec76f126fb7a87ebb3980a5e0a0b53dddfaf9279854fcfec', 1903),
-    'schat-quick': ('7b5434d8e965ea77ec76f126fb7a87ebb3980a5e0a0b53dddfaf9279854fcfec', 1903),
-    'schat-coding': ('2ea95db20a8c945ddb2d218556cb42ab2b502eab5b5968ceb957d283836b2570', 2120),
-    'schat-deepthink': ('7b5434d8e965ea77ec76f126fb7a87ebb3980a5e0a0b53dddfaf9279854fcfec', 1903),
+    'Qwen/Qwen3.6-35B-A3B': ('485c71c2b41c7569010bf39a5a6a560774b9e8770e04b3b03c26f4ccc1904ce9', 2707),
+    'deepseek-ai/DeepSeek-V4-Flash-0731': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
+    'schat-quick': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
+    'schat-coding': ('b2346720caa868ad7c190a1ce7a110aee9c9a85c260345d6adef1ab3631a37cf', 2795),
+    'schat-deepthink': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
 }
 
 
@@ -109,16 +115,19 @@ def test_every_prompt_contains_the_shared_policy_verbatim():
 
 
 def test_the_date_block_precedes_the_policy():
-    """Order is load-bearing -- the date is context the policy is read against, not a footnote."""
-    prompt = BY_ID['Qwen/Qwen3.6-35B-A3B']['system']
-    assert prompt.index(AUTHORITATIVE_DATE) < prompt.index(POLICY)
+    """Order is load-bearing -- the date is context the policy is read against, not a footnote.
+    Checked on every carrier, since the slot is no longer filled on a single model."""
+    for model_id in PROMPT_SHAPE:
+        prompt = BY_ID[model_id]['system']
+        assert prompt.index(AUTHORITATIVE_DATE) < prompt.index(POLICY), model_id
 
 
-def test_only_qwen_carries_the_date_block():
-    """Per-model on purpose: Qwen's thinking mode asserts a training-cutoff date, DeepSeek's
-    has not shown that. If this starts failing, someone made a per-model fix global."""
+def test_every_prompted_model_carries_the_date_block():
+    """Widened from Qwen-only on 2026-08-21. A model that answers against its training cutoff is
+    wrong in a way that reads as authoritative, and web search makes that MORE likely, not less.
+    If this fails, a model was added without slot 1 -- decide deliberately, do not just re-pin."""
     carriers = [m['id'] for m in MODEL_CATALOGUE if m['system'] and AUTHORITATIVE_DATE in m['system']]
-    assert carriers == ['Qwen/Qwen3.6-35B-A3B']
+    assert sorted(carriers) == sorted(PROMPT_SHAPE)
 
 
 def test_only_the_coder_tier_carries_the_coding_tail():
@@ -136,6 +145,13 @@ def test_hidden_flag_is_written_out_explicitly():
     losing this key becomes selectable as a chat model."""
     for model_id, expected in EXPECTED_HIDDEN.items():
         assert BY_ID[model_id]['meta'].get('hidden') is expected, model_id
+
+
+def test_only_the_intended_tiers_are_selectable():
+    """States the outcome the flags above add up to, so a stray `hidden` edit fails as a change
+    to the offering rather than as a change to one dict key."""
+    selectable = [m['id'] for m in MODEL_CATALOGUE if not m['meta'].get('hidden')]
+    assert selectable == list(SELECTABLE)
 
 
 def test_presets_chain_to_the_base_model():
