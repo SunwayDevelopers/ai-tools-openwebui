@@ -8,7 +8,7 @@
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { goto } from '$app/navigation';
 	import { config, settings, user } from '$lib/stores';
-	import { getKnowledgeById } from '$lib/apis/knowledge';
+	import { getKnowledgeById, searchKnowledgeFilesById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
 
 	import CodeBlock from '$lib/components/chat/Messages/CodeBlock.svelte';
@@ -239,14 +239,30 @@
 		if (item?.type === 'collection') {
 			loading = true;
 
-			const knowledge = await getKnowledgeById(localStorage.token, item.id).catch((e) => {
-				console.error('Error fetching knowledge base:', e);
-				return null;
-			});
+			// Sunway: files come from GET /knowledge/{id}/files, NOT from GET /knowledge/{id}.
+			//
+			// The old code read `knowledge.files` off the latter, which is always null: the route
+			// builds KnowledgeFilesResponse(**knowledge.model_dump()), and KnowledgeModel has no
+			// `files` field, so the response's `files` stays at its default of None. `|| []` then
+			// turned that into an empty array and the list rendered as nothing at all -- silently,
+			// because the old markup was a bare {#each} with no empty state.
+			const [knowledge, fileList] = await Promise.all([
+				getKnowledgeById(localStorage.token, item.id).catch((e) => {
+					console.error('Error fetching knowledge base:', e);
+					return null;
+				}),
+				searchKnowledgeFilesById(localStorage.token, item.id).catch((e) => {
+					console.error('Error fetching knowledge base files:', e);
+					return null;
+				})
+			]);
 
 			if (knowledge) {
-				item.files = knowledge.files || [];
+				item.name = item.name ?? knowledge.name;
+				item.description = item.description ?? knowledge.description;
 			}
+
+			item.files = fileList?.items ?? [];
 			loading = false;
 		} else if (item?.type === 'file') {
 			loading = true;
@@ -294,26 +310,40 @@
 		<div class=" pb-2">
 			<div class="flex items-start justify-between">
 				<div>
+					<!-- Sunway: for a knowledge base the title navigates to the KB itself, so the two
+					     destinations in this modal read as a pair -- the title opens the collection, a
+					     row below opens that one document inside it. Files keep upstream's behaviour of
+					     opening their own content in a new tab. -->
 					<div class=" font-medium text-lg dark:text-gray-100">
-						<a
-							href="#"
-							class="hover:underline line-clamp-1"
-							on:click|preventDefault={() => {
-								if (item.type === 'file' || item.url) {
-									let fileId = item?.id ?? item?.tempId;
-									window.open(
-										item.type === 'file'
-											? item?.url?.startsWith('http')
-												? item.url
-												: `${WEBUI_API_BASE_URL}/files/${fileId}/content`
-											: item.url,
-										'_blank'
-									);
-								}
-							}}
-						>
-							{item?.name ?? 'File'}
-						</a>
+						{#if item?.type === 'collection' && canOpenKnowledge}
+							<button
+								type="button"
+								class="hover:underline line-clamp-1 text-left"
+								on:click={() => openKnowledgeFile('')}
+							>
+								{item?.name ?? 'File'}
+							</button>
+						{:else}
+							<a
+								href="#"
+								class="hover:underline line-clamp-1"
+								on:click|preventDefault={() => {
+									if (item.type === 'file' || item.url) {
+										let fileId = item?.id ?? item?.tempId;
+										window.open(
+											item.type === 'file'
+												? item?.url?.startsWith('http')
+													? item.url
+													: `${WEBUI_API_BASE_URL}/files/${fileId}/content`
+												: item.url,
+											'_blank'
+										);
+									}
+								}}
+							>
+								{item?.name ?? 'File'}
+							</a>
+						{/if}
 					</div>
 				</div>
 
@@ -454,19 +484,21 @@
 									class="flex items-center justify-between gap-2 w-full text-left px-2 py-2 rounded-xl brand-nav-item transition"
 									on:click={() => openKnowledgeFile(file.id)}
 								>
-									<div class="text-xs line-clamp-1">{file?.meta?.name}</div>
+									<div class="text-xs line-clamp-1">{file?.meta?.name ?? file?.filename}</div>
 									<div class="shrink-0 text-gray-400 dark:text-gray-500">
 										<ChevronRight className="size-3.5" />
 									</div>
 								</button>
 							{:else}
 								<div class="flex items-center gap-2 px-2 py-2">
-									<div class="text-xs line-clamp-1">{file?.meta?.name}</div>
+									<div class="text-xs line-clamp-1">{file?.meta?.name ?? file?.filename}</div>
 								</div>
 							{/if}
 						{/each}
 
-						{#if canOpenKnowledge && (item?.files ?? []).length > 0}
+						<!-- Shown even when the list is empty: an empty KB is exactly when you want to go
+						     open it and see why. -->
+						{#if canOpenKnowledge}
 							<button
 								type="button"
 								class="mt-1 self-start text-xs hover:underline px-2 py-1"
