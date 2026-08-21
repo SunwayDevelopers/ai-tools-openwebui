@@ -113,6 +113,27 @@ _persist_enabled: bool = True
 _oauth_persist_enabled: bool = False
 _all_configs: list[ConfigVar] = []
 
+# Sunway: config paths where the environment ALWAYS wins and the DB row is never read
+# or written, regardless of ENABLE_PERSISTENT_CONFIG.
+#
+# These are settings whose value is a security control in its own right, so a stale row
+# left behind by some earlier admin Save must not be able to override the deployment's
+# own configuration. VAPT SChat AI (GS/RPT/D306) finding 4.4 was exactly this: the chart
+# pinned JWT_EXPIRES_IN to "8h", but `auth.jwt_expiry` in the `config` table still held
+# "4w" from a single Save click, so the chart value was inert and tokens lived a month.
+#
+# This is deliberately narrower than flipping ENABLE_PERSISTENT_CONFIG to false. That is
+# still the end state (hardening plan Item 7, docs/item7-seed-block.md §7), but it needs
+# every setting seeded into the ConfigMap first — until then, flipping it globally would
+# revert any DB-only value to its code default. This list needs no such prerequisite.
+#
+# Same shape as the `oauth.` carve-out below: entries are matched on the config_path.
+_NEVER_PERSIST_PATHS: frozenset[str] = frozenset(
+    {
+        'auth.jwt_expiry',  # session lifetime — VAPT 4.4
+    }
+)
+
 
 def initialize(*, enable_persistent: bool = True, enable_oauth_persistent: bool = False) -> dict:
     global _persist_enabled, _oauth_persist_enabled
@@ -131,7 +152,17 @@ class ConfigVar:
         self.config_value = STATE.read(config_path)
 
         if self.config_value is not None and _persist_enabled:
-            if config_path.startswith('oauth.') and not _oauth_persist_enabled:
+            if config_path in _NEVER_PERSIST_PATHS:
+                # Logged at WARNING, not INFO: a row existing here means something wrote it
+                # before this guard, and the operator should know it is being ignored.
+                log.warning(
+                    "Ignoring DB value for '%s' (env always wins for this setting); using %r not %r",
+                    env_name,
+                    env_value,
+                    self.config_value,
+                )
+                self.value = env_value
+            elif config_path.startswith('oauth.') and not _oauth_persist_enabled:
                 log.info("Skipping DB value for '%s' (OAuth persistence disabled)", env_name)
                 self.value = env_value
             else:
@@ -158,18 +189,30 @@ class ConfigVar:
         return super().__getattribute__(item)
 
     def refresh(self) -> None:
+        # Sunway: a never-persist setting must not pick the DB value back up on a refresh,
+        # or the guard in __init__ would only hold until the first refresh call.
+        if self.config_path in _NEVER_PERSIST_PATHS:
+            return
         current = STATE.read(self.config_path)
         if current is not None:
             self.value = current
             log.info('Refreshed %s → %s', self.env_name, self.value)
 
     def commit(self) -> None:
+        # Sunway: never write a never-persist setting back to the DB. Without this the
+        # read guard alone would leave a row behind for the next deployment to trip over.
+        if self.config_path in _NEVER_PERSIST_PATHS:
+            log.warning("Refusing to persist '%s' (env always wins for this setting)", self.env_name)
+            return
         log.info("Persisting '%s'", self.env_name)
         STATE.write(self.config_path, self.value)
         self.config_value = self.value
         STATE.persist()
 
     async def commit_async(self) -> None:
+        if self.config_path in _NEVER_PERSIST_PATHS:
+            log.warning("Refusing to persist '%s' (env always wins for this setting)", self.env_name)
+            return
         log.info("Persisting '%s'", self.env_name)
         STATE.write(self.config_path, self.value)
         self.config_value = self.value
