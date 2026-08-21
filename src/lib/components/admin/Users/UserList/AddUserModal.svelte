@@ -79,17 +79,23 @@
 						const columns = row.split(',').map((col) => col.trim());
 						console.debug(idx, columns);
 
-						if (idx > 0) {
-							if (
-								columns.length === 4 &&
-								['admin', 'user', 'pending'].includes(columns[3].toLowerCase())
-							) {
+						// Sunway: the format is Name, Email, Role -- the Password column is gone (2026-08-21).
+						// schat does not own passwords: identity is IAM's, and the Add User form stopped
+						// collecting one for everyone. A password column in a bulk-import file is a
+						// plaintext credential list circulating as a spreadsheet, for a credential nothing
+						// honours. An empty string is passed instead and the backend generates an unusable
+						// random secret (routers/auths.py add_user).
+						//
+						// 'pending' is not accepted here, matching the Form tab's role picker: it is
+						// upstream's signup-approval state and an account created in it cannot sign in.
+						if (idx > 0 && row.trim() !== '') {
+							if (columns.length === 3 && ['admin', 'user'].includes(columns[2].toLowerCase())) {
 								const res = await addUser(
 									localStorage.token,
 									columns[0],
 									columns[1],
-									columns[2],
-									columns[3].toLowerCase(),
+									'',
+									columns[2].toLowerCase(),
 									generateInitialsImage(columns[0])
 								).catch((error) => {
 									toast.error(`Row ${idx + 1}: ${error}`);
@@ -151,29 +157,39 @@
 						submitHandler();
 					}}
 				>
-					<div
-						class="flex -mt-2 mb-1.5 gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent dark:text-gray-200"
-					>
-						<button
-							class="min-w-fit p-1.5 {tab === ''
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								tab = '';
-							}}>{$i18n.t('Form')}</button
-						>
+					<!-- Sunway: CSV Import restored 2026-08-21, with the Password column dropped from
+					     the format (see the parser above). It was hidden because the file carried
+					     plaintext passwords schat does not own under IAM; without that column it is an
+					     ordinary bulk-provisioning list of Name, Email, Role.
 
-						<button
-							class="min-w-fit p-1.5 {tab === 'import'
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								tab = 'import';
-							}}>{$i18n.t('CSV Import')}</button
+					     The Role column still admits 'admin', so this file can mint admins -- that is
+					     the point of it for an operator provisioning a tenant, and it is the same
+					     capability the Form tab's role picker already has. -->
+					{#if true}
+						<div
+							class="flex -mt-2 mb-1.5 gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent dark:text-gray-200"
 						>
-					</div>
+							<button
+								class="min-w-fit p-1.5 {tab === ''
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								type="button"
+								on:click={() => {
+									tab = '';
+								}}>{$i18n.t('Form')}</button
+							>
+
+							<button
+								class="min-w-fit p-1.5 {tab === 'import'
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								type="button"
+								on:click={() => {
+									tab = 'import';
+								}}>{$i18n.t('CSV Import')}</button
+							>
+						</div>
+					{/if}
 
 					<div class="px-1">
 						{#if tab === ''}
@@ -188,7 +204,10 @@
 										placeholder={$i18n.t('Enter Your Role')}
 										required
 									>
-										<option value="pending"> {$i18n.t('pending')} </option>
+										<!-- Sunway: "pending" removed from the picker. It is upstream's
+										     signup-approval state; schat provisions accounts from here (or from
+										     IAM), so creating one that cannot sign in is a support ticket, not a
+										     workflow. The role value itself still exists server-side. -->
 										<option value="user"> {$i18n.t('user')} </option>
 										<option value="admin"> {$i18n.t('admin')} </option>
 									</select>
@@ -228,7 +247,12 @@
 								</div>
 							</div>
 
-							{#if !$config?.features?.enable_multi_tenancy}
+							<!-- Sunway: the password field is hidden outright. It was already absent
+							     wherever ENABLE_MULTI_TENANCY is on (staging and production), so this only
+							     removes it from environments with MT off — dev machines — where a locally
+							     set password is not a credential anything honours. Identity comes from IAM.
+							     Original gate was: !config.features.enable_multi_tenancy -->
+							{#if false}
 								<div class="flex flex-col w-full mt-1">
 									<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Password')}</div>
 
@@ -257,7 +281,7 @@
 									/>
 
 									<button
-										class="w-full text-sm font-medium py-3 bg-transparent hover:bg-gray-100 border border-dashed dark:border-gray-850 dark:hover:bg-gray-850 text-center rounded-xl"
+										class="w-full text-sm font-medium py-3 bg-transparent brand-nav-item border border-dashed dark:border-gray-850 brand-nav-item text-center rounded-xl"
 										type="button"
 										on:click={() => {
 											document.getElementById('upload-user-csv-input')?.click();
@@ -273,7 +297,7 @@
 
 								<div class=" text-xs text-gray-500">
 									ⓘ {$i18n.t(
-										'Ensure your CSV file includes 4 columns in this order: Name, Email, Password, Role.'
+										'Ensure your CSV file includes 3 columns in this order: Name, Email, Role.'
 									)}
 									<a
 										class="underline dark:text-gray-200"
@@ -288,7 +312,7 @@
 
 					<div class="flex justify-end pt-3 text-sm font-medium">
 						<button
-							class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
+							class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full flex items-center gap-2 whitespace-nowrap {loading
 								? ' cursor-not-allowed'
 								: ''}"
 							type="submit"

@@ -2124,6 +2124,7 @@
 	"This file is too large for full-context mode, so focused retrieval is used instead.": "",
 	"This folder is empty": "",
 	"This is a default user permission and will remain enabled.": "",
+	"This is added to the model’s own instructions rather than replacing them, and applies to this chat only.": "",
 	"This is an experimental feature, it may not function as expected and is subject to change at any time.": "",
 	"This model is not publicly available. Please select another model.": "",
 	"This option controls how long the model will stay loaded into memory following the request (default: 5m)": "",

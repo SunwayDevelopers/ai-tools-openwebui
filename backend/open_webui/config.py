@@ -309,10 +309,32 @@ ENABLE_DIRECT_CONNECTIONS = ConfigVar(
 # OLLAMA_BASE_URL
 ####################################
 
+# Sunway: default flipped True -> False, 2026-08-14 (hardening plan Item 6).
+#
+# Every route this flag gated is deleted, so its ONLY remaining effect is to make
+# utils/models.py attempt an outbound fetch to an Ollama backend on each model refresh and log
+# the failure. A default of True for a flag whose sole behaviour is a futile network call is
+# simply wrong. OLLAMA_BASE_URL defaults to '', so the attempt fails immediately rather than
+# waiting on a timeout -- log noise, not latency.
+#
+# TWO THINGS THIS DOES NOT DO.
+#   1. It does not change an existing deployment. This is PersistentConfig: the stored
+#      `ollama.enable` wins, and the chart's "false" only ever seeded a FRESH database. If
+#      staging logs show Ollama connection errors, the stored value is true and must be
+#      corrected with SQL -- there is no API path left, because POST /ollama/config/update was
+#      deleted with the router.
+#   2. It does not make Ollama reachable again if turned on. There are no routes; the flag now
+#      only re-enables the outbound provider fetch.
+#
+# NOTE ON UPSTREAM. Unlike the 2026-07-31 flips (all Sunway-invented variables), this one exists
+# in Open WebUI, where it defaults to True. So schat's behaviour now differs from what upstream's
+# code and documentation describe -- relevant to anyone debugging against an upstream reference,
+# not to any merge process. This fork has diverged from `upstream-sync` by roughly a hundred
+# commits and does not track it, so there is no periodic reconciliation to schedule.
 ENABLE_OLLAMA_API = ConfigVar(
     'ENABLE_OLLAMA_API',
     'ollama.enable',
-    os.getenv('ENABLE_OLLAMA_API', 'True').lower() == 'true',
+    os.getenv('ENABLE_OLLAMA_API', 'False').lower() == 'true',
 )
 
 OLLAMA_API_BASE_URL = os.getenv('OLLAMA_API_BASE_URL', 'http://localhost:11434/api')
@@ -2660,6 +2682,24 @@ USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS = (
     os.getenv('USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS', 'False').lower() == 'true'
 )
 
+# Sunway: splits CREATING a knowledge base from SEEING the Knowledge workspace.
+#
+# Upstream has one permission for both. `workspace.knowledge` gates the workspace page AND
+# POST /knowledge/create, so the only way to let staff browse the shared KBs their team relies on
+# was to also let all ~10K of them create their own -- and the creator of a KB is its owner, so
+# every mutation route (update, delete, file add/remove, reset, sync) then admits them for that
+# KB, because those routes check `knowledge.user_id != user.id` first.
+#
+# With this key, `workspace.knowledge` becomes a genuine read grant: browse the list, open a KB,
+# read its files. Creation is a separate decision. Nothing else needed changing -- KBs shared TO
+# a user were already safe, since mutations require the creator, an explicit `write` grant, or
+# admin, and `read` grants do not satisfy any of them.
+#
+# Default False, matching every other Sunway-added permission.
+USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE = (
+    os.getenv('USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE', 'False').lower() == 'true'
+)
+
 USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS = (
     os.getenv('USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS', 'False').lower() == 'true'
 )
@@ -2842,6 +2882,7 @@ DEFAULT_USER_PERMISSIONS = {
     'workspace': {
         'models': USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS,
         'knowledge': USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS,
+        'knowledge_create': USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_CREATE,
         'prompts': USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS,
         'tools': USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS,
         'skills': USER_PERMISSIONS_WORKSPACE_SKILLS_ACCESS,
@@ -2913,10 +2954,43 @@ DEFAULT_USER_PERMISSIONS = {
     },
 }
 
+# Sunway: USER_PERMISSIONS gains an env var (hardening plan Item 7).
+#
+# It was the only setting in the permission path with no environment backing, which made it the
+# one blocker for `ENABLE_PERSISTENT_CONFIG=false`: with the flag on, the whole permission matrix
+# would reset to DEFAULT_USER_PERMISSIONS on every boot, because there was no env value for it to
+# fall back to. Every other Item 7 setting can be pinned in the ConfigMap; this one could not.
+#
+# The env var takes a JSON object and is merged OVER the defaults rather than replacing them, so a
+# deployment only has to state the keys it wants to change. A full replacement would silently drop
+# any permission key added by a later upstream version, which is exactly the failure mode the
+# `?? true` frontend gates already punish.
+#
+# Malformed JSON logs and falls back to the defaults rather than raising -- a bad permissions
+# string should not prevent the pod from starting, since that would take the whole deployment down
+# to fix a typo. See docs/item7-seed-block.md for the curated value.
+try:
+    _user_permissions_override = json.loads(os.getenv('USER_PERMISSIONS', '{}'))
+except Exception as e:
+    log.exception(f'Error loading USER_PERMISSIONS, using defaults: {e}')
+    _user_permissions_override = {}
+
+
+def _merge_permissions(base: dict, override: dict) -> dict:
+    """Deep-merge one level of permission groups (workspace, chat, features, ...)."""
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for group, values in (override or {}).items():
+        if isinstance(values, dict) and isinstance(merged.get(group), dict):
+            merged[group].update(values)
+        else:
+            merged[group] = values
+    return merged
+
+
 USER_PERMISSIONS = ConfigVar(
     'USER_PERMISSIONS',
     'user.permissions',
-    DEFAULT_USER_PERMISSIONS,
+    _merge_permissions(DEFAULT_USER_PERMISSIONS, _user_permissions_override),
 )
 
 ENABLE_FOLDERS = ConfigVar(

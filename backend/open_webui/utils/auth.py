@@ -529,8 +529,22 @@ def get_verified_user(user=Depends(get_current_user)):
 
 def get_admin_user(user=Depends(get_current_user)):
     if user.role != 'admin':
+        # Sunway: 403, not 401 (security review L4). The caller IS authenticated — they are
+        # simply not an admin — so 401 was the wrong code, and here it had a real consequence
+        # rather than just muddying logs and scanner output.
+        #
+        # installTenantHeaderInjection() (src/lib/apis/tenant/index.ts) wraps global fetch and
+        # treats 401 as "the IAM session expired": it renews and replays the request, and
+        # onRefreshFailed() responds to a 401 it cannot renew by clearing the active tenant and
+        # hard-redirecting to /auth. So a non-admin touching any admin-gated route produced a
+        # pointless refresh + replay, and could be SIGNED OUT because an authorization failure
+        # was indistinguishable from an expired session.
+        #
+        # 403 is not intercepted, not replayed, and cannot trigger that sign-out.
+        # routes/+layout.svelte:1136 already handles `401 || 403` identically, so nothing else
+        # changes.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
     return user

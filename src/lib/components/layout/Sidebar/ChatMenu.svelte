@@ -303,7 +303,7 @@
 			{#if $user?.role === 'admin' || ($user.permissions?.chat?.share ?? true)}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						shareHandler();
 					}}
@@ -319,7 +319,7 @@
 				<button
 					slot="trigger"
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				>
 					<Download strokeWidth="1.5" />
 					<div class="flex items-center">{$i18n.t('Download')}</div>
@@ -328,7 +328,7 @@
 				{#if $user?.role === 'admin' || ($user.permissions?.chat?.export ?? true)}
 					<button
 						draggable="false"
-						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 						on:click={() => {
 							downloadJSONExport();
 						}}
@@ -339,7 +339,7 @@
 
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						downloadTxt();
 					}}
@@ -349,7 +349,7 @@
 
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					on:click={() => {
 						downloadPdf();
 					}}
@@ -360,7 +360,7 @@
 
 			<button
 				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				on:click={() => {
 					renameHandler();
 				}}
@@ -373,7 +373,7 @@
 
 			<button
 				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				on:click={() => {
 					pinHandler();
 				}}
@@ -389,7 +389,7 @@
 
 			<button
 				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				on:click={() => {
 					show = false;
 					cloneChatHandler();
@@ -406,7 +406,7 @@
 					<button
 						slot="trigger"
 						draggable="false"
-						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					>
 						<Folder />
 						<div class="flex items-center">{$i18n.t('Move')}</div>
@@ -415,7 +415,7 @@
 					{#each $folders.sort((a, b) => b.updated_at - a.updated_at) as folder}
 						<button
 							draggable="false"
-							class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl overflow-hidden w-full"
+							class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl overflow-hidden w-full"
 							on:click={() => {
 								moveChatHandler(chatId, folder.id);
 							}}
@@ -433,7 +433,7 @@
 			{#if $config?.enable_chat_archive ?? false}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						archiveChatHandler();
 					}}
@@ -445,7 +445,7 @@
 
 			<button
 				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				on:click={() => {
 					deleteHandler();
 				}}

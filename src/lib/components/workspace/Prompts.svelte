@@ -283,7 +283,7 @@
 			<div class="flex w-full justify-end gap-1.5">
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts_import}
 					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
+						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 brand-nav-item dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition"
 						on:click={() => {
 							promptsImportInputElement.click();
 						}}
@@ -296,7 +296,7 @@
 
 				{#if total && ($user?.role === 'admin' || $user?.permissions?.workspace?.prompts_export)}
 					<button
-						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
+						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 brand-nav-item dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition"
 						on:click={async () => {
 							let blob = new Blob([JSON.stringify(prompts)], {
 								type: 'application/json'
@@ -310,7 +310,7 @@
 					</button>
 				{/if}
 				<a
-					class=" px-2 py-1.5 rounded-xl bg-black text-white dark:bg-white dark:text-black transition font-medium text-sm flex items-center"
+					class=" px-2 py-1.5 rounded-xl brand-btn-primary transition font-medium text-sm flex items-center"
 					href="/workspace/prompts/create"
 				>
 					<Plus className="size-3" strokeWidth="2.5" />
@@ -339,7 +339,7 @@
 				{#if query}
 					<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
 						<button
-							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							class="p-0.5 rounded-full brand-nav-item transition"
 							aria-label={$i18n.t('Clear search')}
 							on:click={() => {
 								query = '';
@@ -392,7 +392,7 @@
 			<div class="gap-2 grid my-2 px-3 lg:grid-cols-2">
 				{#each prompts as prompt (prompt.id)}
 					<a
-						class=" flex space-x-4 cursor-pointer text-left w-full px-3 py-2.5 dark:hover:bg-gray-850/50 hover:bg-gray-50 transition rounded-2xl"
+						class=" flex space-x-4 cursor-pointer text-left w-full px-3 py-2.5 brand-nav-item transition rounded-2xl"
 						href={`/workspace/prompts/${prompt.id}`}
 					>
 						<div class=" flex flex-col flex-1 space-x-4 cursor-pointer w-full pl-1">
@@ -438,7 +438,7 @@
 							{#if shiftKey}
 								<Tooltip content={$i18n.t('Delete')}>
 									<button
-										class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+										class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 										type="button"
 										aria-label={$i18n.t('Delete')}
 										on:click={() => {
@@ -451,7 +451,7 @@
 							{:else}
 								<Tooltip content={$i18n.t('Copy Prompt')}>
 									<button
-										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 										type="button"
 										aria-label={$i18n.t('Copy Prompt')}
 										on:click={(e) => {
@@ -484,7 +484,7 @@
 									onClose={() => {}}
 								>
 									<button
-										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 										type="button"
 									>
 										<EllipsisHorizontal className="size-5" />
@@ -534,7 +534,7 @@
 			</div>
 
 			<a
-				class=" flex cursor-pointer items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-850 w-full mb-2 px-3.5 py-1.5 rounded-xl transition"
+				class=" flex cursor-pointer items-center justify-between brand-nav-item w-full mb-2 px-3.5 py-1.5 rounded-xl transition"
 				href="https://openwebui.com/prompts"
 				target="_blank"
 			>

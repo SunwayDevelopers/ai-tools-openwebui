@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getVersionUpdates } from '$lib/apis';
-	import { getOllamaVersion } from '$lib/apis/ollama';
 	import { WEBUI_BUILD_HASH, WEBUI_VERSION, SCHAT_VERSION } from '$lib/constants';
 	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
@@ -9,8 +8,6 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');
-
-	let ollamaVersion = '';
 
 	let updateAvailable = null;
 	let version = {
@@ -34,10 +31,6 @@
 	};
 
 	onMount(async () => {
-		ollamaVersion = await getOllamaVersion(localStorage.token).catch((error) => {
-			return '';
-		});
-
 		if ($config?.features?.enable_version_update_check) {
 			checkForVersionUpdates();
 		}
@@ -101,7 +94,7 @@
 
 				{#if $config?.features?.enable_version_update_check}
 					<button
-						class=" text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium"
+						class=" text-xs px-3 py-1.5 bg-gray-100 brand-nav-item dark:bg-gray-850 brand-nav-item transition rounded-lg font-medium"
 						on:click={() => {
 							checkForVersionUpdates();
 						}}
@@ -112,18 +105,9 @@
 			</div>
 		</div>
 
-		{#if ollamaVersion}
-			<hr class=" border-gray-100/30 dark:border-gray-850/30" />
-
-			<div>
-				<div class=" mb-2.5 text-sm font-medium">{$i18n.t('Ollama Version')}</div>
-				<div class="flex w-full">
-					<div class="flex-1 text-xs text-gray-700 dark:text-gray-200">
-						{ollamaVersion ?? 'N/A'}
-					</div>
-				</div>
-			</div>
-		{/if}
+		<!-- Sunway: the Ollama Version row was deleted here (hardening plan Item 6). It called
+		     GET /ollama/api/version on mount for EVERY user opening Settings -> About, which
+		     after the router deletion was a 404 per visit. -->
 
 		<hr class=" border-gray-100/30 dark:border-gray-850/30" />
 

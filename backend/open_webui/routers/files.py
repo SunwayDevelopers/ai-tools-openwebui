@@ -21,7 +21,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, StreamingResponse
-from open_webui.config import BYPASS_ADMIN_ACCESS_CONTROL, STORAGE_LOCAL_CACHE, STORAGE_PROVIDER, UPLOAD_DIR
+from open_webui.config import STORAGE_LOCAL_CACHE, STORAGE_PROVIDER, UPLOAD_DIR
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import (
     ENABLE_IMAGE_OCR_FALLBACK,
@@ -63,7 +63,7 @@ from open_webui.retrieval.vector.async_client import ASYNC_VECTOR_DB_CLIENT
 from open_webui.routers.audio import transcribe
 from open_webui.routers.retrieval import ProcessFileForm, process_file
 from open_webui.storage.provider import Storage
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.misc import strict_match_mime_type
 from open_webui.utils.rate_limit import RateLimiter
 from open_webui.utils.redis import get_redis_client
@@ -71,6 +71,16 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
+
+# Sunway: this router no longer has a single admin-gated or admin-bypassed endpoint, and neither
+# get_admin_user nor the workspace bypass flag is imported any more. An uploaded document is USER
+# DATA, not curated workspace content -- the distinction matters, because that flag stays in force
+# for knowledge, models, prompts and skills, where admin visibility IS intended. Access to a file
+# is ownership or an explicit grant, for every role.
+#
+# The one surviving `role` check is on the file's OWNER, not the caller: /{id}/content/html only
+# serves a file inline when an admin uploaded it. That is an XSS guard against user-supplied HTML
+# and must stay.
 
 router = APIRouter()
 
@@ -520,7 +530,11 @@ async def list_files(
     db: AsyncSession = Depends(get_async_session),
 ):
     skip = (page - 1) * PAGE_SIZE
-    user_id = None if (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL) else user.id
+    # Sunway: this used to pass user_id=None for an admin when BYPASS_ADMIN_ACCESS_CONTROL was
+    # set -- listing EVERY user's files, so no id-guessing was even needed. The flag defaults to
+    # True. It stays untouched elsewhere: for knowledge, models, prompts and skills it gates
+    # curated WORKSPACE content, where admin visibility is intended. Uploaded files are not that.
+    user_id = user.id
 
     result = await Files.get_file_list(user_id=user_id, skip=skip, limit=PAGE_SIZE, db=db)
 
@@ -554,7 +568,11 @@ async def search_files(
     Uses SQL-based filtering with pagination for better performance.
     """
     # Determine user_id: null for admin with bypass (search all), user.id otherwise
-    user_id = None if (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL) else user.id
+    # Sunway: this used to pass user_id=None for an admin when BYPASS_ADMIN_ACCESS_CONTROL was
+    # set -- listing EVERY user's files, so no id-guessing was even needed. The flag defaults to
+    # True. It stays untouched elsewhere: for knowledge, models, prompts and skills it gates
+    # curated WORKSPACE content, where admin visibility is intended. Uploaded files are not that.
+    user_id = user.id
 
     # Use optimized database query with pagination
     files = await Files.search_files(
@@ -584,31 +602,12 @@ async def search_files(
 ############################
 
 
-@router.delete('/all')
-async def delete_all_files(user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)):
-    result = await Files.delete_all_files(db=db)
-    if result:
-        try:
-            await asyncio.to_thread(Storage.delete_all_files)
-            await ASYNC_VECTOR_DB_CLIENT.reset()
-        except Exception as e:
-            log.exception(e)
-            log.error('Error deleting files')
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT('Error deleting files'),
-            )
-        return {'message': 'All files deleted successfully'}
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT('Error deleting files'),
-        )
-
-
-############################
-# Get File By Id
-############################
+# Sunway: DELETE /api/v1/files/all was deleted here (deletion manifest -- "deletes every user's
+# files in one call"). It called Files.delete_all_files(), Storage.delete_all_files() AND
+# ASYNC_VECTOR_DB_CLIENT.reset() -- every user's uploads plus the entire vector database, from one
+# admin request, with no confirmation and nothing scoped to a tenant. Under multi-tenancy `admin`
+# is a per-tenant IAM role. Bulk destruction of that kind is an operator action at the cluster
+# layer, not an HTTP endpoint.
 
 
 @router.get('/{id}', response_model=Optional[FileModel])
@@ -621,7 +620,7 @@ async def get_file_by_id(id: str, user=Depends(get_verified_user), db: AsyncSess
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         return file
     else:
         raise HTTPException(
@@ -645,7 +644,7 @@ async def get_file_process_status(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         if stream:
             MAX_FILE_PROCESSING_DURATION = 3600 * 2
 
@@ -706,7 +705,7 @@ async def get_file_data_content_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         return {'content': file.data.get('content', '')}
     else:
         raise HTTPException(
@@ -740,7 +739,7 @@ async def update_file_data_content_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'write', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'write', user, db=db):
         try:
             await process_file(
                 request,
@@ -799,7 +798,7 @@ async def get_file_content_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         try:
             file_path = await asyncio.to_thread(Storage.get_file, file.path)
             file_path = Path(file_path)
@@ -866,7 +865,7 @@ async def get_html_file_content_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         try:
             file_path = await asyncio.to_thread(Storage.get_file, file.path)
             file_path = Path(file_path)
@@ -908,7 +907,7 @@ async def get_file_content_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'read', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'read', user, db=db):
         file_path = file.path
 
         # Handle Unicode filenames
@@ -973,7 +972,7 @@ async def rename_file_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'write', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'write', user, db=db):
         result = await Files.update_file_name_by_id(id, form_data.filename, db=db)
         if result:
             return result
@@ -1004,7 +1003,7 @@ async def delete_file_by_id(id: str, user=Depends(get_verified_user), db: AsyncS
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if file.user_id == user.id or user.role == 'admin' or await has_access_to_file(id, 'write', user, db=db):
+    if file.user_id == user.id or await has_access_to_file(id, 'write', user, db=db):
         # Full purge (KB associations + vectors, DB row, storage bytes, and the
         # file-{id} collection) lives in utils.retention.purge_file so the
         # retention cascade reuses the exact same logic.

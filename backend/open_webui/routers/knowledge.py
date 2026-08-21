@@ -256,8 +256,12 @@ async def create_new_knowledge(
     # Database operations (has_permission, filter_allowed_access_grants, insert_new_knowledge) manage their own sessions.
     # This prevents holding a connection during embed_knowledge_base_metadata()
     # which makes external embedding API calls (1-5+ seconds).
+    # Sunway: gated on `workspace.knowledge_create`, NOT `workspace.knowledge`. The latter is now
+    # a read grant -- it lets a user browse the Knowledge workspace and open a shared KB. Creating
+    # one is a separate permission, because the creator becomes the owner and every mutation route
+    # below admits the owner unconditionally. See config.py for the full note.
     if user.role != 'admin' and not await has_permission(
-        user.id, 'workspace.knowledge', request.app.state.config.USER_PERMISSIONS
+        user.id, 'workspace.knowledge_create', request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -984,23 +988,22 @@ async def delete_knowledge_by_id(
 
     log.info(f'Deleting knowledge base: {id} (name: {knowledge.name})')
 
-    # Get all models
-    models = await Models.get_all_models(db=db)
-    log.info(f'Found {len(models)} models to check for knowledge base {id}')
-
-    # Update models that reference this knowledge base
-    for model in models:
-        if model.meta and hasattr(model.meta, 'knowledge'):
-            knowledge_list = model.meta.knowledge or []
-            # Filter out the deleted knowledge base
-            updated_knowledge = [k for k in knowledge_list if k.get('id') != id]
-
-            # If the knowledge list changed, update the model
-            if len(updated_knowledge) != len(knowledge_list):
-                log.info(f'Updating model {model.id} to remove knowledge base {id}')
-                model.meta.knowledge = updated_knowledge
-                model_form = ModelForm(**model.model_dump())
-                await Models.update_model_by_id(model.id, model_form, db=db)
+    # Sunway: this used to strip the deleted knowledge base out of every model's
+    # `meta.knowledge` and write the model back. Models are now defined in code
+    # (`model_catalogue.py`, hardening plan Item 9), so there is no row to update -- a model's
+    # knowledge attachments are part of a reviewed commit, not runtime state.
+    #
+    # Checked rather than assumed: no catalogue model sets `meta.knowledge`, so nothing is left
+    # dangling by dropping this. If one ever does, deleting that knowledge base must be paired
+    # with a catalogue edit, and the stale reference would otherwise be silent -- so this warns.
+    stale = [m.id for m in await Models.get_all_models(db=db) if any((getattr(m.meta, 'knowledge', None) or []))]
+    if stale:
+        log.warning(
+            'Knowledge base %s deleted while still referenced by catalogue model(s) %s -- '
+            'update model_catalogue.py, the reference is now dangling.',
+            id,
+            ', '.join(stale),
+        )
 
     # Clean up vector DB
     try:

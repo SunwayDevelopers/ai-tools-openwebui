@@ -18,10 +18,8 @@
 		deleteAllChats,
 		getAllChats,
 		getChatList,
-		getPinnedChatList,
-		importChats
+		getPinnedChatList
 	} from '$lib/apis/chats';
-	import { getImportOrigin, convertOpenAIChats } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -35,7 +33,6 @@
 	export let saveSettings: Function;
 
 	// Chats
-	let importFiles;
 
 	let showArchiveConfirmDialog = false;
 	let showDeleteConfirmDialog = false;
@@ -43,65 +40,9 @@
 	let showSharedChatsModal = false;
 	let showFilesModal = false;
 
-	let chatImportInputElement: HTMLInputElement;
-
-	$: if (importFiles) {
-		console.log(importFiles);
-
-		let reader = new FileReader();
-		reader.onload = (event) => {
-			let chats = JSON.parse(event.target.result);
-			console.log(chats);
-			if (getImportOrigin(chats) == 'openai') {
-				try {
-					chats = convertOpenAIChats(chats);
-				} catch (error) {
-					console.log('Unable to import chats:', error);
-				}
-			}
-			importChatsHandler(chats);
-		};
-
-		if (importFiles.length > 0) {
-			reader.readAsText(importFiles[0]);
-		}
-	}
-
-	const importChatsHandler = async (_chats) => {
-		const res = await importChats(
-			localStorage.token,
-			_chats.map((chat) => {
-				if (chat.chat) {
-					return {
-						chat: chat.chat,
-						meta: chat.meta ?? {},
-						pinned: false,
-						folder_id: chat?.folder_id ?? null,
-						created_at: chat?.created_at ?? null,
-						updated_at: chat?.updated_at ?? null
-					};
-				} else {
-					// Legacy format
-					return {
-						chat: chat,
-						meta: {},
-						pinned: false,
-						folder_id: null,
-						created_at: chat?.created_at ?? null,
-						updated_at: chat?.updated_at ?? null
-					};
-				}
-			})
-		);
-		if (res) {
-			toast.success(`Successfully imported ${res.length} chats.`);
-		}
-
-		currentChatPage.set(1);
-		await chats.set(await getChatList(localStorage.token, $currentChatPage));
-		pinnedChats.set(await getPinnedChatList(localStorage.token));
-		scrollPaginationEnabled.set(true);
-	};
+	// Sunway: importChatsHandler() was removed here (hardening plan). POST /chats/import is
+	// deleted -- it bypassed MAX_CHATS_PER_USER, which is enforced only at /chats/new and on
+	// the completion path. Exporting your OWN chats is unaffected.
 
 	const exportChats = async () => {
 		let blob = new Blob([JSON.stringify(await getAllChats(localStorage.token))], {
@@ -176,39 +117,12 @@
 
 <div id="tab-chats" class="flex flex-col h-full justify-between text-sm">
 	<div class="space-y-3 overflow-y-scroll max-h-[28rem] md:max-h-full">
-		<input
-			id="chat-import-input"
-			bind:this={chatImportInputElement}
-			bind:files={importFiles}
-			type="file"
-			accept=".json"
-			hidden
-		/>
-
 		<div>
 			<div class="mb-1 text-sm font-medium">{$i18n.t('Chats')}</div>
 
-			<!-- Sunway: Import Chats hidden for everyone incl. admins — imports bypass the
-			     30-chat retention cap (only /chats/new enforces it). Code kept, gated off.
-			     Note: the backend /chats/import endpoint stays reachable (UI hiding is not a
-			     security boundary) and a drag-drop import fallback exists in Sidebar/
-			     RecursiveFolder for cross-instance chat drags (inert in normal use). -->
-			{#if false}
-				<div>
-					<div class="py-0.5 flex w-full justify-between">
-						<div class="self-center text-xs">{$i18n.t('Import Chats')}</div>
-						<button
-							class="p-1 px-3 text-xs flex rounded-sm transition"
-							on:click={() => {
-								chatImportInputElement.click();
-							}}
-							type="button"
-						>
-							<span class="self-center">{$i18n.t('Import')}</span>
-						</button>
-					</div>
-				</div>
-			{/if}
+			<!-- Sunway: "Import Chats" was deleted here (hardening plan). It was already hidden
+			     because imports bypassed the 30-chat cap; the endpoint is now gone too, so the
+			     bypass is closed by construction rather than by hiding a button. -->
 
 			<!-- Sunway: bulk JSON "Export Chats" hidden for everyone incl. admins — dev/portability
 			     format (not human-readable) and a dead-end now that Import is hidden. The useful

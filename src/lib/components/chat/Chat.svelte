@@ -86,11 +86,10 @@
 		updateChatFolderIdById
 	} from '$lib/apis/chats';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
-	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
+	import { processWebSearch } from '$lib/apis/retrieval';
 	import { getAndUpdateUserLocation, getUserSettings } from '$lib/apis/users';
 	import {
 		generateQueries,
-		chatAction,
 		generateMoACompletion,
 		stopTask,
 		stopTasksByChatId,
@@ -100,7 +99,6 @@
 	import { getSkills } from '$lib/apis/skills';
 	import { uploadFile } from '$lib/apis/files';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
-	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
 	import Banner from '../common/Banner.svelte';
@@ -387,8 +385,21 @@
 		if (!$tools) {
 			tools.set(await getTools(localStorage.token));
 		}
+		// Sunway: the Functions router is deleted (hardening plan Item 2), so GET
+		// /api/v1/functions/ no longer exists. getFunctions() THROWS on a non-ok response
+		// rather than returning null, so calling it here would abort setDefaults() and break
+		// chat initialisation — not degrade quietly.
+		//
+		// Set the store empty instead of removing it: `$functions` is still read by
+		// Controls/Valves.svelte and Models/ModelEditor.svelte, and an empty array keeps those
+		// rendering nothing rather than erroring on null. Both surfaces are hidden and are
+		// removed in the frontend half of Item 2; this line goes with them.
+		//
+		// Nothing is lost by it being empty. The only Function that ever existed here was the
+		// SChat guardrails filter, which now runs from code (backend/open_webui/filters/) and
+		// is applied by the backend filter pipeline, not by anything the browser sends.
 		if (!$functions) {
-			functions.set(await getFunctions(localStorage.token));
+			functions.set([]);
 		}
 		if (!$skills) {
 			skills.set(await getSkills(localStorage.token));
@@ -1108,9 +1119,11 @@
 
 		for (const fileItem of fileItems) {
 			try {
-				const res = isYoutubeUrl(fileItem.url)
-					? await processYoutubeVideo(localStorage.token, fileItem.url)
-					: await processWeb(localStorage.token, '', fileItem.url);
+				// Sunway: the web/YouTube ingest call was removed here (hardening plan). Its two
+				// endpoints are deleted; "Attach Webpage" and the #-palette URL attach were already
+				// hidden. Pasting a link in a message still works -- the model fetches it with the
+				// built-in fetch_url tool.
+				const res = null;
 
 				if (res) {
 					fileItem.status = 'uploaded';
@@ -1634,58 +1647,9 @@
 		taskIds = null;
 	};
 
-	const chatActionHandler = async (_chatId, actionId, modelId, responseMessageId, event = null) => {
-		const messages = createMessagesList(history, responseMessageId);
-
-		const res = await chatAction(localStorage.token, actionId, {
-			model: modelId,
-			messages: messages.map((m) => ({
-				id: m.id,
-				role: m.role,
-				content: m.content,
-				info: m.info ? m.info : undefined,
-				timestamp: m.timestamp,
-				...(m.sources ? { sources: m.sources } : {})
-			})),
-			...(event ? { event: event } : {}),
-			model_item: $models.find((m) => m.id === modelId),
-			chat_id: _chatId,
-			session_id: $socket?.id,
-			id: responseMessageId
-		}).catch((error) => {
-			toast.error(`${error}`);
-			messages.at(-1).error = { content: error };
-			return null;
-		});
-
-		if (res !== null && res.messages) {
-			// Update chat history with the new messages
-			for (const message of res.messages) {
-				history.messages[message.id] = {
-					...history.messages[message.id],
-					...(history.messages[message.id].content !== message.content
-						? { originalContent: history.messages[message.id].content }
-						: {}),
-					...message
-				};
-			}
-		}
-
-		if ($chatId == _chatId) {
-			if (!$temporaryChatEnabled) {
-				chat = await updateChatById(localStorage.token, _chatId, {
-					models: selectedModels,
-					messages: messages,
-					history: history,
-					params: params,
-					files: chatFiles
-				});
-
-				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
-			}
-		}
-	};
+	// Sunway: chatActionHandler was deleted here (hardening plan Item 2, frontend half). It
+	// posted to /api/chat/actions/{id} to run a `function` row of type `action`; the endpoint,
+	// the router and the action buttons that called it are all gone.
 
 	const getChatEventEmitter = async (modelId: string, chatId: string = '') => {
 		return setInterval(() => {
@@ -3256,7 +3220,6 @@
 										{continueResponse}
 										{regenerateResponse}
 										{mergeResponses}
-										{chatActionHandler}
 										{addMessages}
 										topPadding={true}
 										bottomPadding={files.length > 0}

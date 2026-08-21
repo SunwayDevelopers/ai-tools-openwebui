@@ -186,49 +186,29 @@ def _make_async_url(url: str) -> str:
 #              Alembic, peewee migration, health checks)
 # ============================================================
 
-# Handle SQLCipher URLs
+# Sunway: the SQLCipher branch was DELETED here (security review L1). It built a connection
+# via `sqlcipher3` and keyed the connection by formatting DATABASE_PASSWORD straight into a
+# SQLite keying statement -- a credential interpolated into SQL as an f-string.
+#
+# It was never reachable on this deployment: the branch is gated on a `sqlite+sqlcipher://` URL
+# and schat runs Postgres, control plane and every tenant. And the interpolated value is
+# operator-supplied via DATABASE_PASSWORD, never user-supplied, so it was not injection in the
+# attacker sense even when reached -- a bad value breaks your own boot.
+#
+# Deleted rather than documented for one reason worth stating: a static scanner flags the
+# pattern regardless of reachability, so leaving it in means re-litigating "yes, we know, it's
+# dead" at every assessment. Removing it costs nothing -- SQLCipher was never a schat feature,
+# `sqlcipher3` is not in pyproject.toml, and git holds the original if it is ever wanted.
+#
+# The URL is rejected loudly rather than allowed to fall through: `'sqlite' in URL` matches
+# `sqlite+sqlcipher://` too, so without this guard an encrypted database would be opened by the
+# plain-SQLite branch below -- which fails confusingly, or silently creates a new UNENCRYPTED
+# file at a path that looks right.
 if SQLALCHEMY_DATABASE_URL.startswith('sqlite+sqlcipher://'):
-    database_password = os.environ.get('DATABASE_PASSWORD')
-    if not database_password or database_password.strip() == '':
-        raise ValueError('DATABASE_PASSWORD is required when using sqlite+sqlcipher:// URLs')
-
-    # Extract database path from SQLCipher URL
-    db_path = SQLALCHEMY_DATABASE_URL.replace('sqlite+sqlcipher://', '')
-
-    # Create a custom creator function that uses sqlcipher3
-    def create_sqlcipher_connection():
-        import sqlcipher3
-
-        conn = sqlcipher3.connect(db_path, check_same_thread=False)
-        conn.execute(f"PRAGMA key = '{database_password}'")
-        return conn
-
-    # The dummy "sqlite://" URL would cause SQLAlchemy to auto-select
-    # SingletonThreadPool, which non-deterministically closes in-use
-    # connections when thread count exceeds pool_size, leading to segfaults
-    # in the native sqlcipher3 C library. Use NullPool by default for safety,
-    # or QueuePool if DATABASE_POOL_SIZE is explicitly configured.
-    if isinstance(DATABASE_POOL_SIZE, int) and DATABASE_POOL_SIZE > 0:
-        engine = create_engine(
-            'sqlite://',
-            creator=create_sqlcipher_connection,
-            pool_size=DATABASE_POOL_SIZE,
-            max_overflow=DATABASE_POOL_MAX_OVERFLOW,
-            pool_timeout=DATABASE_POOL_TIMEOUT,
-            pool_recycle=DATABASE_POOL_RECYCLE,
-            pool_pre_ping=True,
-            poolclass=QueuePool,
-            echo=False,
-        )
-    else:
-        engine = create_engine(
-            'sqlite://',
-            creator=create_sqlcipher_connection,
-            poolclass=NullPool,
-            echo=False,
-        )
-
-    log.info('Connected to encrypted SQLite database using SQLCipher')
+    raise ValueError(
+        'sqlite+sqlcipher:// is not supported. schat runs on Postgres; the SQLCipher support '
+        'path was removed (security review L1). Set DATABASE_URL to a postgresql:// URL.'
+    )
 
 elif 'sqlite' in SQLALCHEMY_DATABASE_URL:
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={'check_same_thread': False})
@@ -434,9 +414,7 @@ def _build_tenant_sessionmaker(tenant_ctx):
         # few users each. No pool_size/max_overflow/pool_timeout (NullPool rejects
         # them) and no pool_pre_ping: every connection is new, so validating it
         # would just add a round trip.
-        engine = create_async_engine(
-            url, poolclass=NullPool, connect_args=_tenant_connect_args()
-        )
+        engine = create_async_engine(url, poolclass=NullPool, connect_args=_tenant_connect_args())
     else:
         engine = create_async_engine(
             url,
@@ -533,8 +511,7 @@ def _sweep_idle_tenant_engines(now: float) -> None:
         _tenant_last_used.pop(tenant_id, None)
         _dispose_engine(engine, tenant_id)
         log.info(
-            'Disposed idle tenant DB engine tenant=%s (no requests for >%ss), '
-            'releasing up to %s pooled connections',
+            'Disposed idle tenant DB engine tenant=%s (no requests for >%ss), releasing up to %s pooled connections',
             tenant_id,
             TENANT_ENGINE_IDLE_TIMEOUT,
             TENANT_DB_POOL_SIZE,

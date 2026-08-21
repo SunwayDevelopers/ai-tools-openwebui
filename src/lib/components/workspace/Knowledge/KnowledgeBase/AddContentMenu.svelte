@@ -12,6 +12,7 @@
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import ArrowUturnLeft from '$lib/components/icons/ArrowUturnLeft.svelte';
+	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -24,122 +25,137 @@
 	let show = false;
 </script>
 
-<Dropdown
-	bind:show
-	onOpenChange={(state) => {
-		if (state === false) {
-			onClose();
-		}
-	}}
-	align="end"
->
-	<Tooltip content={$i18n.t('Add Content')}>
-		<button
-			class=" p-1.5 rounded-xl hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition font-medium text-sm flex items-center space-x-1"
-			on:click={(e) => {
-				e.stopPropagation();
-				show = true;
-			}}
-		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				viewBox="0 0 16 16"
-				fill="currentColor"
-				class="w-4 h-4"
-			>
-				<path
-					d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z"
-				/>
-			</svg>
-		</button>
-	</Tooltip>
+<!-- Sunway: the "+" dropdown is split. Uploading is the whole point of this screen, so it is
+     a primary pill in the header rather than one of two entries hidden behind a plus icon.
+     Reset is deliberately NOT promoted beside it: it deletes every file and vector in the
+     collection with no undo, and giving a destructive action equal weight next to the button
+     people click constantly is a mis-click waiting to happen. It lives in an overflow menu,
+     styled as destructive. The hidden directory / webpage / text entries stay in that menu. -->
+<div class="flex items-center gap-1.5">
+	<button
+		class="brand-pill-solid"
+		on:click={(e) => {
+			e.stopPropagation();
+			onUpload({ type: 'files' });
+		}}
+	>
+		<ArrowUpCircle strokeWidth="2.5" className="size-3.5 shrink-0" />
+		<span class="hidden md:inline">{$i18n.t('Upload files')}</span>
+	</button>
 
-	<div slot="content">
-		<div
-			class="min-w-[200px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg transition"
-		>
+	<Dropdown
+		bind:show
+		onOpenChange={(state) => {
+			if (state === false) {
+				onClose();
+			}
+		}}
+		align="end"
+	>
+		<Tooltip content={$i18n.t('More')}>
 			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onUpload({ type: 'new_directory' });
-					show = false;
+				class="brand-nav-item p-1.5 rounded-xl transition flex items-center"
+				aria-label={$i18n.t('More')}
+				on:click={(e) => {
+					e.stopPropagation();
+					show = true;
 				}}
 			>
-				<NewFolderAlt />
-				<div class="flex items-center">{$i18n.t('New directory')}</div>
+				<EllipsisHorizontal className="size-4" />
 			</button>
+		</Tooltip>
 
-			<hr class="my-1 border-gray-100 dark:border-gray-800" />
-
-			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onUpload({ type: 'files' });
-				}}
+		<div slot="content">
+			<div
+				class="min-w-[200px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg transition"
 			>
-				<ArrowUpCircle strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Upload files')}</div>
-			</button>
+				<!-- Sunway: Knowledge content actions narrowed to "Upload files" + "Reset" for the
+			     rollout. Directory-based ingestion (New / Upload / Sync directory) pulls whole
+			     folder trees from a user's machine into a shared KB, which makes accidental bulk
+			     disclosure a single click. "Add webpage" is the KB-side twin of the Attach Webpage
+			     entry already hidden in MessageInput/InputMenu (see CLAUDE.md), and "Add text
+			     content" pastes unattributed free text into a governed collection.
+			     The `<hr>` below is hidden with this first entry rather than left behind, or the
+			     menu would open with a stray divider above "Upload files". All handlers and modals
+			     (showNewDirectoryModal / showAddWebpageModal / showAddTextContentModal, onSync) are
+			     left intact and simply unreachable, for clean upstream syncs. -->
+				{#if false}
+					<button
+						class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+						on:click={() => {
+							onUpload({ type: 'new_directory' });
+							show = false;
+						}}
+					>
+						<NewFolderAlt />
+						<div class="flex items-center">{$i18n.t('New directory')}</div>
+					</button>
 
-			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onUpload({ type: 'directory' });
-				}}
-			>
-				<FolderOpen strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Upload directory')}</div>
-			</button>
+					<hr class="my-1 border-gray-100 dark:border-gray-800" />
+				{/if}
 
-			<Tooltip
-				content={$i18n.t(
-					'Sync a local directory with this knowledge base. Only new and modified files will be uploaded. The directory structure will be mirrored.'
-				)}
-				className="w-full"
-			>
+				<!-- Sunway: Upload directory / Sync directory / Add webpage / Add text content hidden.
+			     See the rationale on the "New directory" guard above. -->
+				{#if false}
+					<button
+						class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+						on:click={() => {
+							onUpload({ type: 'directory' });
+						}}
+					>
+						<FolderOpen strokeWidth="2" />
+						<div class="flex items-center">{$i18n.t('Upload directory')}</div>
+					</button>
+
+					<Tooltip
+						content={$i18n.t(
+							'Sync a local directory with this knowledge base. Only new and modified files will be uploaded. The directory structure will be mirrored.'
+						)}
+						className="w-full"
+					>
+						<button
+							class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+							on:click={() => {
+								onSync();
+							}}
+						>
+							<ArrowPath strokeWidth="2" />
+							<div class="flex items-center">{$i18n.t('Sync directory')}</div>
+						</button>
+					</Tooltip>
+
+					<button
+						class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+						on:click={() => {
+							onUpload({ type: 'web' });
+						}}
+					>
+						<GlobeAlt strokeWidth="2" />
+						<div class="flex items-center">{$i18n.t('Add webpage')}</div>
+					</button>
+
+					<button
+						class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+						on:click={() => {
+							onUpload({ type: 'text' });
+						}}
+					>
+						<BarsArrowUp strokeWidth="2" />
+						<div class="flex items-center">{$i18n.t('Add text content')}</div>
+					</button>
+				{/if}
+
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl w-full text-red-600 dark:text-red-400 hover:bg-red-500/10 transition"
 					on:click={() => {
-						onSync();
+						onReset();
+						show = false;
 					}}
 				>
-					<ArrowPath strokeWidth="2" />
-					<div class="flex items-center">{$i18n.t('Sync directory')}</div>
+					<ArrowUturnLeft strokeWidth="2" />
+					<div class="flex items-center">{$i18n.t('Reset')}</div>
 				</button>
-			</Tooltip>
-
-			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onUpload({ type: 'web' });
-				}}
-			>
-				<GlobeAlt strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Add webpage')}</div>
-			</button>
-
-			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onUpload({ type: 'text' });
-				}}
-			>
-				<BarsArrowUp strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Add text content')}</div>
-			</button>
-
-			<hr class="my-1 border-gray-100 dark:border-gray-800" />
-
-			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-				on:click={() => {
-					onReset();
-					show = false;
-				}}
-			>
-				<ArrowUturnLeft strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Reset')}</div>
-			</button>
+			</div>
 		</div>
-	</div>
-</Dropdown>
+	</Dropdown>
+</div>

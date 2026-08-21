@@ -3,8 +3,7 @@ from __future__ import annotations
 import logging
 
 import black
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from open_webui.config import DATA_DIR, ENABLE_ADMIN_EXPORT
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.models.chats import ChatTitleMessagesForm
 from open_webui.utils.auth import get_admin_user, get_verified_user
@@ -12,7 +11,6 @@ from open_webui.utils.code_interpreter import execute_code_jupyter
 from open_webui.utils.misc import get_gravatar_url
 from open_webui.utils.pdf_generator import PDFGenerator
 from pydantic import BaseModel
-from starlette.responses import FileResponse
 
 log = logging.getLogger(__name__)
 
@@ -92,20 +90,7 @@ async def download_chat_as_pdf(form_data: ChatTitleMessagesForm, user=Depends(ge
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get('/db/download')
-async def download_db(user=Depends(get_admin_user)):
-    """Download the raw SQLite database file (admin-only, SQLite deployments only)."""
-    if not ENABLE_ADMIN_EXPORT:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-
-    # Lazy import avoids circular dependency at module load time
-    from open_webui.internal.db import engine
-
-    if engine.name != 'sqlite':
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DB_NOT_SQLITE)
-
-    return FileResponse(
-        str(engine.url.database),
-        media_type='application/octet-stream',
-        filename='webui.db',
-    )
+# Sunway: GET /db/download was deleted here (hardening plan Item 3). It streamed the raw SQLite
+# database file. It only ever worked on SQLite and only with ENABLE_ADMIN_EXPORT set, so it was
+# already inert on this deployment (Postgres) -- but a whole-database download reachable from a
+# browser is an ops action at the cluster layer, not a UI button (ISO 27001).

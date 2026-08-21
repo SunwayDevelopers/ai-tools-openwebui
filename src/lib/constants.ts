@@ -25,6 +25,16 @@ export const REQUIRED_OLLAMA_VERSION = '0.1.16';
 // (aligned with sdeck; 1.0.0 reserved for a stability milestone). See AUDIT-033.
 export const SCHAT_VERSION = '0.1.0';
 
+// Sunway: user feedback form (Microsoft Forms). Shared with sdeck, which links the same form
+// from its Help Center footer as "Contact Support" -- one form, one response pool, so feedback
+// from both products lands in the same place rather than in two spreadsheets nobody merges.
+//
+// A plain constant on purpose. It is a public URL with no secret in it, it is the same for every
+// tenant, and it is read at build time by a component with no backend round-trip -- so routing it
+// through config would add a payload field, a fallback path and a deployment surface to buy
+// nothing. If the form is ever replaced, this is a one-line change plus a rebuild.
+export const SCHAT_FEEDBACK_URL = 'https://forms.office.com/r/gGjMGjshy9';
+
 export const SUPPORTED_FILE_TYPE = [
 	'application/epub+zip',
 	'application/pdf',

@@ -148,7 +148,7 @@
 			{/if}
 
 			<a
-				class=" w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850"
+				class=" w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 brand-nav-item"
 				draggable="false"
 				href={`/c/${chat.id}`}
 				on:click={() => (show = false)}

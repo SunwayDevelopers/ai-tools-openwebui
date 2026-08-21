@@ -25,8 +25,7 @@
 		getChatById,
 		getChatsByFolderId,
 		getChatListByFolderId,
-		updateChatFolderIdById,
-		importChats
+		updateChatFolderIdById
 	} from '$lib/apis/chats';
 
 	import ChevronDown from '../../icons/ChevronDown.svelte';
@@ -157,21 +156,7 @@
 								let chat = await getChatById(localStorage.token, id).catch((error) => {
 									return null;
 								});
-								if (!chat && item) {
-									chat = await importChats(localStorage.token, [
-										{
-											chat: item.chat,
-											meta: item?.meta ?? {},
-											pinned: false,
-											folder_id: null,
-											created_at: item?.created_at ?? null,
-											updated_at: item?.updated_at ?? null
-										}
-									]).catch((error) => {
-										toast.error(`${error}`);
-										return null;
-									});
-								}
+								// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 								// Move the chat
 								const res = await updateChatFolderIdById(
@@ -510,7 +495,7 @@
 		<div class="w-full group">
 			<div
 				id="folder-{folderId}-button"
-				class="relative w-full py-1 px-1.5 rounded-xl flex items-center gap-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition {$selectedFolder?.id ===
+				class="relative w-full py-1 px-1.5 rounded-xl flex items-center gap-1.5 brand-nav-item transition {$selectedFolder?.id ===
 				folderId
 					? 'bg-gray-100 dark:bg-gray-900 selected'
 					: ''}"
@@ -551,7 +536,7 @@
 				}}
 			>
 				<button
-					class="text-gray-500 dark:text-gray-500 transition-all p-1 hover:bg-gray-200 dark:hover:bg-gray-850 rounded-lg"
+					class="text-gray-500 dark:text-gray-500 transition-all p-1 brand-nav-item rounded-lg"
 					on:click={(e) => {
 						e.stopPropagation();
 						e.stopImmediatePropagation();
@@ -632,7 +617,7 @@
 							showCreateSubFolderModal = true;
 						}}
 					>
-						<div class="p-1 dark:hover:bg-gray-850 rounded-lg touch-auto">
+						<div class="p-1 brand-nav-item rounded-lg touch-auto">
 							<EllipsisHorizontal className="size-4" strokeWidth="2.5" />
 						</div>
 					</FolderMenu>

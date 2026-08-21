@@ -247,7 +247,7 @@
 					{#if query}
 						<div class="self-center pl-1.5 pr-1 translate-y-[0.5px] rounded-l-xl bg-transparent">
 							<button
-								class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+								class="p-0.5 rounded-full brand-nav-item transition"
 								on:click={() => {
 									query = '';
 								}}
@@ -321,7 +321,7 @@
 
 							{#each files as file (file.id)}
 								<div
-									class="w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 cursor-pointer"
+									class="w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 brand-nav-item cursor-pointer"
 									on:click={() => openFileViewer(file)}
 								>
 									<div class="basis-3/5 min-w-0">

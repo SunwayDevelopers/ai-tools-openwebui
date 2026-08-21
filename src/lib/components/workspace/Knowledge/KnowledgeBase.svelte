@@ -42,7 +42,6 @@
 		syncKnowledgeDiff,
 		syncKnowledgeCleanup
 	} from '$lib/apis/knowledge';
-	import { processWeb, processYoutubeVideo } from '$lib/apis/retrieval';
 
 	import { blobToFile, isYoutubeUrl, copyToClipboard } from '$lib/utils';
 	import { computeFileHash } from '$lib/utils/hash';
@@ -70,14 +69,12 @@
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import AdjustmentsHorizontal from '$lib/components/icons/AdjustmentsHorizontal.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
-	import AttachWebpageModal from '$lib/components/chat/MessageInput/AttachWebpageModal.svelte';
 
 	let largeScreen = true;
 
 	let pane;
 	let showSidepanel = true;
 
-	let showAddWebpageModal = false;
 	let showAddTextContentModal = false;
 	let showNewDirectoryModal = false;
 
@@ -103,6 +100,11 @@
 	let id = null;
 	let knowledge: Knowledge | null = null;
 	let knowledgeId = null;
+
+	// Sunway: set from ?file=<id> when arriving from a chat attachment (see FileItemModal). Held
+	// separately from selectedFileId because the file list loads asynchronously -- the id arrives
+	// with the navigation, the file it names does not exist client-side until fileItems populates.
+	let pendingFileId = null;
 
 	let selectedFileId = null;
 	let selectedFile = null;
@@ -240,6 +242,21 @@
 		return res;
 	};
 
+	// Resolve the deep link as soon as the list it refers into is available. Reactive rather than
+	// awaited in onMount: fileItems is filled by a separate fetch that also re-runs on directory
+	// navigation and pending-file polling, so there is no single point to hang this off.
+	// pendingFileId is cleared either way -- a file that is not in the list (deleted, or in another
+	// directory) must not leave the block retrying on every subsequent fileItems change.
+	$: if (pendingFileId && Array.isArray(fileItems)) {
+		const target = fileItems.find((file) => file.id === pendingFileId);
+		pendingFileId = null;
+
+		if (target) {
+			selectedFileId = target.id;
+			fileSelectHandler(target);
+		}
+	}
+
 	const fileSelectHandler = async (file) => {
 		try {
 			selectedFile = file;
@@ -257,85 +274,10 @@
 		return file;
 	};
 
-	const uploadWeb = async (urls) => {
-		if (!Array.isArray(urls)) {
-			urls = [urls];
-		}
-
-		const newFileItems = urls.map((url) => ({
-			type: 'file',
-			file: '',
-			id: null,
-			url: url,
-			name: url,
-			size: null,
-			status: 'uploading',
-			error: '',
-			itemId: uuidv4()
-		}));
-
-		// Display all items at once
-		fileItems = [...newFileItems, ...(fileItems ?? [])];
-
-		for (const fileItem of newFileItems) {
-			try {
-				console.log(fileItem);
-				const res = await processWeb(localStorage.token, '', fileItem.url, false).catch((e) => {
-					console.error('Error processing web URL:', e);
-					return null;
-				});
-
-				if (res) {
-					console.log(res);
-					const file = createFileFromText(
-						// Use URL as filename, sanitized
-						fileItem.url
-							.replace(/[^a-z0-9]/gi, '_')
-							.toLowerCase()
-							.slice(0, 50),
-						res.content
-					);
-
-					const uploadedFile = await uploadFile(localStorage.token, file, {
-						knowledge_id: knowledge.id,
-						directory_id: currentDirectoryId
-					}).catch((e) => {
-						toast.error(`${e}`);
-						return null;
-					});
-
-					if (uploadedFile) {
-						console.log(uploadedFile);
-						fileItems = fileItems.map((item) => {
-							if (item.itemId === fileItem.itemId) {
-								item.id = uploadedFile.id;
-							}
-							return item;
-						});
-
-						if (uploadedFile.error) {
-							console.warn('File upload warning:', uploadedFile.error);
-							toast.warning(uploadedFile.error);
-							fileItems = fileItems.filter((file) => file.id !== uploadedFile.id);
-						} else {
-							toast.success($i18n.t('File added successfully.'));
-							init();
-						}
-					} else {
-						toast.error($i18n.t('Failed to upload file.'));
-					}
-				} else {
-					// remove the item from fileItems
-					fileItems = fileItems.filter((item) => item.itemId !== fileItem.itemId);
-					toast.error($i18n.t('Failed to process URL: {{url}}', { url: fileItem.url }));
-				}
-			} catch (e) {
-				// remove the item from fileItems
-				fileItems = fileItems.filter((item) => item.itemId !== fileItem.itemId);
-				toast.error(`${e}`);
-			}
-		}
-	};
+	// Sunway: uploadWeb() was removed here (hardening plan). It drove POST /retrieval/process/web,
+	// now deleted, from the "Add webpage" entry -- which is itself `{#if false}` in
+	// KnowledgeBase/AddContentMenu.svelte, alongside New directory, Upload directory, Sync
+	// directory and Add text content. The KB add-content menu is narrowed to Upload files + Reset.
 
 	const uploadFileHandler = async (file) => {
 		console.log(file);
@@ -1096,6 +1038,7 @@
 		}
 
 		id = $page.params.id;
+		pendingFileId = $page.url.searchParams.get('file');
 		const res = await getKnowledgeById(localStorage.token, id).catch((e) => {
 			toast.error(`${e}`);
 			return null;
@@ -1151,13 +1094,6 @@
 	}}
 	on:cancel={() => {
 		pendingSyncFiles = null;
-	}}
-/>
-
-<AttachWebpageModal
-	bind:show={showAddWebpageModal}
-	onSubmit={async (e) => {
-		uploadWeb(e.data);
 	}}
 />
 
@@ -1219,14 +1155,49 @@
 			}}
 			accessRoles={['read', 'write']}
 		/>
+
+		<!-- Sunway: explicit way out of a knowledge base. The workspace tab bar's link was the
+		     only other exit, and on this route it renders in its ACTIVE state (the path still
+		     matches /workspace/knowledge), so it reads as a "you are here" label rather than a
+		     way back. Same Back-button pattern the create screen already uses, but labelled
+		     with the destination so it is obvious where it lands. -->
+		<div class="w-full px-2 mb-1.5">
+			<button
+				class="brand-backlink brand-pill-outline text-gray-600 dark:text-gray-300"
+				type="button"
+				on:click={() => {
+					goto('/workspace/knowledge');
+				}}
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					class="size-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+				<div>{$i18n.t('Knowledge Base')}</div>
+			</button>
+		</div>
+
 		<div class="w-full px-2">
 			<div class=" flex w-full">
 				<div class="flex-1">
 					<div class="flex items-center justify-between w-full">
+						<!-- Sunway: name + description are borderless transparent inputs upstream, so
+						     they read as static text and nothing tells a BU admin they can be edited.
+						     The classes below add hover/focus reveal (the click-to-edit pattern) and a
+						     text cursor; `enabled:` keeps them flat for read-only viewers. Both still
+						     autosave through changeDebounceHandler() -- unchanged. -->
 						<div class="w-full flex justify-between items-center">
 							<input
 								type="text"
-								class="text-left w-full text-lg bg-transparent outline-hidden flex-1"
+								class="text-left text-lg bg-transparent outline-hidden brand-editable"
 								bind:value={knowledge.name}
 								aria-label={$i18n.t('Knowledge Name')}
 								placeholder={$i18n.t('Knowledge Name')}
@@ -1249,21 +1220,28 @@
 						</div>
 
 						{#if knowledge?.write_access}
-							<div class="self-center shrink-0">
-								<button
-									class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
-									type="button"
-									on:click={() => {
-										showAccessControlModal = true;
-									}}
-								>
-									<LockClosed strokeWidth="2.5" className="size-3.5" />
+							<!-- Sunway: the Access button is hidden. Per-KB visibility is no longer a
+							     choice — a collection is readable by the users of the tenant that owns it
+							     (see CreateKnowledgeBase.svelte) — and leaving this here would let an
+							     admin quietly undo that one click after creating. The modal, its handler
+							     and the Read Only badge below are all left intact. -->
+							{#if false}
+								<div class="self-center shrink-0">
+									<button
+										class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
+										type="button"
+										on:click={() => {
+											showAccessControlModal = true;
+										}}
+									>
+										<LockClosed strokeWidth="2.5" className="size-3.5" />
 
-									<div class="text-sm font-medium shrink-0">
-										{$i18n.t('Access')}
-									</div>
-								</button>
-							</div>
+										<div class="text-sm font-medium shrink-0">
+											{$i18n.t('Access')}
+										</div>
+									</button>
+								</div>
+							{/if}
 						{:else}
 							<div class="text-xs shrink-0 text-gray-500">
 								{$i18n.t('Read Only')}
@@ -1274,7 +1252,7 @@
 					<div class="flex w-full items-center">
 						<input
 							type="text"
-							class="text-left text-xs w-full text-gray-500 bg-transparent outline-hidden flex-1"
+							class="text-left text-xs text-gray-500 bg-transparent outline-hidden brand-editable"
 							bind:value={knowledge.description}
 							aria-label={$i18n.t('Knowledge Description')}
 							placeholder={$i18n.t('Knowledge Description')}
@@ -1284,27 +1262,33 @@
 							}}
 						/>
 
-						<div class="hidden md:block">
-							<Tooltip content={$i18n.t('Click to copy ID')}>
-								<button
-									class="text-xs text-gray-500 font-mono shrink-0 px-2 py-1 rounded-lg cursor-pointer hover:underline transition whitespace-nowrap"
-									on:click={() => {
-										copyToClipboard(id);
-										toast.success($i18n.t('ID copied to clipboard'));
-									}}
-								>
-									{id}
-								</button>
-							</Tooltip>
-						</div>
+						<!-- Sunway: the raw collection UUID is hidden. Nothing a BU admin can reach
+						     consumes it -- there is no user-facing API surface -- so it was 36
+						     characters of developer debris sitting where the collection's status
+						     should be, in the one spot non-IT staff look to understand what they
+						     are editing. The copy handler is left intact for whenever an admin
+						     tool needs it back. -->
+						{#if false}
+							<div class="hidden md:block">
+								<Tooltip content={$i18n.t('Click to copy ID')}>
+									<button
+										class="text-xs text-gray-500 font-mono shrink-0 px-2 py-1 rounded-lg cursor-pointer hover:underline transition whitespace-nowrap"
+										on:click={() => {
+											copyToClipboard(id);
+											toast.success($i18n.t('ID copied to clipboard'));
+										}}
+									>
+										{id}
+									</button>
+								</Tooltip>
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<div
-			class="mt-2 mb-2.5 py-2 -mx-0 bg-white dark:bg-gray-900 rounded-3xl border border-gray-100/30 dark:border-gray-850/30 flex-1"
-		>
+		<div class="mt-2 mb-2.5 py-2 -mx-0 brand-surface rounded-3xl flex-1">
 			<div class="px-3.5 flex flex-1 items-center w-full space-x-2 py-0.5 pb-2">
 				<div class="flex flex-1 items-center">
 					<div class=" self-center ml-1 mr-3">
@@ -1320,36 +1304,46 @@
 						}}
 					/>
 
-					<Dropdown align="end">
-						<button
-							class="p-1.5 mr-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-							type="button"
-						>
-							<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
-						</button>
-
-						<div slot="content">
-							<div
-								class="min-w-[180px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
+					<!-- Sunway: "File content" search filter hidden. This dropdown holds exactly one
+					     control — a checkbox that widens Search Collection from filenames into the
+					     EXTRACTED TEXT of every file in the collection, returning matching content
+					     snippets. That is a document-content search surface over a shared KB, which
+					     is a different disclosure profile from listing filenames.
+					     `includeContent` defaults to false (line ~114) and nothing else writes it, so
+					     hiding the toggle leaves search filename-only rather than silently freezing it
+					     in the "on" state. Whole block left intact for clean upstream syncs. -->
+					{#if false}
+						<Dropdown align="end">
+							<button
+								class="p-1.5 mr-1 rounded-xl text-gray-500 brand-nav-item transition"
+								type="button"
 							>
-								<button
-									class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
-									type="button"
-									on:click={() => {
-										includeContent = !includeContent;
-									}}
+								<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
+							</button>
+
+							<div slot="content">
+								<div
+									class="min-w-[180px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
 								>
-									<Checkbox
-										state={includeContent ? 'checked' : 'unchecked'}
-										on:change={(e) => {
-											includeContent = e.detail === 'checked';
+									<button
+										class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
+										type="button"
+										on:click={() => {
+											includeContent = !includeContent;
 										}}
-									/>
-									{$i18n.t('File content')}
-								</button>
+									>
+										<Checkbox
+											state={includeContent ? 'checked' : 'unchecked'}
+											on:change={(e) => {
+												includeContent = e.detail === 'checked';
+											}}
+										/>
+										{$i18n.t('File content')}
+									</button>
+								</div>
 							</div>
-						</div>
-					</Dropdown>
+						</Dropdown>
+					{/if}
 
 					{#if knowledge?.write_access}
 						<div>
@@ -1360,7 +1354,7 @@
 									} else if (data.type === 'new_directory') {
 										showNewDirectoryModal = true;
 									} else if (data.type === 'web') {
-										showAddWebpageModal = true;
+										// Sunway: no-op — the "Add webpage" entry is hidden and its endpoint deleted.
 									} else if (data.type === 'text') {
 										showAddTextContentModal = true;
 									} else {
@@ -1395,23 +1389,33 @@
 					<div
 						class="flex gap-3 w-fit text-center text-sm rounded-full bg-transparent px-0.5 whitespace-nowrap"
 					>
-						<DropdownOptions
-							align="start"
-							className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-850 rounded-xl placeholder-gray-400 outline-hidden focus:outline-hidden"
-							bind:value={viewOption}
-							items={[
-								{ value: null, label: $i18n.t('All') },
-								{ value: 'created', label: $i18n.t('Created by you') },
-								{ value: 'shared', label: $i18n.t('Shared with you') }
-							]}
-							onChange={(value) => {
-								if (value) {
-									localStorage.workspaceViewOption = value;
-								} else {
-									delete localStorage.workspaceViewOption;
-								}
-							}}
-						/>
+						<!-- Sunway: the All / Created by you / Shared with you filter is hidden HERE. It
+						     stays on the collections list, where it belongs. Two reasons. In here it
+						     filters the FILES of one collection by who uploaded them, which is close to
+						     meaningless now that public write access is off -- uploads come from the
+						     owner and the few write grantees. And it persists to
+						     `localStorage.workspaceViewOption`, the SAME key the collections list reads
+						     on mount, so filtering files inside a collection silently changed which
+						     collections you saw when you went back. Sort stays. -->
+						{#if false}
+							<DropdownOptions
+								align="start"
+								className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-850 rounded-xl placeholder-gray-400 outline-hidden focus:outline-hidden"
+								bind:value={viewOption}
+								items={[
+									{ value: null, label: $i18n.t('All') },
+									{ value: 'created', label: $i18n.t('Created by you') },
+									{ value: 'shared', label: $i18n.t('Shared with you') }
+								]}
+								onChange={(value) => {
+									if (value) {
+										localStorage.workspaceViewOption = value;
+									} else {
+										delete localStorage.workspaceViewOption;
+									}
+								}}
+							/>
+						{/if}
 
 						<DropdownOptions
 							align="start"
@@ -1530,7 +1534,7 @@
 									<div class="shrink-0 flex items-center p-2">
 										<div class="mr-2">
 											<button
-												class="w-full text-left text-sm p-1.5 rounded-lg dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-gray-850"
+												class="w-full text-left text-sm p-1.5 rounded-lg dark:text-gray-300 dark:hover:text-white brand-nav-item"
 												aria-label={$i18n.t('Close')}
 												on:click={() => {
 													selectedFileId = null;
@@ -1547,7 +1551,7 @@
 										{#if knowledge?.write_access}
 											<div>
 												<button
-													class="flex self-center w-fit text-sm py-1 px-2.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+													class="flex self-center w-fit text-sm py-1 px-2.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
 													disabled={isSaving}
 													on:click={() => {
 														updateFileContentHandler();

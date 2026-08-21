@@ -94,7 +94,7 @@
 		<Tooltip content={$i18n.t('Terminal')} placement="top">
 			<button
 				type="button"
-				class="flex items-center gap-1.5 translate-y-[1px] hover:bg-gray-50 dark:hover:bg-gray-850 text-sm transition rounded-lg cursor-pointer {$selectedTerminalId &&
+				class="flex items-center gap-1.5 translate-y-[1px] brand-nav-item text-sm transition rounded-lg cursor-pointer {$selectedTerminalId &&
 				selectedLabel
 					? ' px-2.5 py-1 '
 					: ' p-2 opacity-50'}"
@@ -148,7 +148,7 @@
 							class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl {$selectedTerminalId ===
 							terminal.url
 								? 'bg-gray-50 dark:bg-gray-800/50'
-								: 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+								: 'brand-nav-item/50'}"
 							on:click={() => selectDirect(terminal)}
 						>
 							<div class="flex flex-1 gap-2 items-center truncate">
@@ -196,7 +196,7 @@
 									class="p-0.5 rounded-md text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
 									on:click|stopPropagation={() => {
 										show = false;
-										goto('/admin/settings/integrations');
+										goto('/'); // Sunway: Admin Settings is gone (Item 7); terminal servers come from the chart.
 									}}
 								>
 									<svg
@@ -220,7 +220,7 @@
 							class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl {$selectedTerminalId ===
 							terminal.id
 								? 'bg-gray-50 dark:bg-gray-800/50'
-								: 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+								: 'brand-nav-item/50'}"
 							on:click={() => selectSystem(terminal)}
 						>
 							<div class="flex flex-1 gap-2 items-center truncate">

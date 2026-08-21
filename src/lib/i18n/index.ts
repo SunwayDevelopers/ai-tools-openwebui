@@ -58,13 +58,50 @@ const createIsLoadingStore = (i18n: i18nType) => {
 // British-spelled). Fixing it here rather than by filling in en-US covers EVERY string,
 // not one at a time, and keeps the change out of en-US/translation.json — a file upstream
 // rewrites on most releases, so it would conflict on every sync.
-const SUPPORTED_LOCALES = ['en-GB', 'ms-MY', 'zh-CN'];
+// Exported: this is the single source of truth for the shipped locales. i18next
+// detection (below), the Settings language picker and i18next-parser all read it, so
+// adding a language is one edit rather than three that can drift apart.
+// Sunway 2026-08-18: narrowed to en-GB ALONE. Team decision -- language is not a user
+// choice in schat, so the Settings picker is hidden (Settings/General.svelte) and this list
+// is what makes that stick rather than merely hiding a control: `supportedLngs` below
+// rejects anything outside it, so a stale `localStorage.locale` from someone who picked
+// Malay before, a `?lang=zh-CN` query string, or a browser reporting anything at all, all
+// resolve to en-GB. Previously ['en-GB', 'ms-MY', 'zh-CN'].
+//
+// The ms-MY and zh-CN catalogues are NOT deleted -- restoring a language is adding its code
+// back here plus unwrapping the picker. One consequence to know about: i18next-parser reads
+// this list (i18next-parser.config.ts), so `npm run i18n:parse` now maintains en-GB only and
+// the other catalogues will drift from the source strings until a code is added back.
+export const SUPPORTED_LOCALES = ['en-GB'];
+
+// Sunway: the locale a brand-new user starts on, before they have ever opened
+// Settings -> General -> Language. Deliberately fixed rather than derived from the
+// browser: upstream matched `navigator.languages`, so a staff member whose OS was set
+// to Chinese landed in a Chinese UI on first sign-in without asking for it -- and
+// because i18next caches the resolved locale in localStorage, that choice then stuck
+// for every later visit. One predictable default across a 10K rollout is worth more
+// than automatic matching, and switching language is two clicks in Settings.
+//
+// Backend DEFAULT_LOCALE still wins where a deployment sets it (see +layout.svelte);
+// this is the fallback when it is unset, which is its default state.
+export const FIRST_RUN_LOCALE = 'en-GB';
 
 export const initI18n = (defaultLocale?: string | undefined) => {
-	const detectionOrder = defaultLocale
-		? ['querystring', 'localStorage']
-		: ['querystring', 'localStorage', 'navigator'];
-	const fallbackDefaultLocale = defaultLocale ? [defaultLocale] : ['en-GB'];
+	// Sunway: 'navigator' dropped from both branches -- see FIRST_RUN_LOCALE above. Leaving
+	// it in produced a visible flash of the browser's language before the caller corrected
+	// it to the real default. 'querystring' (?lang=ms-MY) is kept: it is how you check a
+	// translation without changing your account settings.
+	const detectionOrder = ['querystring', 'localStorage'];
+	// Sunway: the passed locale is only honoured when it is one schat actually ships.
+	// It comes from `localStorage.locale` (+layout.svelte), so before this guard a returning
+	// user who had picked Malay -- or a deployment with a stray DEFAULT_LOCALE -- set
+	// fallbackLng to a code `supportedLngs` rejects, leaving i18next with NO valid language:
+	// every string fell through to its key, so the Sunway renames ("Knowledge Base") silently
+	// reverted to upstream's ("Workspace"). Falling back to FIRST_RUN_LOCALE cannot fail.
+	const fallbackDefaultLocale =
+		defaultLocale && SUPPORTED_LOCALES.includes(defaultLocale)
+			? [defaultLocale]
+			: [FIRST_RUN_LOCALE];
 
 	const loadResource = (language: string, namespace: string) =>
 		import(`./locales/${language}/${namespace}.json`);

@@ -44,14 +44,14 @@
 			<DropdownSub>
 				<button
 					slot="trigger"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				>
 					<Download strokeWidth="2" />
 					<div class="flex items-center">{$i18n.t('Download')}</div>
 				</button>
 
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						onDownload('txt');
 					}}
@@ -60,7 +60,7 @@
 				</button>
 
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						onDownload('md');
 					}}
@@ -69,7 +69,7 @@
 				</button>
 
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						onDownload('pdf');
 					}}
@@ -82,7 +82,7 @@
 				<DropdownSub>
 					<button
 						slot="trigger"
-						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					>
 						<Share strokeWidth="2" />
 						<div class="flex items-center">{$i18n.t('Share')}</div>
@@ -90,7 +90,7 @@
 
 					{#if onCopyLink}
 						<button
-							class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+							class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 							on:click={() => {
 								onCopyLink();
 							}}
@@ -102,7 +102,7 @@
 
 					{#if onCopyToClipboard}
 						<button
-							class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+							class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 							on:click={() => {
 								onCopyToClipboard();
 							}}
@@ -116,7 +116,7 @@
 
 			{#if onPin}
 				<button
-					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+					class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 					on:click={() => {
 						onPin();
 						show = false;
@@ -133,7 +133,7 @@
 			{/if}
 
 			<button
-				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl w-full"
 				on:click={() => {
 					onDelete();
 				}}

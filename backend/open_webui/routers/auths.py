@@ -1005,9 +1005,17 @@ async def add_user(
 
     try:
         password = form_data.password
-        if ENABLE_MULTI_TENANCY and not (password or '').strip():
-            # SSO-only tenants have no local password: login is WorkOS/OIDC and never
-            # checks it. Generate an unusable random secret so the auth row is valid.
+        if not (password or '').strip():
+            # Sunway: the random-secret fallback is UNCONDITIONAL as of 2026-08-21. It used to be
+            # `if ENABLE_MULTI_TENANCY and not password`, which left a hole once the Add User form
+            # stopped collecting a password for everyone: with MT off the form still posted
+            # password='', ENABLE_PASSWORD_VALIDATION defaults False so validate_password('')
+            # returns True, and the account was created with a bcrypt hash OF THE EMPTY STRING --
+            # i.e. signable-in by anyone who typed the address and no password.
+            #
+            # Identity is IAM's in every deployed environment, so there is no case where an admin
+            # provisioning an account should be choosing its password. Generating one nobody knows
+            # makes the auth row valid without making it usable.
             password = secrets.token_urlsafe(32)
         else:
             try:

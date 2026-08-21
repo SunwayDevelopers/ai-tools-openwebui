@@ -199,7 +199,7 @@
 			</button>
 
 			<!-- <button
-				class=" p-1 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full group-hover:visible invisible transition"
+				class=" p-1 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-full group-hover:visible invisible transition"
 				type="button"
 				on:click={() => {
 				}}

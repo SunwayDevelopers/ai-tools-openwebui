@@ -70,8 +70,6 @@ from open_webui.tools.builtin import (
     replace_memory_content,
     replace_note_content,
     search_calendar_events,
-    search_channel_messages,
-    search_channels,
     search_chats,
     search_knowledge_bases,
     search_knowledge_files,
@@ -82,8 +80,6 @@ from open_webui.tools.builtin import (
     update_automation,
     update_calendar_event,
     update_task,
-    view_channel_message,
-    view_channel_thread,
     view_chat,
     view_file,
     view_knowledge_file,
@@ -94,7 +90,6 @@ from open_webui.tools.builtin import (
 from open_webui.utils.access_control import has_access, has_connection_access, has_permission
 from open_webui.utils.headers import get_custom_headers, include_user_info_headers
 from open_webui.utils.misc import is_string_allowed
-from open_webui.utils.plugin import load_tool_module_by_id
 from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
@@ -228,201 +223,119 @@ async def get_tools(request: Request, tool_ids: list[str], user: UserModel, extr
     # Get user's group memberships for access control checks
     user_group_ids = {group.id for group in await Groups.get_groups_by_member_id(user.id)}
 
-    # Batch-fetch all DB tools in one query instead of one per tool_id
-    tool_models = await Tools.get_tools_by_ids(tool_ids)
+    # Sunway: the local-tool branch was removed here (hardening plan Item 2). It fetched
+    # `tool` rows, `exec()`d their Python source via load_tool_module_by_id(), and bound the
+    # result as a callable the model could invoke. The authoring endpoints that created those
+    # rows are deleted, so the table cannot be populated and the branch was unreachable.
+    # The tool-SERVER path below is untouched -- it executes nothing inside schat and is how
+    # the Sdeck MCP server (`server:mcp:<id>`) reaches a model.
 
     for tool_id in tool_ids:
-        tool = tool_models.get(tool_id)
-        if tool:
-            # Check access control for local tools
-            if (
-                not (user.role == 'admin' and BYPASS_ADMIN_ACCESS_CONTROL)
-                and tool.user_id != user.id
-                and not await AccessGrants.has_access(
-                    user_id=user.id,
-                    resource_type='tool',
-                    resource_id=tool.id,
-                    permission='read',
-                    user_group_ids=user_group_ids,
-                )
-            ):
-                log.warning(f'Access denied to tool {tool_id} for user {user.id}')
-                continue
+        if tool_id.startswith('server:'):
+            splits = tool_id.split(':')
 
-            module = request.app.state.TOOLS.get(tool_id)
-            if module is None or request.app.state.TOOL_CONTENTS.get(tool_id) != tool.content:
-                module, _ = await load_tool_module_by_id(tool_id, content=tool.content)
-                request.app.state.TOOLS[tool_id] = module
-                request.app.state.TOOL_CONTENTS[tool_id] = tool.content
+            if len(splits) == 2:
+                type = 'openapi'
+                server_id = splits[1]
+            elif len(splits) == 3:
+                type = splits[1]
+                server_id = splits[2]
 
-            __user__ = {
-                **extra_params['__user__'],
-            }
+            server_id_splits = server_id.split('|')
+            if len(server_id_splits) == 2:
+                server_id = server_id_splits[0]
+                function_names = server_id_splits[1].split(',')
 
-            # Set valves for the tool
-            if hasattr(module, 'valves') and hasattr(module, 'Valves'):
-                valves = await Tools.get_tool_valves_by_id(tool_id) or {}
-                module.valves = module.Valves(**valves)
-            if hasattr(module, 'UserValves'):
-                __user__['valves'] = module.UserValves(  # type: ignore
-                    **await Tools.get_user_valves_by_id_and_user_id(tool_id, user.id)
-                )
+            if type == 'openapi':
+                tool_server_data = None
+                for server in await get_tool_servers(request):
+                    if server['id'] == server_id:
+                        tool_server_data = server
+                        break
 
-            for spec in tool.specs:
-                # TODO: Fix hack for OpenAI API
-                # Some times breaks OpenAI but others don't. Leaving the comment
-                for val in spec.get('parameters', {}).get('properties', {}).values():
-                    if val.get('type') == 'str':
-                        val['type'] = 'string'
+                if tool_server_data is None:
+                    log.warning(f'Tool server data not found for {server_id}')
+                    continue
 
-                # Remove internal reserved parameters (e.g. __id__, __user__)
-                spec['parameters']['properties'] = {
-                    key: val for key, val in spec['parameters']['properties'].items() if not key.startswith('__')
-                }
+                tool_server_idx = tool_server_data.get('idx', 0)
+                connections = request.app.state.config.TOOL_SERVER_CONNECTIONS
+                if tool_server_idx >= len(connections):
+                    log.warning(
+                        f'Tool server index {tool_server_idx} out of range '
+                        f'(have {len(connections)} connections), skipping server {server_id}'
+                    )
+                    continue
+                tool_server_connection = connections[tool_server_idx]
 
-                # convert to function that takes only model params and inserts custom params
-                function_name = spec['name']
-                tool_function = getattr(module, function_name)
-                callable = await get_async_tool_function_and_apply_extra_params(
-                    tool_function,
-                    {
-                        **extra_params,
-                        '__id__': tool_id,
-                        '__user__': __user__,
-                    },
+                # Check access control for tool server
+                if not await has_connection_access(user, tool_server_connection, user_group_ids):
+                    log.warning(f'Access denied to tool server {server_id} for user {user.id}')
+                    continue
+
+                specs = tool_server_data.get('specs', [])
+                function_name_filter_list = tool_server_connection.get('config', {}).get(
+                    'function_name_filter_list', ''
                 )
 
-                # TODO: Support Pydantic models as parameters
-                if callable.__doc__ and callable.__doc__.strip() != '':
-                    s = re.split(':(param|return)', callable.__doc__, 1)
-                    spec['description'] = s[0]
-                else:
-                    spec['description'] = function_name
+                if isinstance(function_name_filter_list, str):
+                    function_name_filter_list = function_name_filter_list.split(',')
 
-                tool_dict = {
-                    'tool_id': tool_id,
-                    'callable': callable,
-                    'spec': spec,
-                    # Misc info
-                    'metadata': {
-                        'file_handler': hasattr(module, 'file_handler') and module.file_handler,
-                        'citation': hasattr(module, 'citation') and module.citation,
-                    },
-                }
+                for spec in specs:
+                    function_name = spec['name']
+                    if function_name_filter_list:
+                        if not is_string_allowed(function_name, function_name_filter_list):
+                            # Skip this function
+                            continue
 
-                # Handle function name collisions
-                while function_name in tools_dict:
-                    log.warning(f'Tool {function_name} already exists in another tools!')
-                    # Prepend tool ID to function name
-                    function_name = f'{tool_id}_{function_name}'
+                    metadata = extra_params.get('__metadata__', {})
+                    headers, cookies = await build_tool_server_headers(
+                        tool_server_connection,
+                        request,
+                        user,
+                        server_id=server_id,
+                        metadata=metadata,
+                        extra_params=extra_params,
+                    )
+                    headers.setdefault('Content-Type', 'application/json')
 
-                tools_dict[function_name] = tool_dict
-        else:
-            if tool_id.startswith('server:'):
-                splits = tool_id.split(':')
+                    async def make_tool_function(function_name, tool_server_data, headers):
+                        async def tool_function(**kwargs):
+                            return await execute_tool_server(
+                                url=tool_server_data['url'],
+                                headers=headers,
+                                cookies=cookies,
+                                name=function_name,
+                                params=kwargs,
+                                server_data=tool_server_data,
+                            )
 
-                if len(splits) == 2:
-                    type = 'openapi'
-                    server_id = splits[1]
-                elif len(splits) == 3:
-                    type = splits[1]
-                    server_id = splits[2]
+                        return tool_function
 
-                server_id_splits = server_id.split('|')
-                if len(server_id_splits) == 2:
-                    server_id = server_id_splits[0]
-                    function_names = server_id_splits[1].split(',')
+                    tool_function = await make_tool_function(function_name, tool_server_data, headers)
 
-                if type == 'openapi':
-                    tool_server_data = None
-                    for server in await get_tool_servers(request):
-                        if server['id'] == server_id:
-                            tool_server_data = server
-                            break
-
-                    if tool_server_data is None:
-                        log.warning(f'Tool server data not found for {server_id}')
-                        continue
-
-                    tool_server_idx = tool_server_data.get('idx', 0)
-                    connections = request.app.state.config.TOOL_SERVER_CONNECTIONS
-                    if tool_server_idx >= len(connections):
-                        log.warning(
-                            f'Tool server index {tool_server_idx} out of range '
-                            f'(have {len(connections)} connections), skipping server {server_id}'
-                        )
-                        continue
-                    tool_server_connection = connections[tool_server_idx]
-
-                    # Check access control for tool server
-                    if not await has_connection_access(user, tool_server_connection, user_group_ids):
-                        log.warning(f'Access denied to tool server {server_id} for user {user.id}')
-                        continue
-
-                    specs = tool_server_data.get('specs', [])
-                    function_name_filter_list = tool_server_connection.get('config', {}).get(
-                        'function_name_filter_list', ''
+                    callable = await get_async_tool_function_and_apply_extra_params(
+                        tool_function,
+                        {},
                     )
 
-                    if isinstance(function_name_filter_list, str):
-                        function_name_filter_list = function_name_filter_list.split(',')
+                    tool_dict = {
+                        'tool_id': tool_id,
+                        'callable': callable,
+                        'spec': clean_openai_tool_schema(spec),
+                        # Misc info
+                        'type': 'external',
+                    }
 
-                    for spec in specs:
-                        function_name = spec['name']
-                        if function_name_filter_list:
-                            if not is_string_allowed(function_name, function_name_filter_list):
-                                # Skip this function
-                                continue
+                    # Handle function name collisions
+                    while function_name in tools_dict:
+                        log.warning(f'Tool {function_name} already exists in another tools!')
+                        # Prepend server ID to function name
+                        function_name = f'{server_id}_{function_name}'
 
-                        metadata = extra_params.get('__metadata__', {})
-                        headers, cookies = await build_tool_server_headers(
-                            tool_server_connection,
-                            request,
-                            user,
-                            server_id=server_id,
-                            metadata=metadata,
-                            extra_params=extra_params,
-                        )
-                        headers.setdefault('Content-Type', 'application/json')
+                    tools_dict[function_name] = tool_dict
 
-                        async def make_tool_function(function_name, tool_server_data, headers):
-                            async def tool_function(**kwargs):
-                                return await execute_tool_server(
-                                    url=tool_server_data['url'],
-                                    headers=headers,
-                                    cookies=cookies,
-                                    name=function_name,
-                                    params=kwargs,
-                                    server_data=tool_server_data,
-                                )
-
-                            return tool_function
-
-                        tool_function = await make_tool_function(function_name, tool_server_data, headers)
-
-                        callable = await get_async_tool_function_and_apply_extra_params(
-                            tool_function,
-                            {},
-                        )
-
-                        tool_dict = {
-                            'tool_id': tool_id,
-                            'callable': callable,
-                            'spec': clean_openai_tool_schema(spec),
-                            # Misc info
-                            'type': 'external',
-                        }
-
-                        # Handle function name collisions
-                        while function_name in tools_dict:
-                            log.warning(f'Tool {function_name} already exists in another tools!')
-                            # Prepend server ID to function name
-                            function_name = f'{server_id}_{function_name}'
-
-                        tools_dict[function_name] = tool_dict
-
-                else:
-                    continue
+            else:
+                continue
 
     return tools_dict
 
@@ -576,20 +489,7 @@ async def get_builtin_tools(
     ):
         builtin_functions.extend([search_notes, view_note, write_note, replace_note_content])
 
-    # Channels tools - search channels and messages
-    if (
-        is_builtin_tool_enabled('channels')
-        and getattr(request.app.state.config, 'ENABLE_CHANNELS', False)
-        and await has_user_permission('channels')
-    ):
-        builtin_functions.extend(
-            [
-                search_channels,
-                search_channel_messages,
-                view_channel_thread,
-                view_channel_message,
-            ]
-        )
+    # Sunway: the channels builtin tools were deleted here (hardening plan Item 6).
 
     # Skills tools - view_skill allows model to load full skill instructions on demand
     if extra_params.get('__skill_ids__'):

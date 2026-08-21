@@ -306,7 +306,7 @@
 		<div class="flex justify-between items-center mb-2">
 			<div class="text-lg font-medium">{$i18n.t('Edit Prompt')}</div>
 			<button
-				class="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+				class="p-1 brand-nav-item rounded-lg"
 				aria-label={$i18n.t('Close')}
 				on:click={() => (showEditModal = false)}
 			>
@@ -359,7 +359,7 @@
 					<button
 						class="text-sm px-4 py-2 transition rounded-full {loading
 							? 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-							: 'bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black'} flex justify-center"
+							: 'brand-btn-primary'} flex justify-center"
 						type="submit"
 						disabled={loading}
 					>
@@ -406,14 +406,14 @@
 				<div class="flex items-center gap-2 shrink-0 justify-end">
 					{#if !disabled}
 						<button
-							class="px-4 py-1 text-sm font-medium bg-black text-white dark:bg-white dark:text-black rounded-full hover:opacity-90 transition shadow-xs"
+							class="px-4 py-1 text-sm font-medium brand-btn-primary rounded-full hover:opacity-90 transition shadow-xs"
 							on:click={() => (showEditModal = true)}
 						>
 							{$i18n.t('Edit')}
 						</button>
 
 						<button
-							class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2.5 py-1 rounded-full flex gap-1.5 items-center text-sm border border-gray-100 dark:border-gray-800"
+							class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2.5 py-1 rounded-full flex gap-1.5 items-center text-sm border border-gray-100 dark:border-gray-800"
 							on:click={() => (showAccessControlModal = true)}
 						>
 							<LockClosed strokeWidth="2.5" className="size-3.5" />
@@ -509,7 +509,7 @@
 					<!-- Copy button - outside scroll area -->
 					<div class="absolute top-2 right-2 z-10">
 						<button
-							class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+							class="p-1.5 rounded-lg brand-nav-item transition"
 							aria-label={$i18n.t('Copy content')}
 							on:click={copyContent}
 						>
@@ -550,7 +550,7 @@
 							/>
 							<div class="self-center shrink-0">
 								<button
-									class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
+									class="bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
 									type="button"
 									on:click={() => (showAccessControlModal = true)}
 								>
@@ -608,7 +608,7 @@
 
 			<div class="my-4 flex justify-end pb-20">
 				<button
-					class="text-sm w-full lg:w-fit px-4 py-2 transition rounded-xl bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black flex w-full justify-center"
+					class="text-sm w-full lg:w-fit px-4 py-2 transition rounded-xl brand-btn-primary flex w-full justify-center"
 					type="submit"
 					disabled={loading}
 				>
@@ -637,9 +637,7 @@
 						<!-- Content -->
 						<button
 							class="flex-1 text-left px-3.5 py-2 mb-1 rounded-2xl transition group
-								{selectedHistoryEntry?.id === entry.id
-								? 'bg-gray-100/50 dark:bg-gray-850/50'
-								: 'hover:bg-gray-100/50 dark:hover:bg-gray-850/50'}"
+								{selectedHistoryEntry?.id === entry.id ? 'bg-gray-100/50 dark:bg-gray-850/50' : 'brand-nav-item'}"
 							on:click={() => (selectedHistoryEntry = entry)}
 						>
 							<!-- Commit Message -->

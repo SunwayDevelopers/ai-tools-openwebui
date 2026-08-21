@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
-from open_webui.env import ENABLE_CHAT_ARCHIVE, MAX_CHATS_PER_USER
+from open_webui.filters.guardrails import redact_history_for_storage, redact_text_for_storage
+from open_webui.env import ENABLE_CHAT_ARCHIVE, ENABLE_STORAGE_REDACTION, MAX_CHATS_PER_USER
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.internal.db import get_async_session
 from open_webui.models.access_grants import AccessGrants
@@ -33,7 +30,7 @@ from open_webui.models.tags import TagModel, Tags
 from open_webui.socket.main import get_event_emitter
 from open_webui.tasks import stop_item_tasks
 from open_webui.utils.access_control import filter_allowed_access_grants, has_permission
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_verified_user
 from open_webui.utils.middleware import serialize_output
 from open_webui.utils.misc import get_message_list
 from open_webui.utils.retention import purge_chat_files, purge_chats_files
@@ -466,8 +463,12 @@ async def export_single_chat_stats(
                 detail=ERROR_MESSAGES.NOT_FOUND,
             )
 
-        # Verify the chat belongs to the user (unless admin)
-        if chat.user_id != user.id and user.role != 'admin':
+        # Sunway: the `unless admin` exemption was removed (hardening plan). This returns
+        # per-message metadata -- role, model, timestamp, content length, rating and TAGS -- for
+        # any chat by id. No message text, but conversation tags are revealing, and we deleted
+        # the analytics /overview endpoint partly because it returned exactly those. The caller
+        # is SyncStatsModal, a USER feature; there was no admin flow behind this.
+        if chat.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -526,45 +527,48 @@ async def get_chat_count(
     return await Chats.count_chats_by_user_id(user.id, db=db)
 
 
+# Sunway: ENABLE_ADMIN_CHAT_ACCESS is deliberately NOT imported here any more. Every admin path
+# into another user's chat has been deleted rather than gated, so there is nothing in this router
+# for the flag to switch. It still gates GET /api/v1/analytics/messages' successor checks in
+# routers/analytics.py. Re-introducing an admin read here would need a reviewed commit, which is
+# the point -- `admin` does not distinguish super admin from BU admin under multi-tenancy.
+
+
 ############################
-# GetUserChatList
+# GetUserChatList -- DELETED (hardening plan Item 3)
 ############################
-
-
-@router.get('/list/user/{user_id}', response_model=list[ChatTitleIdResponse])
-async def get_user_chat_list_by_user_id(
-    user_id: str,
-    page: int | None = None,
-    query: str | None = None,
-    order_by: str | None = None,
-    direction: str | None = None,
-    user=Depends(get_admin_user),
-    db: AsyncSession = Depends(get_async_session),
-):
-    """List chat summaries for a given user (admin-only endpoint)."""
-    if not ENABLE_ADMIN_CHAT_ACCESS:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-
-    effective_page = page if page is not None else 1
-    limit = 60
-    skip = (effective_page - 1) * limit
-
-    filter = {}
-    if query:
-        filter['query'] = query
-    if order_by:
-        filter['order_by'] = order_by
-    if direction:
-        filter['direction'] = direction
-
-    return await Chats.get_chat_list_by_user_id(
-        user_id, include_archived=True, filter=filter, skip=skip, limit=limit, db=db
-    )
+#
+# GET /list/user/{user_id} returned another user's chat list to any admin. It was gated on
+# ENABLE_ADMIN_CHAT_ACCESS (plain env, default False), and the admin UI that called it --
+# UserChatsModal -- is deleted with it. Under multi-tenancy `admin` is a per-tenant IAM
+# role, so this let every departmental admin browse every user in their tenant.
 
 
 ############################
 # CreateNewChat
 ############################
+
+
+# Sunway: apply the guardrails redaction to what is STORED, not only to what is sent to the
+# model (to-be-reviewed-later §2). See ENABLE_STORAGE_REDACTION in env.py for the full
+# rationale and the trade it accepts.
+#
+# Applied at EVERY chat write path rather than one, because the frontend reaches the record
+# through three of them -- /new, /{id}, and /{id}/messages/{message_id} -- and a redaction
+# that covers two out of three is a redaction that does not hold.
+def _redact_chat_for_storage(chat_blob: dict, where: str, user_id: str) -> dict:
+    """Redact user-authored PII in a chat blob before it is persisted. No-op when disabled."""
+    if not ENABLE_STORAGE_REDACTION or not isinstance(chat_blob, dict):
+        return chat_blob
+    history = chat_blob.get('history')
+    if not isinstance(history, dict):
+        return chat_blob
+    _history, found = redact_history_for_storage(history)
+    if found:
+        # Deliberately no user id in the message beyond the caller's own -- this line exists
+        # to show the control firing, not to build a record of who typed what.
+        log.info('[storage-redaction] %s: redacted %s for user=%s', where, sorted(found), user_id)
+    return chat_blob
 
 
 @router.post('/new', response_model=ChatResponse | None)
@@ -600,6 +604,7 @@ async def create_new_chat(
             )
 
     try:
+        form_data.chat = _redact_chat_for_storage(form_data.chat, 'chats/new', user.id)
         chat = await Chats.insert_new_chat(str(uuid4()), user.id, form_data, db=db)
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -612,18 +617,20 @@ async def create_new_chat(
 ############################
 
 
-@router.post('/import', response_model=list[ChatResponse])
-async def import_chats(
-    form_data: ChatsImportForm,
-    user=Depends(get_verified_user),
-    db: AsyncSession = Depends(get_async_session),
-):
-    try:
-        chats = await Chats.import_chats(user.id, form_data.chats, db=db)
-        return chats
-    except Exception as e:
-        log.exception(e)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT())
+# Sunway: POST /chats/import was deleted here (hardening plan). It called Chats.import_chats()
+# with no cap check, so a user could push past MAX_CHATS_PER_USER simply by importing -- the
+# limit is enforced only at /chats/new and on the completion path. The UI button was already
+# hidden for that reason, but hiding a button does not close an endpoint.
+#
+# Deleted rather than cap-enforced because the feature has no remaining flow: bulk Export is
+# hidden too, so there is nothing to import FROM within schat, and it is not a capability
+# enterprise deployments are expected to provide. Note what is NOT affected: exporting your OWN
+# chats (GET /chats/all) and the per-chat download both remain, which is the part with a
+# data-portability dimension under PDPA.
+#
+# The drag-and-drop handlers that used it were fallback-only -- they call getChatById first and
+# imported only when a dragged chat did not exist locally, i.e. a drag from a DIFFERENT schat
+# instance. Those frontend paths are removed with it.
 
 
 ############################
@@ -785,15 +792,14 @@ async def get_all_user_tags(user=Depends(get_verified_user), db: AsyncSession = 
 
 
 ############################
-# GetAllChatsInDB
+# GetAllUserChatsInDB -- DELETED (hardening plan Item 3)
 ############################
-
-
-@router.get('/all/db', response_model=list[ChatResponse])
-async def get_all_user_chats_in_db(user=Depends(get_admin_user), db: AsyncSession = Depends(get_async_session)):
-    if not ENABLE_ADMIN_EXPORT:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-    return [ChatResponse(**chat.model_dump()) for chat in await Chats.get_chats(db=db)]
+#
+# GET /all/db returned every chat message belonging to every user in a single response. It
+# was double-locked -- get_admin_user AND ENABLE_ADMIN_EXPORT, which defaults False -- so it
+# should already have refused. It is deleted anyway: a capability that only works when
+# someone sets an env var is a capability waiting to be switched on by accident, and under
+# multi-tenancy `admin` is a per-tenant IAM role, so "admin-only" is a wide group.
 
 
 ############################
@@ -909,29 +915,31 @@ async def get_shared_chat_by_id(
 
     chat = await Chats.get_chat_by_share_id(share_id, db=db)
 
-    # Fallback: admins can also access any chat directly by chat ID
-    if not chat and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
-        chat = await Chats.get_chat_by_id(share_id, db=db)
+    # Sunway: the admin fallback was deleted here (hardening plan). It re-read the id as a CHAT
+    # id when no share existed, so an admin could fetch an UNSHARED chat through the share route.
+    # The plan's target is "endpoints returning other users' messages: 0", which means no code
+    # path -- not a flag switched off, since `admin` does not distinguish super admin from BU
+    # admin under multi-tenancy.
 
     if not chat:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND)
 
-    # Look up the original chat_id to check access grants (admins bypass)
-    if user.role != 'admin' or not ENABLE_ADMIN_CHAT_ACCESS:
-        shared = await SharedChats.get_by_id(share_id, db=db)
-        if shared and shared.user_id != user.id:
-            has_grant = await AccessGrants.has_access(
-                user_id=user.id,
-                resource_type='shared_chat',
-                resource_id=shared.chat_id,
-                permission='read',
-                db=db,
+    # Sunway: this access-grant check used to be skipped for an admin. It is now unconditional --
+    # holding the admin role is not a grant.
+    shared = await SharedChats.get_by_id(share_id, db=db)
+    if shared and shared.user_id != user.id:
+        has_grant = await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='shared_chat',
+            resource_id=shared.chat_id,
+            permission='read',
+            db=db,
+        )
+        if not has_grant:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
             )
-            if not has_grant:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-                )
 
     return ChatResponse(**chat.model_dump())
 
@@ -975,19 +983,18 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user), db: AsyncSess
     chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
 
     if not chat:
-        # Check if user has access via access grants (shared_chat grants)
-        if user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
+        # Sunway: the admin branch was deleted here (hardening plan). It returned ANY user's chat
+        # by id to an admin. Access is now by grant only, for every role -- an admin asking for a
+        # chat they do not own and hold no grant for gets the same 401 as anyone else.
+        has_grant = await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='shared_chat',
+            resource_id=id,
+            permission='read',
+            db=db,
+        )
+        if has_grant:
             chat = await Chats.get_chat_by_id(id, db=db)
-        else:
-            has_grant = await AccessGrants.has_access(
-                user_id=user.id,
-                resource_type='shared_chat',
-                resource_id=id,
-                permission='read',
-                db=db,
-            )
-            if has_grant:
-                chat = await Chats.get_chat_by_id(id, db=db)
 
     if chat:
         return ChatResponse(**chat.model_dump())
@@ -1021,6 +1028,7 @@ async def update_chat_by_id(
                 if msg.get('output') != existing_messages.get(msg_id, {}).get('output'):
                     msg['content'] = serialize_output(msg['output'])
 
+        updated_chat = _redact_chat_for_storage(updated_chat, 'chats/update', user.id)
         chat = await Chats.update_chat_by_id(id, updated_chat, db=db)
 
         # Reconcile chat_message rows with the committed blob.
@@ -1061,17 +1069,32 @@ async def update_chat_message_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if chat.user_id != user.id and user.role != 'admin':
+    # Sunway: the `or admin` exemption was removed from this check (hardening plan). It let an
+    # admin WRITE to another user's chat -- rewriting a stored message, or emitting an event into
+    # someone else's conversation. That is worse than reading it: an edited message is
+    # indistinguishable from one the model actually produced, so the chat record stops being
+    # evidence of what happened. Under multi-tenancy `admin` is a per-tenant IAM role, so this
+    # was reachable by every departmental admin. Ownership is now the only key.
+    if chat.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
+    # Sunway: this path writes a single message body, so it redacts the string directly
+    # rather than walking a history blob. Only the caller's OWN chat is reachable here
+    # (ownership is checked above), and the frontend uses it to save an edited user message.
+    content = form_data.content
+    if ENABLE_STORAGE_REDACTION:
+        content, found = redact_text_for_storage(content)
+        if found:
+            log.info('[storage-redaction] chats/message: redacted %s for user=%s', sorted(found), user.id)
+
     chat = await Chats.upsert_message_to_chat_by_id_and_message_id(
         id,
         message_id,
         {
-            'content': form_data.content,
+            'content': content,
         },
     )
 
@@ -1123,7 +1146,13 @@ async def send_chat_message_event_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    if chat.user_id != user.id and user.role != 'admin':
+    # Sunway: the `or admin` exemption was removed from this check (hardening plan). It let an
+    # admin WRITE to another user's chat -- rewriting a stored message, or emitting an event into
+    # someone else's conversation. That is worse than reading it: an edited message is
+    # indistinguishable from one the model actually produced, so the chat record stops being
+    # evidence of what happened. Under multi-tenancy `admin` is a per-tenant IAM role, so this
+    # was reachable by every departmental admin. Ownership is now the only key.
+    if chat.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
@@ -1163,41 +1192,29 @@ async def delete_chat_by_id(
     # before deleting the chat to prevent orphaned requests.
     await stop_item_tasks(request.app.state.redis, id)
 
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-        if not chat:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERROR_MESSAGES.NOT_FOUND,
-            )
-        await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
+    # Sunway: the admin branch was collapsed into this one (hardening plan). It deleted ANY
+    # user's chat by id and skipped the chat.delete permission check as well. Nothing internal
+    # needed it: the retention sweep calls Chats.delete_chat_by_id() and user deletion calls
+    # Chats.delete_chats_by_user_id(), both at the model layer, never through HTTP. Admins are
+    # users, and USER_PERMISSIONS_CHAT_DELETE defaults True, so they still delete their own.
+    if not await has_permission(user.id, 'chat.delete', request.app.state.config.USER_PERMISSIONS):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
 
-        # Retention: purge files/vectors owned exclusively by this chat before it
-        # goes (chat_file links cascade away with the chat). KB/shared files kept.
-        await purge_chat_files(id, db=db)
-        result = await Chats.delete_chat_by_id(id, db=db)
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+    await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
 
-        return result
-    else:
-        if not await has_permission(user.id, 'chat.delete', request.app.state.config.USER_PERMISSIONS):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-            )
-
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
-        if not chat:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=ERROR_MESSAGES.NOT_FOUND,
-            )
-        await Chats.delete_orphan_tags_for_user(chat.meta.get('tags', []), user.id, threshold=1, db=db)
-
-        # Retention: purge files/vectors owned exclusively by this chat before it
-        # goes (chat_file links cascade away with the chat). KB/shared files kept.
-        await purge_chat_files(id, db=db)
-        result = await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
-        return result
+    # Retention: purge files/vectors owned exclusively by this chat before it
+    # goes (chat_file links cascade away with the chat). KB/shared files kept.
+    await purge_chat_files(id, db=db)
+    return await Chats.delete_chat_by_id_and_user_id(id, user.id, db=db)
 
 
 ############################
@@ -1294,9 +1311,8 @@ async def clone_shared_chat_by_id(
 ):
     chat = await Chats.get_chat_by_share_id(id, db=db)
 
-    # Fallback: admins can also access any chat directly by chat ID
-    if not chat and user.role == 'admin' and ENABLE_ADMIN_CHAT_ACCESS:
-        chat = await Chats.get_chat_by_id(id, db=db)
+    # Sunway: the admin fallback was deleted here (hardening plan) -- same pattern as the share
+    # route: it let an admin clone an UNSHARED chat by id.
 
     if not chat:
         raise HTTPException(
@@ -1304,9 +1320,11 @@ async def clone_shared_chat_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    # Enforce access grants (owner and admins bypass)
+    # Sunway: the admin bypass was removed from this check. Note it was NOT gated on
+    # ENABLE_ADMIN_CHAT_ACCESS, so unlike the fallbacks above it was live even with that flag
+    # off -- an admin could clone any SHARED chat without holding a grant. Owner still bypasses.
     shared = await SharedChats.get_by_id(id, db=db)
-    if shared and user.role != 'admin' and shared.user_id != user.id:
+    if shared and shared.user_id != user.id:
         has_grant = await AccessGrants.has_access(
             user_id=user.id,
             resource_type='shared_chat',
@@ -1466,10 +1484,10 @@ async def update_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-    else:
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    # Sunway: the admin lookup was removed (hardening plan). These manage the access grants on a
+    # SHARED chat, and the only caller is ShareChatModal -- the user's own share button. An admin
+    # could otherwise read and rewrite anyone's sharing.
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1500,10 +1518,10 @@ async def get_shared_chat_access_by_id(
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    if user.role == 'admin':
-        chat = await Chats.get_chat_by_id(id, db=db)
-    else:
-        chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
+    # Sunway: the admin lookup was removed (hardening plan). These manage the access grants on a
+    # SHARED chat, and the only caller is ShareChatModal -- the user's own share button. An admin
+    # could otherwise read and rewrite anyone's sharing.
+    chat = await Chats.get_chat_by_id_and_user_id(id, user.id, db=db)
     if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

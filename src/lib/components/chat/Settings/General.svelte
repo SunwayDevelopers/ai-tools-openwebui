@@ -1,7 +1,9 @@
 <script lang="ts">
+	import Select from '$lib/components/common/Select.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
-	import { getLanguages, changeLanguage } from '$lib/i18n';
+	import { getLanguages, changeLanguage, SUPPORTED_LOCALES } from '$lib/i18n';
 	const dispatch = createEventDispatcher();
 
 	import { config, models, settings, theme, user } from '$lib/stores';
@@ -17,10 +19,25 @@
 	let themes = ['dark', 'light', 'oled-dark'];
 	let selectedTheme = 'system';
 
+	// Sunway: System + Dark only (see the comment on the picker below for what is filtered
+	// and why). Kept as data so the picker can be the shared Select component.
+	const themeOptions = [
+		{ value: 'system', label: '⚙️ System' },
+		{ value: 'dark', label: '🌑 Dark' }
+		// Removed from the picker, kept here so restoring one is a single uncomment. The
+		// themeChangeHandler and the CSS for all of them are untouched, so any of these works
+		// again immediately:
+		// { value: 'oled-dark', label: '🌃 OLED Dark' },
+		// { value: 'light', label: '☀️ Light' },
+		// { value: 'her', label: '🌷 Her' }   // gated on config.features.enable_easter_eggs
+	];
+
 	// Sunway: the only locales offered in the language picker (see the filter in onMount).
 	// en-GB rather than en-US — Malaysian business English uses British spelling.
-	// Locale files for every other language are kept; add a code here to re-offer one.
-	const ALLOWED_LANGUAGE_CODES = ['en-GB', 'ms-MY', 'zh-CN'];
+	// Locale files for every other language are kept; add a code to SUPPORTED_LOCALES in
+	// src/lib/i18n/index.ts to re-offer one — that same list drives i18next detection and
+	// the strings i18next-parser generates, so the three stay in step.
+	const ALLOWED_LANGUAGE_CODES = SUPPORTED_LOCALES;
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
@@ -220,94 +237,102 @@
 <div class="flex flex-col h-full justify-between text-sm" id="tab-general">
 	<div class="  overflow-y-scroll max-h-[28rem] md:max-h-full">
 		<div class="">
-			<div class=" mb-1 text-sm font-medium">{$i18n.t('WebUI Settings')}</div>
+			<div class=" mb-1.5 text-sm font-medium">{$i18n.t('Settings')}</div>
 
-			<div class="flex w-full justify-between">
-				<div class=" self-center text-xs font-medium">{$i18n.t('Theme')}</div>
-				<div class="flex items-center relative">
-					<select
-						class="w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent text-right {$settings.highContrastMode
-							? ''
-							: 'outline-hidden'}"
+			<!-- Sunway: the three preference rows sit in a card with separators instead of floating
+			     in an otherwise empty panel, and the two native <select>s are the shared Select
+			     component so they stop rendering with the OS dropdown (and its blue highlight)
+			     inside a dark modal. Behaviour is unchanged: same bindings, same handlers.
+			     Theme choices are still trimmed to System + Dark; the removed options are kept as
+			     commented entries in themeOptions above, so restoring one is a single uncomment.
+			     "System" still resolves to light when the OS is light — this only removes the
+			     manual pickers. -->
+			<div class="brand-surface rounded-2xl px-3 divide-y divide-[var(--brand-neutral)]">
+				<div class="flex w-full justify-between items-center py-2">
+					<div class=" self-center text-xs font-medium">{$i18n.t('Theme')}</div>
+					<Select
 						bind:value={selectedTheme}
-						placeholder={$i18n.t('Select a theme')}
-						on:change={() => themeChangeHandler(selectedTheme)}
+						items={themeOptions}
+						align="end"
+						triggerClass="brand-pill-outline"
+						onChange={() => themeChangeHandler(selectedTheme)}
 					>
-						<!-- Sunway: theme choices trimmed to System + Dark. OLED Dark, Light and the
-						     "Her" easter egg are hidden, not deleted — the themeChangeHandler and the
-						     CSS for all of them are untouched, so restoring an option here brings it
-						     back working. Note "System" still resolves to light when the OS is light;
-						     this only removes the manual pickers. -->
-						<option value="system">⚙️ {$i18n.t('System')}</option>
-						<option value="dark">🌑 {$i18n.t('Dark')}</option>
-						{#if false}
-							<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
-							<option value="light">☀️ {$i18n.t('Light')}</option>
-							{#if $config?.features?.enable_easter_eggs}
-								<option value="her">🌷 Her</option>
+						<svelte:fragment slot="trigger" let:selectedLabel>
+							<span class="truncate">{selectedLabel}</span>
+							<ChevronDown className="size-3" strokeWidth="2.5" />
+						</svelte:fragment>
+					</Select>
+				</div>
+
+				<!-- Sunway: the Language picker is hidden. Team decision -- schat ships one
+				     language, en-GB (Malaysian business English is British-spelled), so this was a
+				     control whose only outcomes were "no change" or "a partially translated UI".
+				     The hiding is cosmetic; what actually enforces it is SUPPORTED_LOCALES in
+				     lib/i18n/index.ts being en-GB alone, which makes a stale localStorage value or
+				     a ?lang= query string resolve back to en-GB. Restore by unwrapping this guard
+				     AND adding the codes back to SUPPORTED_LOCALES -- unwrapping alone gives a
+				     picker whose other options silently do nothing. -->
+				{#if false}
+					<div class=" flex w-full justify-between items-center py-2">
+						<div class=" self-center text-xs font-medium">{$i18n.t('Language')}</div>
+						<Select
+							bind:value={lang}
+							items={languages.map((language) => ({
+								value: language['code'],
+								label: language['title']
+							}))}
+							align="end"
+							triggerClass="brand-pill-outline"
+							onChange={() => {
+								changeLanguage(lang);
+							}}
+						>
+							<svelte:fragment slot="trigger" let:selectedLabel>
+								<span class="truncate">{selectedLabel}</span>
+								<ChevronDown className="size-3" strokeWidth="2.5" />
+							</svelte:fragment>
+						</Select>
+					</div>
+				{/if}
+				{#if $i18n.language === 'en-US' && !($config?.license_metadata ?? false)}
+					<div
+						class="mb-2 text-xs {($settings?.highContrastMode ?? false)
+							? 'text-gray-800 dark:text-gray-100'
+							: 'text-gray-400 dark:text-gray-500'}"
+					>
+						Couldn't find your language?
+						<a
+							class="font-medium underline {($settings?.highContrastMode ?? false)
+								? 'text-gray-700 dark:text-gray-200'
+								: 'text-gray-300'}"
+							href="https://github.com/open-webui/open-webui/blob/main/docs/CONTRIBUTING.md#-translations-and-internationalization"
+							target="_blank"
+						>
+							Help us translate Open WebUI!
+						</a>
+					</div>
+				{/if}
+
+				<div>
+					<div class=" flex w-full justify-between items-center py-2">
+						<div class=" self-center text-xs font-medium">{$i18n.t('Notifications')}</div>
+
+						<button
+							class="brand-pill-outline"
+							on:click={() => {
+								toggleNotification();
+							}}
+							type="button"
+							role="switch"
+							aria-checked={notificationEnabled}
+						>
+							{#if notificationEnabled === true}
+								<span class="self-center">{$i18n.t('On')}</span>
+							{:else}
+								<span class="self-center">{$i18n.t('Off')}</span>
 							{/if}
-						{/if}
-					</select>
-				</div>
-			</div>
-
-			<div class=" flex w-full justify-between">
-				<div class=" self-center text-xs font-medium">{$i18n.t('Language')}</div>
-				<div class="flex items-center relative">
-					<select
-						class="w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent text-right {$settings.highContrastMode
-							? ''
-							: 'outline-hidden'}"
-						bind:value={lang}
-						placeholder={$i18n.t('Select a language')}
-						on:change={(e) => {
-							changeLanguage(lang);
-						}}
-					>
-						{#each languages as language}
-							<option value={language['code']}>{language['title']}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
-			{#if $i18n.language === 'en-US' && !($config?.license_metadata ?? false)}
-				<div
-					class="mb-2 text-xs {($settings?.highContrastMode ?? false)
-						? 'text-gray-800 dark:text-gray-100'
-						: 'text-gray-400 dark:text-gray-500'}"
-				>
-					Couldn't find your language?
-					<a
-						class="font-medium underline {($settings?.highContrastMode ?? false)
-							? 'text-gray-700 dark:text-gray-200'
-							: 'text-gray-300'}"
-						href="https://github.com/open-webui/open-webui/blob/main/docs/CONTRIBUTING.md#-translations-and-internationalization"
-						target="_blank"
-					>
-						Help us translate Open WebUI!
-					</a>
-				</div>
-			{/if}
-
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div class=" self-center text-xs font-medium">{$i18n.t('Notifications')}</div>
-
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							toggleNotification();
-						}}
-						type="button"
-						role="switch"
-						aria-checked={notificationEnabled}
-					>
-						{#if notificationEnabled === true}
-							<span class="ml-2 self-center">{$i18n.t('On')}</span>
-						{:else}
-							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-						{/if}
-					</button>
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -361,7 +386,7 @@
 
 	<div class="flex justify-end pt-3 text-sm font-medium">
 		<button
-			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+			class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-full"
 			on:click={() => {
 				saveHandler();
 			}}

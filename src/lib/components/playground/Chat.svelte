@@ -359,7 +359,7 @@
 						{/if}
 
 						<div class="shrink-0">
-							<button class="p-1.5 bg-transparent hover:bg-white/5 transition rounded-lg">
+							<button class="p-1.5 bg-transparent brand-nav-item transition rounded-lg">
 								{#if showSystem}
 									<ChevronUp className="size-3.5" />
 								{:else}
@@ -387,7 +387,7 @@
 
 				<Dropdown>
 					<button
-						class="p-1.5 text-sm font-medium bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition rounded-lg"
+						class="p-1.5 text-sm font-medium bg-transparent brand-nav-item text-gray-500 dark:text-gray-400 transition rounded-lg"
 						aria-label={$i18n.t('More options')}
 					>
 						<EllipsisHorizontal className="size-4" />
@@ -400,13 +400,13 @@
 							<DropdownSub>
 								<button
 									slot="trigger"
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 								>
 									<Download strokeWidth="1.5" />
 									<div class="flex items-center">{$i18n.t('Download')}</div>
 								</button>
 								<button
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 									disabled={messages.length === 0}
 									on:click={() => {
 										exportToJson();
@@ -417,7 +417,7 @@
 									</div>
 								</button>
 								<button
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 									disabled={messages.length === 0}
 									on:click={() => {
 										downloadTxt();
@@ -474,7 +474,7 @@
 						<div class="shrink-0">
 							<button
 								type="button"
-								class="px-3.5 py-1.5 text-sm font-medium bg-gray-50 hover:bg-gray-100 text-gray-900 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition rounded-lg shrink-0 {($settings?.highContrastMode ??
+								class="px-3.5 py-1.5 text-sm font-medium bg-gray-50 brand-nav-item text-gray-900 dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition rounded-lg shrink-0 {($settings?.highContrastMode ??
 								false)
 									? ''
 									: 'outline-hidden'}"
@@ -509,7 +509,7 @@
 							</div>
 
 							<button
-								class="p-1.5 text-sm font-medium bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 transition rounded-lg {showControls
+								class="p-1.5 text-sm font-medium bg-transparent brand-nav-item transition rounded-lg {showControls
 									? 'text-black dark:text-white'
 									: 'text-gray-500 dark:text-gray-400'}"
 								aria-label={$i18n.t('Controls')}
@@ -525,7 +525,7 @@
 								{#if !loading}
 									<button
 										disabled={message === ''}
-										class="px-3.5 py-1.5 text-sm font-medium disabled:bg-gray-50 dark:disabled:hover:bg-gray-850 disabled:cursor-not-allowed bg-gray-50 hover:bg-gray-100 text-gray-900 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition rounded-lg"
+										class="px-3.5 py-1.5 text-sm font-medium disabled:bg-gray-50 dark:disabled:hover:bg-gray-850 disabled:cursor-not-allowed bg-gray-50 brand-nav-item text-gray-900 dark:bg-gray-850 brand-nav-item dark:text-gray-200 transition rounded-lg"
 										on:click={() => {
 											addHandler();
 											role = role === 'user' ? 'assistant' : 'user';
@@ -535,7 +535,7 @@
 									</button>
 
 									<button
-										class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-lg"
+										class="px-3.5 py-1.5 text-sm font-medium brand-btn-primary brand-nav-item transition rounded-lg"
 										on:click={() => {
 											submitHandler();
 										}}

@@ -225,7 +225,7 @@
 				<div class="flex items-center gap-1.5 mb-1.5">
 					<Tooltip content={$i18n.t('Back')}>
 						<button
-							class="text-sm p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition"
+							class="text-sm p-1.5 brand-nav-item rounded-lg transition"
 							aria-label={$i18n.t('Back')}
 							on:click={() => goto('/automations')}
 							type="button"
@@ -245,7 +245,7 @@
 			<div class="flex items-center gap-2 shrink-0">
 				<Tooltip content={$i18n.t('Delete')}>
 					<button
-						class="p-2 rounded-full bg-transparent hover:bg-gray-50 dark:hover:bg-gray-850 text-gray-500 hover:text-black dark:hover:text-white transition"
+						class="p-2 rounded-full bg-transparent brand-nav-item text-gray-500 hover:text-black dark:hover:text-white transition"
 						on:click={() => (showDeleteConfirm = true)}
 						type="button"
 					>
@@ -255,7 +255,7 @@
 
 				{#if isDirty}
 					<button
-						class="px-3 py-1 text-sm bg-black text-white dark:bg-white dark:text-black rounded-full hover:opacity-90 transition flex items-center gap-1.5"
+						class="px-3 py-1 text-sm brand-btn-primary rounded-full hover:opacity-90 transition flex items-center gap-1.5"
 						on:click={saveHandler}
 						disabled={saving}
 						type="button"
@@ -268,7 +268,7 @@
 				{/if}
 
 				<button
-					class="px-2.5 py-1 text-sm border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-full flex items-center gap-1.5"
+					class="px-2.5 py-1 text-sm border border-gray-200 dark:border-gray-800 brand-nav-item transition rounded-full flex items-center gap-1.5"
 					on:click={runNowHandler}
 					type="button"
 					disabled={loading}
@@ -391,7 +391,7 @@
 							<div class="space-y-0.5 w-full">
 								{#each runs as run (run.id)}
 									<button
-										class="w-full text-left flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-gray-100/80 dark:hover:bg-gray-850/80 transition-colors {run.chat_id
+										class="w-full text-left flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl brand-nav-item transition-colors {run.chat_id
 											? 'cursor-pointer'
 											: 'cursor-default'}"
 										on:click={() => {

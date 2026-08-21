@@ -131,6 +131,19 @@ SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 
 ENV = os.getenv('ENV', 'dev')
 
+# Sunway: loguru's `diagnose` prints the VALUE of every local variable in an exception
+# traceback, and loguru defaults it to True. That dumped session JWTs to stdout — a
+# socket `user-join` handler takes `data['auth']['token']`, so any unhandled error in
+# that path wrote a live bearer token into the cluster log stack, where it is retained
+# and readable by anyone with log access. Same disclosure class as a secret in an API
+# response, with a wider audience.
+#
+# Off in prod (the image sets ENV=prod; dev.ps1 leaves it unset so local debugging keeps
+# the variable dumps). `backtrace` stays on either way: it adds the surrounding frames,
+# which is the useful half, and it does not print values. Set LOG_DIAGNOSE=true to force
+# it on for a deliberate debugging window — expect secrets in the log if you do.
+LOG_DIAGNOSE = os.getenv('LOG_DIAGNOSE', 'true' if ENV == 'dev' else 'false').lower() == 'true'
+
 FROM_INIT_PY = os.getenv('FROM_INIT_PY', 'False').lower() == 'true'
 
 if FROM_INIT_PY:
@@ -765,6 +778,28 @@ except (ValueError, TypeError):
     CHAT_SYSTEM_PROMPT_MAX_CHARS = 4000
 
 
+# Sunway: apply the guardrails PII redaction to the STORED chat record, not only to the
+# copy sent to the model provider (security review, to-be-reviewed-later §2).
+#
+# Why this exists. The guardrails filter rewrites the request body on its way to the
+# provider, but the chat record is saved by a SEPARATE frontend call carrying the
+# frontend's own unfiltered history. The two paths never met, so a real NRIC reached the
+# production `chat` table, its backups and its exports while the provider only ever saw
+# the redacted form. Worse, `notify_on_redaction` had already told the user "Sensitive
+# data was removed before sending" — the platform was announcing a protection it was not
+# delivering to storage.
+#
+# THE TRADE, taken deliberately: with this on, a user can no longer re-read exactly what
+# they typed. Their own NRIC comes back as [REDACTED_NRIC] after a reload. In-flight the
+# frontend still shows the original, so the change is visible only once the text has
+# become a stored record — which is the point at which it is the thing being protected.
+#
+# Default ON because it is the PDPA-defensible posture, and a flag rather than hard-wired
+# because "can users see their own raw input?" is a policy question that may be answered
+# differently later. Plain env — takes effect on restart, no PersistentConfig trap.
+ENABLE_STORAGE_REDACTION = os.getenv('ENABLE_STORAGE_REDACTION', 'True').lower() == 'true'
+
+
 # Retention: max chats a user may keep (ALL roles incl. admins), enforced as a
 # hard cap on chat creation ("delete one to create a new one"). 0 disables the
 # cap. The 1-month rolling expiry sweep is a separate mechanism.
@@ -795,6 +830,18 @@ except (ValueError, TypeError):
 # unarchiving an already-archived chat is still allowed so any can be recovered.
 ENABLE_CHAT_ARCHIVE = os.getenv('ENABLE_CHAT_ARCHIVE', 'False').lower() == 'true'
 
+# Sdeck (Presenton) MCP tool server. Default OFF: the team deferred the rollout to Sdeck
+# phase 2, so the deck-generation tools must not reach users yet. When false, the catalogue
+# attaches no toolIds to any model (model_catalogue.py), which is the whole mechanism -- a
+# model only reaches an MCP server through its own meta.toolIds.
+#
+# NOTHING is removed by turning this off. The MCP connection stays configured in Admin
+# Settings -> Integrations, Open WebUI's MCP client is upstream code that is not touched, and
+# schat never had Sdeck-specific code of its own (see CLAUDE.md -- the whole integration is
+# config on this side, and the code changes all live in the Sdeck repo). Phase 2 is this flag
+# plus a restart.
+ENABLE_SDECK_MCP = os.getenv('ENABLE_SDECK_MCP', 'False').lower() == 'true'
+
 # Voice features (STT mic, TTS read-aloud, Call mode). Default on. When false the
 # voice UI is hidden for EVERYONE incl. admins (the per-user chat.stt/tts/call
 # permissions only hide it for non-admins). Code is kept — reversible by flipping
@@ -809,36 +856,11 @@ ENABLE_VOICE = os.getenv('ENABLE_VOICE', 'False').lower() == 'true'
 # a temporary chat is simply a chat that is never persisted.
 ENABLE_TEMPORARY_CHAT = os.getenv('ENABLE_TEMPORARY_CHAT', 'False').lower() == 'true'
 
-# Admin panel → Settings and Admin panel → Functions.
-#
-# MUST BE PLAIN ENV, NEVER PersistentConfig. Admin Settings is the only UI that can
-# edit a PersistentConfig value, so gating it with one is a trap you cannot escape:
-# set it false, and the screen that would let you set it back to true is gone. Plain
-# env means a restart with the var flipped always restores access.
-#
-# Why hide them at all: both are gated on get_admin_user, and under multi-tenancy
-# `admin` is a per-tenant IAM role (utils/auth.py) — a BU admin is a full schat admin
-# inside their own tenant. Admin Settings writes PROCESS-GLOBAL config with no tenant
-# component and no TTL, so one tenant admin's change lands on every pod for every
-# tenant. Functions installs arbitrary Python that runs inlet/outlet on every request.
-#
-# DEFAULT TRUE — a DELIBERATE exception to the "hidden features default False in code"
-# rule the rest of this block follows (CLAUDE.md, 2026-07-31). That rule exists because
-# a forgotten env var must not silently expose a DEFERRED feature to end users. These
-# two are the opposite kind of thing: they are the operational surfaces the platform is
-# administered THROUGH. Defaulting them off would mean a fresh environment boots with no
-# way to configure models or connections — first-run setup would be impossible via the
-# UI — and every dev machine would lose them too, since dev.ps1 deliberately seeds none
-# of these flags and relies on the code default.
-#
-# So the failure mode of default-off here is "cannot administer the system", not "user
-# sees a dead feature". Hiding is opt-in, per deployment, from the manifest.
-#
-# NOT A SECURITY BOUNDARY. /api/v1/functions/* and POST /api/v1/auths/admin/config
-# remain reachable for anyone holding an admin token — this removes the UI, not the
-# endpoint. It reduces accident and casual discovery, not a determined actor.
-ENABLE_ADMIN_SETTINGS_UI = os.getenv('ENABLE_ADMIN_SETTINGS_UI', 'True').lower() == 'true'
-ENABLE_ADMIN_FUNCTIONS_UI = os.getenv('ENABLE_ADMIN_FUNCTIONS_UI', 'True').lower() == 'true'
+# ENABLE_ADMIN_SETTINGS_UI RETIRED 2026-08-17 (hardening plan Items 7 and 9). The flag gated the
+# Admin Settings page, which wrote PROCESS-GLOBAL config reachable by any tenant admin. That page
+# is now deleted rather than gated: configuration comes from the Helm chart and model definitions
+# from model_catalogue.py. A deleted surface needs no flag, and leaving one implies a capability
+# that no longer exists. Anything still setting this in a values file is inert and can be dropped.
 
 # Optional User-Agent override for outbound web-loader fetches.  When set,
 # SafeWebBaseLoader sends this value instead of the default python-requests UA

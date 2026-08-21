@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Select from '$lib/components/common/Select.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	// Sunway retention cap UX: shown when a user clicks "New Chat" while already at
 	// MAX_CHATS_PER_USER. Lets them sort + multi-select + delete existing chats to
 	// free a slot, then start a new chat. The backend enforces the cap independently
@@ -107,7 +109,7 @@
 		on:mousedown|self={() => (show = false)}
 	>
 		<div
-			class="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-gray-100 bg-white shadow-3xl dark:border-gray-850 dark:bg-gray-900"
+			class="brand-modal flex max-h-[80vh] w-full max-w-lg flex-col"
 			on:mousedown|stopPropagation
 		>
 			<div class="px-5 pt-5 pb-3">
@@ -122,19 +124,31 @@
 				</div>
 			</div>
 
-			<div class="flex items-center justify-between px-5 pb-2">
-				<span class="text-xs font-medium {overCap ? 'text-red-500' : 'text-gray-400'}">
+			<div class="flex items-center justify-between gap-2 px-5 pb-2">
+				<!-- Sunway: the count is the reason the dialog exists, so it reads as a chip rather
+				     than grey micro-text. Red wash only when actually at/over the cap. -->
+				<span
+					class="brand-info-box shrink-0 font-medium {overCap
+						? 'text-red-600 dark:text-red-400'
+						: 'text-gray-600 dark:text-gray-300'}"
+				>
 					{count} / {maxChats}
 				</span>
-				<div class="flex items-center gap-2 text-xs">
-					<span class="text-gray-400">{$i18n.t('Sort')}</span>
-					<select
+				<div class="flex items-center gap-2">
+					<Select
 						bind:value={sortOrder}
-						class="rounded-lg bg-transparent text-gray-600 outline-none dark:text-gray-300"
+						items={[
+							{ value: 'oldest', label: $i18n.t('Oldest first') },
+							{ value: 'newest', label: $i18n.t('Newest first') }
+						]}
+						align="end"
+						triggerClass="brand-pill-outline"
 					>
-						<option value="oldest">{$i18n.t('Oldest first')}</option>
-						<option value="newest">{$i18n.t('Newest first')}</option>
-					</select>
+						<svelte:fragment slot="trigger" let:selectedLabel>
+							<span class="truncate">{selectedLabel}</span>
+							<ChevronDown className="size-3" strokeWidth="2.5" />
+						</svelte:fragment>
+					</Select>
 				</div>
 			</div>
 
@@ -147,7 +161,11 @@
 					{#each sortedChats as chat (chat.id)}
 						<button
 							type="button"
-							class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+							class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition {selected.has(
+								chat.id
+							)
+								? 'brand-nav-active'
+								: 'brand-nav-item'}"
 							on:click={() => toggle(chat.id)}
 						>
 							<input
@@ -172,7 +190,7 @@
 			>
 				<button
 					type="button"
-					class="rounded-xl px-3.5 py-2 text-sm text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-850"
+					class="brand-pill-outline text-gray-600 dark:text-gray-300"
 					on:click={() => (show = false)}
 				>
 					{$i18n.t('Cancel')}
@@ -180,7 +198,7 @@
 				<div class="flex items-center gap-2">
 					<button
 						type="button"
-						class="flex items-center gap-1.5 rounded-xl bg-red-500/10 px-3.5 py-2 text-sm text-red-600 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400"
+						class="brand-pill-danger"
 						disabled={selected.size === 0 || deleting}
 						on:click={deleteSelected}
 					>
@@ -189,7 +207,7 @@
 					</button>
 					<button
 						type="button"
-						class="rounded-xl bg-black px-3.5 py-2 text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black"
+						class="brand-pill-solid"
 						disabled={overCap}
 						title={overCap ? $i18n.t('Delete a chat to continue') : ''}
 						on:click={startNewChat}

@@ -44,8 +44,6 @@ from open_webui.config import (
 from open_webui.env import (
     CHAT_RETENTION_DAYS,
     CHAT_SYSTEM_PROMPT_MAX_CHARS,
-    ENABLE_ADMIN_FUNCTIONS_UI,
-    ENABLE_ADMIN_SETTINGS_UI,
     ENABLE_CHAT_ARCHIVE,
     ENABLE_EASTER_EGGS,
     ENABLE_IMAGE_OCR_FALLBACK,
@@ -93,8 +91,8 @@ def get_authenticated_app_config(request) -> dict:
         'enable_admin_export': ENABLE_ADMIN_EXPORT,
         'enable_admin_chat_access': ENABLE_ADMIN_CHAT_ACCESS,
         'enable_admin_analytics': ENABLE_ADMIN_ANALYTICS,
-        'enable_admin_settings_ui': ENABLE_ADMIN_SETTINGS_UI,
-        'enable_admin_functions_ui': ENABLE_ADMIN_FUNCTIONS_UI,
+        # Sunway: 'enable_admin_settings_ui' was removed here (hardening plan Items 7 and 9).
+        # The Admin Settings page is deleted, so there is no surface for it to gate.
         'enable_google_drive_integration': config.ENABLE_GOOGLE_DRIVE_INTEGRATION,
         'enable_onedrive_integration': config.ENABLE_ONEDRIVE_INTEGRATION,
         'enable_memories': config.ENABLE_MEMORIES,

@@ -239,7 +239,7 @@
 						>
 							<button
 								id="sidebar-toggle-button"
-								class="cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+								class="cursor-pointer flex rounded-lg brand-nav-item transition"
 								on:click={() => showSidebar.set(!$showSidebar)}
 							>
 								<div class="self-center p-1.5">
@@ -254,7 +254,7 @@
 					<div class="flex items-center gap-0.5 py-1">
 						<span class="min-w-fit px-1 text-sm select-none">{headerText}</span>
 						<button
-							class="p-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+							class="p-1 rounded-lg brand-nav-item transition"
 							on:click={() => navigateCalendar(-1)}
 							aria-label="Previous"
 						>
@@ -273,7 +273,7 @@
 							>
 						</button>
 						<button
-							class="p-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+							class="p-1 rounded-lg brand-nav-item transition"
 							on:click={() => navigateCalendar(1)}
 							aria-label="Next"
 						>
@@ -295,7 +295,7 @@
 
 					<div class="ml-auto flex items-center gap-1">
 						<button
-							class="hidden sm:inline text-xs px-2 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-850 transition text-gray-500 hover:text-gray-700 dark:hover:text-white"
+							class="hidden sm:inline text-xs px-2 py-1 rounded-lg brand-nav-item transition text-gray-500 hover:text-gray-700 dark:hover:text-white"
 							on:click={goToToday}
 						>
 							{$i18n.t('Today')}
@@ -331,7 +331,7 @@
 						</Select>
 
 						<button
-							class="ml-1 px-2 py-1.5 text-xs gap-1 rounded-xl bg-black text-white dark:bg-white dark:text-black transition text-sm flex items-center"
+							class="ml-1 px-2 py-1.5 text-xs gap-1 rounded-xl brand-btn-primary transition text-sm flex items-center"
 							on:click={handleNewEvent}
 						>
 							<svg

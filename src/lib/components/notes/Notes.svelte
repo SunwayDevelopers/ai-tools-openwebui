@@ -352,7 +352,7 @@
 
 				<div class="flex w-full justify-end gap-1.5">
 					<button
-						class=" px-2 py-1.5 rounded-xl bg-black text-white dark:bg-white dark:text-black transition font-medium text-sm flex items-center"
+						class=" px-2 py-1.5 rounded-xl brand-btn-primary transition font-medium text-sm flex items-center"
 						on:click={async () => {
 							const res = await createNoteHandler(dayjs().format('YYYY-MM-DD'));
 
@@ -386,7 +386,7 @@
 					{#if query}
 						<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
 							<button
-								class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+								class="p-0.5 rounded-full brand-nav-item transition"
 								on:click={() => {
 									query = '';
 								}}
@@ -480,7 +480,7 @@
 									>
 										{#each notesList as note, idx (note.id)}
 											<div
-												class=" flex cursor-pointer w-full px-3.5 py-1.5 border border-gray-50 dark:border-gray-850/30 bg-transparent dark:hover:bg-gray-850 hover:bg-white rounded-2xl transition"
+												class=" flex cursor-pointer w-full px-3.5 py-1.5 border border-gray-50 dark:border-gray-850/30 bg-transparent brand-nav-item rounded-2xl transition"
 											>
 												<a href={`/notes/${note.id}`} class="w-full flex flex-col justify-between">
 													<div class="flex-1">
@@ -552,7 +552,7 @@
 																		}}
 																	>
 																		<button
-																			class="self-center w-fit text-sm p-1 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+																			class="self-center w-fit text-sm p-1 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 																			type="button"
 																		>
 																			<EllipsisHorizontal className="size-5" />
@@ -574,7 +574,7 @@
 									>
 										{#each notesList as note, idx (note.id)}
 											<div
-												class=" flex space-x-4 cursor-pointer w-full px-4.5 py-4 border border-gray-50 dark:border-gray-850/30 bg-transparent dark:hover:bg-gray-850 hover:bg-white rounded-2xl transition"
+												class=" flex space-x-4 cursor-pointer w-full px-4.5 py-4 border border-gray-50 dark:border-gray-850/30 bg-transparent brand-nav-item rounded-2xl transition"
 											>
 												<div class=" flex flex-1 space-x-4 cursor-pointer w-full">
 													<a
@@ -622,7 +622,7 @@
 																		}}
 																	>
 																		<button
-																			class="self-center w-fit text-sm p-1 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+																			class="self-center w-fit text-sm p-1 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 																			type="button"
 																		>
 																			<EllipsisHorizontal className="size-5" />

@@ -127,7 +127,7 @@
 				{#if query}
 					<div class="self-center pl-1.5 translate-y-[0.5px] bg-transparent">
 						<button
-							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							class="p-0.5 rounded-full brand-nav-item transition"
 							on:click={() => {
 								query = '';
 							}}
@@ -202,7 +202,7 @@
 						<div class="text-left text-sm w-full max-h-[28rem] overflow-y-auto">
 							{#each sortedMemories as memory (memory.id)}
 								<div
-									class="w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 transition cursor-pointer"
+									class="w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 brand-nav-item transition cursor-pointer"
 									on:click={() => {
 										selectedMemory = memory;
 										showEditMemoryModal = true;
@@ -225,7 +225,7 @@
 										<div class="flex text-gray-600 dark:text-gray-300">
 											<Tooltip content={$i18n.t('Edit')}>
 												<button
-													class="self-center w-fit text-sm p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+													class="self-center w-fit text-sm p-1.5 brand-nav-item rounded-xl"
 													on:click={(e) => {
 														e.stopPropagation();
 														selectedMemory = memory;
@@ -238,7 +238,7 @@
 
 											<Tooltip content={$i18n.t('Delete')}>
 												<button
-													class="self-center w-fit text-sm p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+													class="self-center w-fit text-sm p-1.5 brand-nav-item rounded-xl"
 													on:click={(e) => {
 														e.stopPropagation();
 														selectedMemory = memory;
@@ -275,7 +275,7 @@
 				>
 
 				<button
-					class="px-3.5 py-1.5 font-medium hover:bg-black/5 dark:hover:bg-white/5 outline outline-1 outline-gray-100 dark:outline-gray-800 rounded-3xl"
+					class="px-3.5 py-1.5 font-medium brand-nav-item outline outline-1 outline-gray-100 dark:outline-gray-800 rounded-3xl"
 					on:click={() => {
 						showAddMemoryModal = true;
 					}}>{$i18n.t('Add Memory')}</button

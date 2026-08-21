@@ -78,52 +78,6 @@ export const getUserAnalytics = async (
 	return res;
 };
 
-export const getMessages = async (
-	token: string = '',
-	modelId: string | null = null,
-	userId: string | null = null,
-	chatId: string | null = null,
-	startDate: number | null = null,
-	endDate: number | null = null,
-	skip: number = 0,
-	limit: number = 50
-) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-	if (modelId) searchParams.append('model_id', modelId);
-	if (userId) searchParams.append('user_id', userId);
-	if (chatId) searchParams.append('chat_id', chatId);
-	if (startDate) searchParams.append('start_date', startDate.toString());
-	if (endDate) searchParams.append('end_date', endDate.toString());
-	if (skip) searchParams.append('skip', skip.toString());
-	if (limit) searchParams.append('limit', limit.toString());
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/analytics/messages?${searchParams.toString()}`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
 export const getSummary = async (
 	token: string = '',
 	startDate: number | null = null,
@@ -240,80 +194,7 @@ export const getTokenUsage = async (
 	return res;
 };
 
-export const getModelChats = async (
-	token: string = '',
-	modelId: string,
-	startDate: number | null = null,
-	endDate: number | null = null,
-	skip: number = 0,
-	limit: number = 50
-) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-	if (startDate) searchParams.append('start_date', startDate.toString());
-	if (endDate) searchParams.append('end_date', endDate.toString());
-	if (skip) searchParams.append('skip', skip.toString());
-	if (limit) searchParams.append('limit', limit.toString());
-
-	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/analytics/models/${encodeURIComponent(modelId)}/chats?${searchParams.toString()}`,
-		{
-			method: 'GET',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-				authorization: `Bearer ${token}`
-			}
-		}
-	)
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const getModelOverview = async (token: string = '', modelId: string, days: number = 30) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-	searchParams.append('days', days.toString());
-
-	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/analytics/models/${encodeURIComponent(modelId)}/overview?${searchParams.toString()}`,
-		{
-			method: 'GET',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-				authorization: `Bearer ${token}`
-			}
-		}
-	)
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
+// Sunway: getMessages, getModelChats and getModelOverview were deleted here (hardening plan
+// Item 3). They were the only analytics clients that returned message CONTENT -- full text,
+// 200-character opening previews, and conversation tags respectively. The remaining clients
+// return counts and totals only.

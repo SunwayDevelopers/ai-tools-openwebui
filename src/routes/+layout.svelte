@@ -32,8 +32,6 @@
 		appInfo,
 		toolServers,
 		playingNotificationSound,
-		channels,
-		channelId,
 		terminalServers,
 		showControls,
 		showFileNavPath,
@@ -47,7 +45,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { updated } from '$app/state';
 
-	import i18n, { initI18n, getLanguages, changeLanguage } from '$lib/i18n';
+	import i18n, { initI18n, changeLanguage, FIRST_RUN_LOCALE, SUPPORTED_LOCALES } from '$lib/i18n';
 
 	import '../tailwind.css';
 	import '../app.css';
@@ -65,15 +63,9 @@
 	import { getSessionUser, updateUserTimezone, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 	import { chatCompletion } from '$lib/apis/openai';
-	import {
-		addOpenAIConnection,
-		removeOpenAIConnection,
-		addTerminalConnection,
-		removeTerminalConnection
-	} from '$lib/utils/connections';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
-	import { bestMatchingLanguage, displayFileHandler, getUserTimezone } from '$lib/utils';
+	import { displayFileHandler, getUserTimezone } from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
 
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
@@ -82,7 +74,6 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { getUserSettings } from '$lib/apis/users';
 	import dayjs from 'dayjs';
-	import { getChannels } from '$lib/apis/channels';
 
 	const unregisterServiceWorkers = async () => {
 		if ('serviceWorker' in navigator) {
@@ -706,107 +697,9 @@
 		}
 	};
 
-	const channelEventHandler = async (event) => {
-		console.log('channelEventHandler', event);
-		if (event.data?.type === 'typing') {
-			return;
-		}
-
-		// handle channel created event
-		if (event.data?.type === 'channel:created') {
-			const res = await getChannels(localStorage.token).catch(async (error) => {
-				return null;
-			});
-
-			if (res) {
-				await channels.set(
-					res.sort(
-						(a, b) =>
-							['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
-					)
-				);
-			}
-
-			return;
-		}
-
-		// check url path
-		const channel = $page.url.pathname.includes(`/channels/${event.channel_id}`);
-
-		let isInBackground = document.visibilityState !== 'visible';
-		if (window.electronAPI) {
-			const res = await window.electronAPI.send({
-				type: 'window:isFocused'
-			});
-			if (res) {
-				isInBackground = !res.isFocused;
-			}
-		}
-
-		if ((!channel || isInBackground) && event?.user?.id !== $user?.id) {
-			await tick();
-			const type = event?.data?.type ?? null;
-			const data = event?.data?.data ?? null;
-
-			if ($channels) {
-				if ($channels.find((ch) => ch.id === event.channel_id) && $channelId !== event.channel_id) {
-					channels.set(
-						$channels.map((ch) => {
-							if (ch.id === event.channel_id) {
-								if (type === 'message') {
-									return {
-										...ch,
-										unread_count: (ch.unread_count ?? 0) + 1,
-										last_message_at: event.created_at
-									};
-								}
-							}
-							return ch;
-						})
-					);
-				} else {
-					const res = await getChannels(localStorage.token).catch(async (error) => {
-						return null;
-					});
-
-					if (res) {
-						await channels.set(
-							res.sort(
-								(a, b) =>
-									['', null, 'group', 'dm'].indexOf(a.type) -
-									['', null, 'group', 'dm'].indexOf(b.type)
-							)
-						);
-					}
-				}
-			}
-
-			if (type === 'message') {
-				const title = `${data?.user?.name}${event?.channel?.type !== 'dm' ? ` (#${event?.channel?.name})` : ''}`;
-
-				if ($isLastActiveTab) {
-					if ($settings?.notificationEnabled ?? false) {
-						new Notification(`${title} • ${$WEBUI_NAME}`, {
-							body: data?.content,
-							icon: `${WEBUI_API_BASE_URL}/users/${data?.user?.id}/profile/image`
-						});
-					}
-				}
-
-				toast.custom(NotificationToast, {
-					componentProps: {
-						onClick: () => {
-							goto(`/channels/${event.channel_id}`);
-						},
-						content: data?.content,
-						title: `${title}`
-					},
-					duration: 15000,
-					unstyled: true
-				});
-			}
-		}
-	};
+	// Sunway: channelEventHandler was deleted here (hardening plan Item 6). It handled the
+	// events:channel socket stream -- channel:created and new-message notifications -- for a
+	// feature whose router, pages and API client are all removed.
 
 	const TOKEN_EXPIRY_BUFFER = 60; // seconds
 	const checkTokenExpiry = async () => {
@@ -882,37 +775,11 @@
 			return;
 		}
 
-		const token = localStorage.token;
-		if (!token) return;
-
-		// Only admins can modify system-level connections
-		if ($user?.role !== 'admin') return;
-
-		try {
-			if (event.type === 'connections:terminal') {
-				if (event.data.action === 'add') {
-					await addTerminalConnection(token, {
-						url: event.data.url,
-						key: event.data.key,
-						name: 'Local Open Terminal'
-					});
-				} else if (event.data.action === 'remove') {
-					await removeTerminalConnection(token, event.data.url);
-				}
-			} else if (event.type === 'connections:openai') {
-				if (event.data.action === 'add') {
-					await addOpenAIConnection(token, {
-						url: event.data.url,
-						key: event.data.key,
-						config: event.data.config
-					});
-				} else if (event.data.action === 'remove') {
-					await removeOpenAIConnection(token, event.data.url);
-				}
-			}
-		} catch (e) {
-			console.error('Desktop connection update failed:', e);
-		}
+		// Sunway: the system-level connection handlers were removed here (hardening plan Item 7).
+		// They let the Open WebUI DESKTOP client add a local terminal or OpenAI connection by
+		// writing process-global config over HTTP. schat ships no desktop client, and the endpoints
+		// behind them (/openai/config/update, /configs/terminal_servers) are deleted -- connections
+		// come from the chart now. The rest of desktopEventHandler is untouched.
 	};
 
 	const windowMessageEventHandler = async (event) => {
@@ -1042,10 +909,8 @@
 		user.subscribe(async (value) => {
 			if (value) {
 				$socket?.off('events', chatEventHandler);
-				$socket?.off('events:channel', channelEventHandler);
 
 				$socket?.on('events', chatEventHandler);
-				$socket?.on('events:channel', channelEventHandler);
 
 				const userSettings = await getUserSettings(localStorage.token);
 				if (userSettings) {
@@ -1066,7 +931,6 @@
 				tokenTimer = setInterval(checkTokenExpiry, 15000);
 			} else {
 				$socket?.off('events', chatEventHandler);
-				$socket?.off('events:channel', channelEventHandler);
 			}
 		});
 
@@ -1088,13 +952,22 @@
 
 		initI18n(localStorage?.locale);
 		if (!localStorage.locale) {
-			const languages = await getLanguages();
-			const browserLanguages = navigator.languages
-				? navigator.languages
-				: [navigator.language || navigator.userLanguage];
-			const lang = backendConfig?.default_locale
-				? backendConfig.default_locale
-				: bestMatchingLanguage(languages, browserLanguages, 'en-US');
+			// Sunway: a first-time user starts on FIRST_RUN_LOCALE (en-GB), not on whatever
+			// their browser reports. Upstream called bestMatchingLanguage() over all ~60
+			// entries in languages.json with an 'en-US' fallback, so it could resolve to a
+			// locale schat does not ship: supportedLngs then rendered en-GB anyway, but the
+			// unsupported code still reached document.lang and dayjs.locale(), leaving the
+			// page announcing a language it was not written in. A deployment can still pin
+			// its own via the backend DEFAULT_LOCALE.
+			// Sunway: DEFAULT_LOCALE is only honoured when schat ships that locale. It is a
+			// backend config value a deployment can set to anything, and passing an unshipped
+			// code through here reached document.lang and dayjs.locale() even though the UI
+			// rendered en-GB -- a page announcing a language it was not written in.
+			const configuredLocale = backendConfig?.default_locale;
+			const lang =
+				configuredLocale && SUPPORTED_LOCALES.includes(configuredLocale)
+					? configuredLocale
+					: FIRST_RUN_LOCALE;
 			changeLanguage(lang);
 			dayjs.locale(lang);
 		}
@@ -1311,13 +1184,13 @@
 
 			<div class="mt-6 flex justify-center gap-2">
 				<button
-					class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+					class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition brand-nav-item dark:bg-gray-100 dark:text-gray-900 brand-nav-item"
 					on:click={() => location.reload()}
 				>
 					{$i18n.t('Try again')}
 				</button>
 				<button
-					class="rounded-full px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+					class="rounded-full px-4 py-2 text-sm font-medium text-gray-600 transition brand-nav-item dark:text-gray-300 brand-nav-item"
 					on:click={async () => {
 						// Best effort: signout is itself an API call and may also be down.
 						await endSession().catch(() => {});
