@@ -375,33 +375,5 @@ export const deleteFileById = async (token: string, id: string) => {
 	return res;
 };
 
-export const deleteAllFiles = async (token: string) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/all`, {
-		method: 'DELETE',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
+// Sunway: deleteAllFiles was deleted here (deletion manifest). DELETE /api/v1/files/all wiped
+// every user's uploads and reset the entire vector database from one admin request.

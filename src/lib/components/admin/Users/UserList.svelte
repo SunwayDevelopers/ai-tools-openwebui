@@ -15,11 +15,8 @@
 	import { updateUserRole, getUsers, deleteUserById } from '$lib/apis/users';
 
 	import Pagination from '$lib/components/common/Pagination.svelte';
-	import ChatBubbles from '$lib/components/icons/ChatBubbles.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
-	import EditUserModal from '$lib/components/admin/Users/UserList/EditUserModal.svelte';
-	import UserChatsModal from '$lib/components/admin/Users/UserList/UserChatsModal.svelte';
 	import AddUserModal from '$lib/components/admin/Users/UserList/AddUserModal.svelte';
 
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -33,7 +30,7 @@
 	import Banner from '$lib/components/common/Banner.svelte';
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import ProfilePreview from '$lib/components/channel/Messages/Message/ProfilePreview.svelte';
+	import ProfilePreview from '$lib/components/common/UserStatus/ProfilePreview.svelte';
 	import UserPreviewModal from '$lib/components/admin/UserPreviewModal.svelte';
 
 	const i18n = getContext('i18n');
@@ -53,9 +50,36 @@
 	let showDeleteConfirmDialog = false;
 	let showAddUserModal = false;
 
-	let showUserChatsModal = false;
-	let showEditUserModal = false;
+	// Sunway: role changes restored 2026-08-21 (they were removed with the user-edit modal in
+	// hardening Item 5). `pendingRole` is the role the confirm dialog will apply if accepted.
+	let showRoleUpdateConfirmDialog = false;
+	let pendingRole = '';
+
+	// Read the signed-in user's id HERE, at the top level. The table below iterates
+	// `{#each users as user}`, which shadows the `user` store inside the loop -- so `$user` in that
+	// markup is a compile error (svelte.dev/e/store_invalid_scoped_subscription), not a runtime
+	// mistake. Hoisting the one field the template needs is the fix; renaming the loop variable
+	// would touch every row in the table.
+	$: sessionUserId = $user?.id;
+
 	let showUserPreviewModal = false;
+
+	// Sunway: user <-> admin only. 'pending' is upstream's signup-approval state and is not
+	// offered anywhere in schat's UI, so it is not reachable from here either.
+	const updateRoleHandler = async (id, role) => {
+		const res = await updateUserRole(localStorage.token, id, role).catch((error) => {
+			// Under multi-tenancy the backend refuses with an explanation rather than accepting a
+			// change that IAM would overwrite on the target's next request. Surfacing the message
+			// verbatim is the point -- it names IAM as the place to make the change.
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (res) {
+			toast.success($i18n.t('Role updated successfully.'));
+			getUserList();
+		}
+	};
 
 	const deleteUserHandler = async (id) => {
 		const res = await deleteUserById(localStorage.token, id).catch((error) => {
@@ -124,25 +148,26 @@
 	}}
 />
 
+<RoleUpdateConfirmDialog
+	bind:show={showRoleUpdateConfirmDialog}
+	title={$i18n.t('Change role')}
+	message={selectedUser
+		? $i18n.t('Change {{name}} to {{role}}?', {
+				name: selectedUser.name,
+				role: pendingRole
+			})
+		: ''}
+	on:confirm={() => {
+		updateRoleHandler(selectedUser.id, pendingRole);
+	}}
+/>
+
 <AddUserModal
 	bind:show={showAddUserModal}
 	on:save={async () => {
 		getUserList();
 	}}
 />
-
-<EditUserModal
-	bind:show={showEditUserModal}
-	{selectedUser}
-	sessionUser={$user}
-	on:save={async () => {
-		getUserList();
-	}}
-/>
-
-{#if selectedUser}
-	<UserChatsModal bind:show={showUserChatsModal} user={selectedUser} />
-{/if}
 
 {#if ($config?.license_metadata?.seats ?? null) !== null && total && total > $config?.license_metadata?.seats}
 	<div class=" mt-1 mb-2 text-xs text-red-500">
@@ -164,7 +189,7 @@
 	</div>
 {:else}
 	<div
-		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
+		class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 brand-sticky-head"
 	>
 		<div class="flex md:self-center text-lg font-medium px-0.5 gap-2">
 			<div class="flex-shrink-0">
@@ -216,16 +241,15 @@
 				</div>
 
 				<div>
-					<Tooltip content={$i18n.t('Add User')}>
-						<button
-							class=" p-2 rounded-xl hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 transition font-medium text-sm flex items-center space-x-1"
-							on:click={() => {
-								showAddUserModal = !showAddUserModal;
-							}}
-						>
-							<Plus className="size-3.5" />
-						</button>
-					</Tooltip>
+					<button
+						class="brand-pill-solid"
+						on:click={() => {
+							showAddUserModal = !showAddUserModal;
+						}}
+					>
+						<Plus className="size-3" strokeWidth="2.5" />
+						<div class="hidden md:block">{$i18n.t('Add User')}</div>
+					</button>
 				</div>
 			</div>
 		</div>
@@ -357,21 +381,41 @@
 			</thead>
 			<tbody class="">
 				{#each users as user, userIdx (user.id)}
-					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
+					<tr class="dark:border-gray-850 text-xs">
 						<td class="px-3 py-1 min-w-[7rem] w-28">
-							<button
-								class=" translate-y-0.5"
-								aria-label={$i18n.t('Change User Role')}
-								on:click={() => {
-									selectedUser = user;
-									showEditUserModal = !showEditUserModal;
-								}}
-							>
-								<Badge
-									type={user.role === 'admin' ? 'info' : user.role === 'user' ? 'success' : 'muted'}
-									content={$i18n.t(user.role)}
-								/>
-							</button>
+							<!-- Sunway: the role badge is a button again (2026-08-21). Item 5 removed it along
+							     with the whole user-edit modal, whose genuinely damaging field was `email` --
+							     the IAM entitlement key, which orphaned the schat row when changed. Role is
+							     the one field on that form an admin has a real reason to change, so it comes
+							     back on its own endpoint (POST /users/update/role) without the other two.
+
+							     Clicking your own row does nothing: self-demotion is how a deployment ends up
+							     with no reachable admin, and the backend refuses it too. -->
+							<div class=" translate-y-0.5">
+								{#if user.id === sessionUserId}
+									<Badge type="info" content={$i18n.t(user.role)} />
+								{:else}
+									<button
+										type="button"
+										class="cursor-pointer"
+										aria-label={$i18n.t("Click on the user role button to change a user's role.")}
+										on:click={() => {
+											selectedUser = user;
+											pendingRole = user.role === 'admin' ? 'user' : 'admin';
+											showRoleUpdateConfirmDialog = true;
+										}}
+									>
+										<Badge
+											type={user.role === 'admin'
+												? 'info'
+												: user.role === 'user'
+													? 'success'
+													: 'muted'}
+											content={$i18n.t(user.role)}
+										/>
+									</button>
+								{/if}
+							</div>
 						</td>
 						<td class="px-3 py-1 font-medium text-gray-900 dark:text-white max-w-48">
 							<div class="flex items-center gap-2">
@@ -412,25 +456,14 @@
 
 						<td class="px-3 py-1 text-right">
 							<div class="flex justify-end w-full">
-								{#if $config.features.enable_admin_chat_access && user.role !== 'admin'}
-									<Tooltip content={$i18n.t('Chats')}>
-										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-											aria-label={$i18n.t('Chats')}
-											on:click={async () => {
-												showUserChatsModal = !showUserChatsModal;
-												selectedUser = user;
-											}}
-										>
-											<ChatBubbles />
-										</button>
-									</Tooltip>
-								{/if}
+								<!-- Sunway: the per-user Chats button was deleted here (hardening plan Item 3).
+								     It opened UserChatsModal, the only caller of GET /chats/list/user/{id} --
+								     one admin reading another user's chats. Both are gone. -->
 
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Preview Access')}>
 										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											class="self-center w-fit text-sm px-2 py-2 brand-nav-item rounded-xl"
 											aria-label={$i18n.t('Preview Access')}
 											on:click={() => {
 												selectedUser = user;
@@ -460,36 +493,13 @@
 									</Tooltip>
 								{/if}
 
-								<Tooltip content={$i18n.t('Edit User')}>
-									<button
-										class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-										aria-label={$i18n.t('Edit User')}
-										on:click={async () => {
-											showEditUserModal = !showEditUserModal;
-											selectedUser = user;
-										}}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="1.5"
-											stroke="currentColor"
-											class="w-4 h-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-											/>
-										</svg>
-									</button>
-								</Tooltip>
+								<!-- Sunway: the Edit User button was deleted here (hardening plan Item 5).
+								     POST /api/v1/users/{id}/update is gone; the user list is read-only. -->
 
 								{#if user.role !== 'admin'}
 									<Tooltip content={$i18n.t('Delete User')}>
 										<button
-											class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											class="self-center w-fit text-sm px-2 py-2 brand-nav-item rounded-xl"
 											aria-label={$i18n.t('Delete User')}
 											on:click={async () => {
 												showDeleteConfirmDialog = true;

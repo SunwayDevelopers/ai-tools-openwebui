@@ -653,9 +653,9 @@
 									selectedTab === 'general'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -677,9 +677,9 @@
 									selectedTab === 'interface'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -702,9 +702,9 @@
 									selectedTab === 'connections'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -728,9 +728,9 @@
 									selectedTab === 'tools'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -753,9 +753,9 @@
 									selectedTab === 'personalization'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -768,7 +768,7 @@
 								<div class=" self-center">{$i18n.t('Personalization')}</div>
 							</button>
 						{:else if tabId === 'audio'}
-							{#if $config?.enable_voice ?? true}
+							{#if $config?.enable_voice ?? false}
 								<button
 									role="tab"
 									aria-controls="tab-audio"
@@ -778,9 +778,9 @@
 									selectedTab === 'audio'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
@@ -803,9 +803,9 @@
 									selectedTab === 'data_controls'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -827,9 +827,9 @@
 									selectedTab === 'account'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -851,9 +851,9 @@
 									selectedTab === 'about'
 										? ($settings?.highContrastMode ?? false)
 											? 'dark:bg-gray-800 bg-gray-200'
-											: ''
+											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											? 'brand-nav-item'
 											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
@@ -872,25 +872,9 @@
 						{$i18n.t('No results found')}
 					</div>
 				{/if}
-				{#if $user?.role === 'admin'}
-					<a
-						href="/admin/settings"
-						draggable="false"
-						class="px-0.5 md:px-2.5 py-1 min-w-fit rounded-xl flex-1 md:flex-none md:mt-auto flex select-none text-left transition {$settings?.highContrastMode
-							? 'hover:bg-gray-200 dark:hover:bg-gray-800'
-							: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-						on:click={async (e) => {
-							e.preventDefault();
-							await goto('/admin/settings');
-							show = false;
-						}}
-					>
-						<div class=" self-center mr-2">
-							<UserBadgeCheck strokeWidth="2" />
-						</div>
-						<div class=" self-center">{$i18n.t('Admin Settings')}</div>
-					</a>
-				{/if}
+				<!-- Sunway: the "Admin Settings" shortcut was deleted here (hardening plan Items 7
+				     and 9). There is no Admin Settings page left to link to -- configuration comes
+				     from the chart and models from the code catalogue. -->
 			</div>
 			<div
 				class="flex-1 px-3.5 md:pl-0 md:pr-4.5 md:min-h-[min(42rem,calc(100dvh-10rem))] max-h-[min(42rem,calc(100dvh-10rem))] overflow-y-auto"
@@ -931,7 +915,7 @@
 							toast.success($i18n.t('Settings saved successfully!'));
 						}}
 					/>
-				{:else if selectedTab === 'audio' && ($config?.enable_voice ?? true)}
+				{:else if selectedTab === 'audio' && ($config?.enable_voice ?? false)}
 					<Audio
 						{saveSettings}
 						on:save={() => {

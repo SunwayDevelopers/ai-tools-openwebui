@@ -320,7 +320,7 @@
 							class="shrink-0 px-3 py-1 text-xs rounded-md transition-colors
 								{selectedExcelSheet === sheet
 								? 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium'
-								: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+								: 'text-gray-500 dark:text-gray-400 brand-nav-item'}"
 							on:click={() => onSheetChange?.(sheet)}
 						>
 							{sheet}
@@ -348,7 +348,7 @@
 					class="flex items-center justify-center gap-3 py-2 px-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500"
 				>
 					<button
-						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+						class="p-1 rounded brand-nav-item disabled:opacity-30"
 						disabled={currentSlide === 0}
 						on:click={() => {
 							resetImageView();
@@ -370,7 +370,7 @@
 					</button>
 					<span>{currentSlide + 1} / {fileOfficeSlides.length}</span>
 					<button
-						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+						class="p-1 rounded brand-nav-item disabled:opacity-30"
 						disabled={currentSlide === fileOfficeSlides.length - 1}
 						on:click={() => {
 							resetImageView();
@@ -398,10 +398,20 @@
 			{#if overlay}
 				<div class="absolute top-0 left-0 right-0 bottom-0 z-10"></div>
 			{/if}
+			<!-- Sunway: `allow-same-origin` REMOVED from the sandbox below (security review C2).
+			     Together with allow-scripts it cancels the sandbox entirely: this iframe's src is
+			     ${baseUrl}/files/serve/... proxied through routers/terminals.py, i.e. SChat's OWN
+			     origin, and the proxy forwards the upstream Content-Type verbatim — so any HTML on
+			     a terminal server could reach `parent`, read the session token from localStorage
+			     and call every API as the victim. CSP is report-only, so nothing else stops it.
+			     Latent rather than live today (terminals is unused and TERMINAL_SERVER_CONNECTIONS
+			     is empty, so serveUrl is null and this branch never renders) — which is exactly why
+			     it must be fixed BEFORE terminals is ever configured. If relative asset loading
+			     breaks as a result, serve previews from a separate hostname; do not restore this
+			     flag. -->
 			<iframe
 				src={serveUrl}
-				sandbox="allow-scripts allow-same-origin allow-downloads{($settings?.iframeSandboxAllowForms ??
-				false)
+				sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
 					? ' allow-forms'
 					: ''}"
 				class="w-full h-full border-none bg-white"

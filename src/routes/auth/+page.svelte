@@ -92,7 +92,22 @@
 				localStorage.token = sessionUser.token;
 			}
 			await user.set(sessionUser);
-			await config.set(await getBackendConfig());
+
+			// Sunway: merge, do not replace (security review #18b, Option 2). /api/config now
+			// returns ONLY the public half — the authenticated flags ride with the session from
+			// GET /api/v1/auths/, which is tenant-enforced and so reads the correct database.
+			// A bare `config.set(await getBackendConfig())` here would overwrite the store with
+			// the public payload and leave every feature flag undefined until the next full
+			// page load, which is exactly the fail-open this change exists to remove.
+			const backendConfig = await getBackendConfig();
+			await config.set({
+				...(backendConfig ?? {}),
+				...(sessionUser.config ?? {}),
+				features: {
+					...((backendConfig ?? {}).features ?? {}),
+					...((sessionUser.config ?? {}).features ?? {})
+				}
+			});
 
 			// Update user timezone
 			const timezone = getUserTimezone();
@@ -543,14 +558,14 @@
 									{#if $config?.features.enable_login_form || $config?.features.enable_ldap}
 										{#if mode === 'ldap'}
 											<button
-												class="bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+												class="bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 												type="submit"
 											>
 												{$i18n.t('Authenticate')}
 											</button>
 										{:else}
 											<button
-												class="bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+												class="bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 												type="submit"
 											>
 												{mode === 'signin'
@@ -601,7 +616,7 @@
 								<div class="flex flex-col space-y-2">
 									{#if $config?.oauth?.providers?.google}
 										<button
-											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+											class="flex justify-center items-center bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
 												window.location.href = signInHref('google');
 											}}
@@ -631,7 +646,7 @@
 									{/if}
 									{#if $config?.oauth?.providers?.microsoft}
 										<button
-											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+											class="flex justify-center items-center bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
 												window.location.href = signInHref('microsoft');
 											}}
@@ -662,7 +677,7 @@
 									{/if}
 									{#if $config?.oauth?.providers?.github}
 										<button
-											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+											class="flex justify-center items-center bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
 												window.location.href = signInHref('github');
 											}}
@@ -683,7 +698,7 @@
 									{/if}
 									{#if $config?.oauth?.providers?.oidc}
 										<button
-											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+											class="flex justify-center items-center bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
 												window.location.href = signInHref('oidc');
 											}}
@@ -713,7 +728,7 @@
 									{/if}
 									{#if $config?.oauth?.providers?.feishu}
 										<button
-											class="flex justify-center items-center bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
+											class="flex justify-center items-center bg-gray-700/5 brand-nav-item dark:bg-gray-100/5 brand-nav-item dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											on:click={() => {
 												window.location.href = signInHref('feishu');
 											}}

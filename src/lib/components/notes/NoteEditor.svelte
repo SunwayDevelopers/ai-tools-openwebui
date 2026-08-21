@@ -930,7 +930,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 									>
 										<button
 											id="sidebar-toggle-button"
-											class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition cursor-"
+											class=" cursor-pointer flex rounded-lg brand-nav-item transition cursor-"
 											on:click={() => {
 												showSidebar.set(!$showSidebar);
 											}}
@@ -1026,7 +1026,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 
 									<Tooltip placement="top" content={$i18n.t('Chat')} className="cursor-pointer">
 										<button
-											class="p-1.5 bg-transparent hover:bg-white/5 transition rounded-lg"
+											class="p-1.5 bg-transparent brand-nav-item transition rounded-lg"
 											on:click={() => {
 												if (showPanel && selectedPanel === 'chat') {
 													showPanel = false;
@@ -1044,7 +1044,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 
 									<Tooltip placement="top" content={$i18n.t('Controls')} className="cursor-pointer">
 										<button
-											class="p-1.5 bg-transparent hover:bg-white/5 transition rounded-lg"
+											class="p-1.5 bg-transparent brand-nav-item transition rounded-lg"
 											on:click={() => {
 												if (showPanel && selectedPanel === 'settings') {
 													showPanel = false;
@@ -1099,14 +1099,14 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 										pinnedNotes.set(await getPinnedNoteList(localStorage.token).catch(() => []));
 									}}
 								>
-									<div class="p-1 bg-transparent hover:bg-white/5 transition rounded-lg">
+									<div class="p-1 bg-transparent brand-nav-item transition rounded-lg">
 										<EllipsisHorizontal className="size-5" />
 									</div>
 								</NoteMenu>
 
 								{#if note?.write_access}
 									<button
-										class="shrink-0 bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2.5 py-1 rounded-full flex gap-1.5 items-center text-sm"
+										class="shrink-0 bg-gray-50 brand-nav-item text-black dark:bg-gray-850 brand-nav-item dark:text-white transition px-2.5 py-1 rounded-full flex gap-1.5 items-center text-sm"
 										on:click={() => {
 											showAccessControlModal = true;
 										}}
@@ -1325,7 +1325,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 						<Tooltip content={$i18n.t('AI')} placement="top">
 							{#if editing}
 								<button
-									class="p-2 flex justify-center items-center hover:bg-gray-50 dark:hover:bg-gray-800 rounded-full transition shrink-0"
+									class="p-2 flex justify-center items-center brand-nav-item rounded-full transition shrink-0"
 									on:click={() => {
 										stopResponseHandler();
 									}}
@@ -1344,7 +1344,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 									}}
 								>
 									<div
-										class="cursor-pointer p-2.5 flex rounded-full border border-gray-50 bg-white dark:border-none dark:bg-gray-850 hover:bg-gray-50 dark:hover:bg-gray-800 transition shadow-xl"
+										class="cursor-pointer p-2.5 flex rounded-full border border-gray-50 bg-white dark:border-none dark:bg-gray-850 brand-nav-item transition shadow-xl"
 									>
 										<SparklesSolid />
 									</div>
@@ -1401,7 +1401,7 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 					>
 						<Tooltip content={$i18n.t('Record')} placement="top">
 							<div
-								class="cursor-pointer p-2.5 flex rounded-full border border-gray-50 bg-white dark:border-none dark:bg-gray-850 hover:bg-gray-50 dark:hover:bg-gray-800 transition shadow-xl"
+								class="cursor-pointer p-2.5 flex rounded-full border border-gray-50 bg-white dark:border-none dark:bg-gray-850 brand-nav-item transition shadow-xl"
 							>
 								<MicSolid className="size-4.5" />
 							</div>

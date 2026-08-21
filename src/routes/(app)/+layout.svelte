@@ -291,7 +291,7 @@
 				} else if (
 					// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
 					// disable its shortcut too so there is no keyboard back-door. See CLAUDE.md.
-					($config?.enable_temporary_chat ?? true) &&
+					($config?.enable_temporary_chat ?? false) &&
 					isShortcutMatch(event, shortcuts[Shortcut.NEW_TEMPORARY_CHAT])
 				) {
 					console.log('Shortcut triggered: NEW_TEMPORARY_CHAT');
@@ -337,7 +337,7 @@
 		// Sunway: Temporary Chat hidden for the rollout (ENABLE_TEMPORARY_CHAT=false) —
 		// also closes the ?temporary-chat=true direct-URL back-door. See CLAUDE.md.
 		if (
-			($config?.enable_temporary_chat ?? true) &&
+			($config?.enable_temporary_chat ?? false) &&
 			($user?.role === 'admin' || ($user?.permissions?.chat?.temporary ?? true))
 		) {
 			if ($page.url.searchParams.get('temporary-chat') === 'true') {
@@ -449,7 +449,7 @@
 
 									<div class=" mt-6 mx-auto relative group w-fit">
 										<button
-											class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
+											class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none brand-nav-item transition font-medium text-sm"
 											on:click={async () => {
 												let blob = new Blob([JSON.stringify(localDBChats)], {
 													type: 'application/json'

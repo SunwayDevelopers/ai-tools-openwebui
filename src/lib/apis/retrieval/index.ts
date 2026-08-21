@@ -360,80 +360,6 @@ export interface SearchDocument {
 	filenames: string[];
 }
 
-export const processYoutubeVideo = async (token: string, url: string) => {
-	let error = null;
-
-	const res = await fetch(`${RETRIEVAL_API_BASE_URL}/process/youtube`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			url: url
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const processWeb = async (
-	token: string,
-	collection_name: string,
-	url: string,
-	process: boolean = true
-) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-
-	if (!process) {
-		searchParams.append('process', 'false');
-	}
-
-	const res = await fetch(`${RETRIEVAL_API_BASE_URL}/process/web?${searchParams.toString()}`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			url: url,
-			collection_name: collection_name
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
 export const processWebSearch = async (
 	token: string,
 	query: string,
@@ -594,3 +520,8 @@ export const resetVectorDB = async (token: string) => {
 
 	return res;
 };
+
+// Sunway: processWeb and processYoutubeVideo were deleted here (hardening plan). Their shared
+// endpoint fetched a user-supplied URL server-side; both entry points were already hidden.
+// URL reading in chat continues via the model's built-in fetch_url tool. processWebSearch is a
+// different thing and remains.

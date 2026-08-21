@@ -16,6 +16,7 @@ from open_webui.env import (
     ENABLE_OTEL,
     ENABLE_OTEL_LOGS,
     GLOBAL_LOG_LEVEL,
+    LOG_DIAGNOSE,
     LOG_FORMAT,
 )
 
@@ -173,11 +174,14 @@ def start_logger():
     logger.remove()
 
     audit_filter = lambda record: True if ENABLE_AUDIT_STDOUT else 'auditable' not in record['extra']
+    # Sunway: diagnose=LOG_DIAGNOSE (off in prod) so tracebacks stop printing local
+    # variable values -- that is what leaked session JWTs to stdout. See env.py.
     if LOG_FORMAT == 'json':
         logger.add(
             _json_sink,
             level=GLOBAL_LOG_LEVEL,
             filter=audit_filter,
+            diagnose=LOG_DIAGNOSE,
         )
     else:
         logger.add(
@@ -185,6 +189,7 @@ def start_logger():
             level=GLOBAL_LOG_LEVEL,
             format=stdout_format,
             filter=audit_filter,
+            diagnose=LOG_DIAGNOSE,
         )
     if AUDIT_LOG_LEVEL != 'NONE' and ENABLE_AUDIT_LOGS_FILE:
         try:

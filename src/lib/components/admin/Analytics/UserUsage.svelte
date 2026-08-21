@@ -47,7 +47,7 @@
 </script>
 
 <div
-	class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 bg-white dark:bg-gray-900"
+	class="pt-0.5 pb-1 gap-1 flex flex-col md:flex-row justify-between sticky top-0 z-10 brand-sticky-head"
 >
 	<div class="flex items-center text-xl font-medium px-0.5 gap-2 shrink-0">
 		{$i18n.t('User Activity')}
@@ -129,9 +129,7 @@
 			</thead>
 			<tbody>
 				{#each sortedUsers as user, idx (user.user_id)}
-					<tr
-						class="bg-white dark:bg-gray-900 text-xs hover:bg-gray-50 dark:hover:bg-gray-850/50 transition"
-					>
+					<tr class="text-xs brand-nav-item transition">
 						<td class="px-3 py-1.5 font-medium text-gray-900 dark:text-white">
 							{idx + 1}
 						</td>

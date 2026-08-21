@@ -128,7 +128,7 @@
 		<Tooltip content={$i18n.t('Back')}>
 			<button
 				class="p-1 rounded transition {canGoBack
-					? 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300'
+					? 'text-gray-500 dark:text-gray-400 brand-nav-item hover:text-gray-700 dark:hover:text-gray-300'
 					: 'text-gray-300 dark:text-gray-700 cursor-default'}"
 				on:click={goBack}
 				disabled={!canGoBack}
@@ -153,7 +153,7 @@
 		<Tooltip content={$i18n.t('Forward')}>
 			<button
 				class="p-1 rounded transition {canGoForward
-					? 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300'
+					? 'text-gray-500 dark:text-gray-400 brand-nav-item hover:text-gray-700 dark:hover:text-gray-300'
 					: 'text-gray-300 dark:text-gray-700 cursor-default'}"
 				on:click={goForward}
 				disabled={!canGoForward}
@@ -177,7 +177,7 @@
 		<!-- Refresh -->
 		<Tooltip content={$i18n.t('Refresh')}>
 			<button
-				class="p-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition"
+				class="p-1 rounded text-gray-500 dark:text-gray-400 brand-nav-item hover:text-gray-700 dark:hover:text-gray-300 transition"
 				on:click={refresh}
 				aria-label={$i18n.t('Refresh')}
 			>
@@ -210,7 +210,7 @@
 		<!-- Open in new tab -->
 		<Tooltip content={$i18n.t('Open in new tab')}>
 			<button
-				class="p-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition"
+				class="p-1 rounded text-gray-500 dark:text-gray-400 brand-nav-item hover:text-gray-700 dark:hover:text-gray-300 transition"
 				on:click={openExternal}
 				aria-label={$i18n.t('Open in new tab')}
 			>
@@ -232,7 +232,7 @@
 		<!-- Close -->
 		<Tooltip content={$i18n.t('Close')}>
 			<button
-				class="p-1 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition"
+				class="p-1 rounded text-gray-500 dark:text-gray-400 brand-nav-item hover:text-gray-700 dark:hover:text-gray-300 transition"
 				on:click={onClose}
 				aria-label={$i18n.t('Close')}
 			>
@@ -263,12 +263,17 @@
 			<div class="absolute inset-0 z-10"></div>
 		{/if}
 		{#key iframeKey}
+			<!-- Sunway: `allow-same-origin` REMOVED from the sandbox below (security review C2) —
+			     same reasoning as FileNav/FilePreview.svelte. This frame renders a web app running
+			     on a port in the sandbox, proxied through SChat's own origin, so allow-scripts +
+			     allow-same-origin would give that app full same-origin control of the user's SChat
+			     session. Latent only because terminals is unconfigured. -->
 			<iframe
 				bind:this={iframeEl}
 				src={proxyUrl}
 				title="Port {port} preview"
 				class="w-full h-full border-0 bg-white"
-				sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+				sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
 				on:load={onIframeLoad}
 			/>
 		{/key}

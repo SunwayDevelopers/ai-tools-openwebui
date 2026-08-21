@@ -93,37 +93,6 @@ export const getChatCount = async (token: string): Promise<number> => {
 	return res;
 };
 
-export const importChats = async (token: string, chats: object[]) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/import`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			chats
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
 export const getChatList = async (
 	token: string = '',
 	page: number | null = null,
@@ -172,60 +141,6 @@ export const getChatList = async (
 
 	if (!res) {
 		return [];
-	}
-
-	return res.map((chat) => ({
-		...chat,
-		time_range: getTimeRange(chat.updated_at)
-	}));
-};
-
-export const getChatListByUserId = async (
-	token: string = '',
-	userId: string,
-	page: number = 1,
-	filter?: object
-) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-
-	searchParams.append('page', `${page}`);
-
-	if (filter) {
-		Object.entries(filter).forEach(([key, value]) => {
-			if (value !== undefined && value !== null) {
-				searchParams.append(key, value.toString());
-			}
-		});
-	}
-
-	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/chats/list/user/${userId}?${searchParams.toString()}`,
-		{
-			method: 'GET',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-				...(token && { authorization: `Bearer ${token}` })
-			}
-		}
-	)
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
 	}
 
 	return res.map((chat) => ({
@@ -490,37 +405,6 @@ export const getAllArchivedChats = async (token: string) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/all/archived`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const getAllUserChats = async (token: string) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/all/db`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -1398,3 +1282,11 @@ export const downloadChatStats = async (
 
 	return [res, controller];
 };
+
+// Sunway: getChatListByUserId and getAllUserChats were deleted here (hardening plan Item 3).
+// The first returned another user's chat list to an admin; the second returned every chat
+// message belonging to every user in one response. Both endpoints are deleted, as is the
+// UserChatsModal that called the first.
+
+// Sunway: importChats was deleted here (hardening plan). POST /api/v1/chats/import bypassed
+// MAX_CHATS_PER_USER -- the cap is enforced only at /chats/new and on the completion path.

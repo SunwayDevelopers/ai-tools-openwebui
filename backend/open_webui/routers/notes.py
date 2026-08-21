@@ -33,7 +33,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+
+async def require_notes_enabled(request: Request) -> None:
+    """Sunway: refuse every Notes route while the feature is off.
+
+    ENABLE_NOTES was a frontend-only flag: it reached the browser through /api/config and hid the
+    UI, but no route in this file consulted it, so all nine endpoints answered normally to anyone
+    with a session. docs/rollout-scope.md classed Notes as "deferred, server-enforced" on the
+    assumption that a PersistentConfig flag disables the backend. For Notes that was not true.
+
+    Applied as a ROUTER-level dependency rather than a check per handler, so a route added later
+    inherits it instead of being forgotten. 404 rather than 403 matches memories.py and does not
+    confirm the feature exists.
+    """
+    if not request.app.state.config.ENABLE_NOTES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+
+router = APIRouter(dependencies=[Depends(require_notes_enabled)])
 
 
 def _truncate_note_data(data: Optional[dict], max_length: int = 1000) -> Optional[dict]:

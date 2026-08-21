@@ -144,61 +144,79 @@
 		>
 			{#if tab === ''}
 				<div in:fly={{ x: -20, duration: 150 }}>
-					{#if tools}
-						{#if Object.keys(tools).length > 0}
-							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
-								on:click={() => {
-									tab = 'tools';
-								}}
-							>
-								<Wrench />
+					<!-- Sunway: Tools + Skills entries hidden. Workspace → Tools and Workspace → Skills
+					     are both already hidden (arbitrary-code class; see CLAUDE.md), so this menu was
+					     the last user-facing surface that could still attach one to a turn — including
+					     MCP tool servers, which appear here as `direct_server:*` entries.
+					     Wrapped rather than flipping `{#if tools}` to false, because that has an
+					     {:else} Spinner branch which would then render forever. The whole upstream
+					     block is left intact inside the guard for clean upstream syncs.
+					     Web Search and Image Generation live further down this same menu and are
+					     deliberately NOT touched — both are in-scope/V1-delivered. -->
+					{#if false}
+						{#if tools}
+							{#if Object.keys(tools).length > 0}
+								<button
+									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
+									on:click={() => {
+										tab = 'tools';
+									}}
+								>
+									<Wrench />
 
-								<div class="flex items-center w-full justify-between">
-									<div class=" line-clamp-1">
-										{$i18n.t('Tools')}
-										<span class="ml-0.5 text-gray-500">{Object.keys(tools).length}</span>
-									</div>
+									<div class="flex items-center w-full justify-between">
+										<div class=" line-clamp-1">
+											{$i18n.t('Tools')}
+											<span class="ml-0.5 text-gray-500">{Object.keys(tools).length}</span>
+										</div>
 
-									<div class="text-gray-500">
-										<ChevronRight />
+										<div class="text-gray-500">
+											<ChevronRight />
+										</div>
 									</div>
-								</div>
-							</button>
+								</button>
+							{/if}
+
+							{#if skills && Object.keys(skills).length > 0}
+								<button
+									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
+									on:click={() => {
+										tab = 'skills';
+									}}
+								>
+									<Keyframes className="size-4" strokeWidth="1.75" />
+
+									<div class="flex items-center w-full justify-between">
+										<div class=" line-clamp-1">
+											{$i18n.t('Skills')}
+											<span class="ml-0.5 text-gray-500">{Object.keys(skills).length}</span>
+										</div>
+
+										<div class="text-gray-500">
+											<ChevronRight />
+										</div>
+									</div>
+								</button>
+							{/if}
+						{:else}
+							<div class="py-4">
+								<Spinner />
+							</div>
 						{/if}
-
-						{#if skills && Object.keys(skills).length > 0}
-							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
-								on:click={() => {
-									tab = 'skills';
-								}}
-							>
-								<Keyframes className="size-4" strokeWidth="1.75" />
-
-								<div class="flex items-center w-full justify-between">
-									<div class=" line-clamp-1">
-										{$i18n.t('Skills')}
-										<span class="ml-0.5 text-gray-500">{Object.keys(skills).length}</span>
-									</div>
-
-									<div class="text-gray-500">
-										<ChevronRight />
-									</div>
-								</div>
-							</button>
-						{/if}
-					{:else}
-						<div class="py-4">
-							<Spinner />
-						</div>
 					{/if}
 
-					{#if toggleFilters && toggleFilters.length > 0}
+					<!-- Sunway: toggle Filters hidden. These are Filter FUNCTIONS surfaced to the user
+					     as per-turn toggles; Admin → Functions is itself flag-hidden per deployment
+					     (ENABLE_ADMIN_FUNCTIONS_UI), so exposing user-facing toggles for them here is
+					     inconsistent. Hiding the toggle does NOT disable any filter — global and
+					     model-pinned filters keep running inlet/outlet in utils/middleware.py, which
+					     is exactly what the guardrail work depends on.
+					     Original guard: {#if toggleFilters && toggleFilters.length > 0} -->
+					{#if false}
 						{#each toggleFilters.sort( (a, b) => a.name.localeCompare( b.name, undefined, { sensitivity: 'base' } ) ) as filter, filterIdx (filter.id)}
 							<Tooltip content={filter?.description} placement="top-start">
 								<button
-									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 									on:click={() => {
 										if (selectedFilterIds.includes(filter.id)) {
 											selectedFilterIds = selectedFilterIds.filter((id) => id !== filter.id);
@@ -268,7 +286,7 @@
 					{#if showWebSearchButton}
 						<Tooltip content={$i18n.t('Search the internet')} placement="top-start">
 							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 								on:click={() => {
 									webSearchEnabled = !webSearchEnabled;
 								}}
@@ -299,7 +317,7 @@
 					{#if showImageGenerationButton}
 						<Tooltip content={$i18n.t('Generate an image')} placement="top-start">
 							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 								on:click={() => {
 									imageGenerationEnabled = !imageGenerationEnabled;
 								}}
@@ -330,7 +348,7 @@
 					{#if showCodeInterpreterButton}
 						<Tooltip content={$i18n.t('Execute code for analysis')} placement="top-start">
 							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 								aria-pressed={codeInterpreterEnabled}
 								aria-label={codeInterpreterEnabled
 									? $i18n.t('Disable Code Interpreter')
@@ -365,7 +383,7 @@
 			{:else if tab === 'tools' && tools}
 				<div in:fly={{ x: 20, duration: 150 }}>
 					<button
-						class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+						class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 						on:click={() => {
 							tab = '';
 						}}
@@ -382,7 +400,7 @@
 
 					{#each Object.keys(tools) as toolId}
 						<button
-							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 							on:click={async (e) => {
 								if (!(tools[toolId]?.authenticated ?? true)) {
 									e.preventDefault();
@@ -489,7 +507,7 @@
 			{:else if tab === 'skills' && skills}
 				<div in:fly={{ x: 20, duration: 150 }}>
 					<button
-						class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+						class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 						on:click={() => {
 							tab = '';
 						}}
@@ -506,7 +524,7 @@
 
 					{#each Object.keys(skills) as skillId}
 						<button
-							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl brand-nav-item/50"
 							on:click={async () => {
 								skills[skillId].enabled = !skills[skillId].enabled;
 

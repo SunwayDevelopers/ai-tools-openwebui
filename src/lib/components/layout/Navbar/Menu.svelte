@@ -291,7 +291,7 @@
 			class="select-none min-w-[200px] max-w-[200px] rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg transition"
 		>
 			<!-- <DropdownMenu.Item draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer dark:hover:bg-gray-800 rounded-xl"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer brand-nav-item rounded-xl"
 				on:click={async () => {
 					await showSettings.set(!$showSettings);
 				}}
@@ -322,7 +322,7 @@
 			{#if scrollToTop}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					on:click={() => {
 						scrollToTop();
 					}}
@@ -350,7 +350,7 @@
 			{#if ($artifactContents ?? []).length > 0}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					id="chat-artifacts-button"
 					on:click={async () => {
 						await showControls.set(true);
@@ -368,7 +368,7 @@
 			{#if !$temporaryChatEnabled && ($user?.role === 'admin' || ($user.permissions?.chat?.share ?? true))}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					id="chat-share-button"
 					on:click={() => {
 						shareHandler();
@@ -383,7 +383,7 @@
 				<button
 					slot="trigger"
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 				>
 					<Download strokeWidth="1.5" />
 
@@ -392,7 +392,7 @@
 				{#if $user?.role === 'admin' || ($user.permissions?.chat?.export ?? true)}
 					<button
 						draggable="false"
-						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 						on:click={() => {
 							downloadJSONExport();
 						}}
@@ -402,7 +402,7 @@
 				{/if}
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					on:click={() => {
 						downloadTxt();
 					}}
@@ -412,7 +412,7 @@
 
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					on:click={() => {
 						downloadPdf();
 					}}
@@ -423,7 +423,7 @@
 
 			<button
 				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 				id="chat-copy-button"
 				on:click={async () => {
 					const res = await copyToClipboard(await getChatAsText()).catch((e) => {
@@ -447,7 +447,7 @@
 						<button
 							slot="trigger"
 							draggable="false"
-							class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+							class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 						>
 							<Folder strokeWidth="1.5" />
 
@@ -457,7 +457,7 @@
 							{#if folder?.id}
 								<button
 									draggable="false"
-									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl overflow-hidden w-full"
+									class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl overflow-hidden w-full"
 									on:click={() => {
 										moveChatHandler(chat.id, folder.id);
 									}}
@@ -474,10 +474,10 @@
 				{/if}
 
 				<!-- Sunway: archive deferred (redundant w/ retention); honor enable_chat_archive like the rest of the archive UI -->
-				{#if $config?.enable_chat_archive ?? true}
+				{#if $config?.enable_chat_archive ?? false}
 					<button
 						draggable="false"
-						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+						class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 						on:click={() => {
 							archiveChatHandler();
 						}}
@@ -489,7 +489,7 @@
 
 				<button
 					draggable="false"
-					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl select-none w-full"
+					class="flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item rounded-xl select-none w-full"
 					on:click={() => {
 						deleteChatHandler();
 					}}

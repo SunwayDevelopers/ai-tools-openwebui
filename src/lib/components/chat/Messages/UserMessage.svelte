@@ -215,6 +215,13 @@
 								{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 									<Image src={fileUrl} imageClassName=" max-h-96 rounded-lg" />
 								{:else}
+									<!-- Sunway: `modal` is forced on for collections so a knowledge base attached to a
+									     SENT message opens its document list. Without it the click fell through to the
+									     url branch, and a collection has no url -- so clicking a KB under a sent message
+									     did nothing at all, while the same chip in the composer opened fine.
+
+									     Scoped to collections deliberately: a regular file with a url still opens its
+									     content in a new tab, which is the existing behaviour here. -->
 									<FileItem
 										item={file}
 										url={file.url}
@@ -222,6 +229,7 @@
 										type={file.type}
 										size={file?.size}
 										small={true}
+										modal={file?.type === 'collection'}
 									/>
 								{/if}
 							</div>
@@ -333,7 +341,7 @@
 						<div>
 							<button
 								id="save-edit-message-button"
-								class="px-3.5 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 text-gray-700 dark:text-gray-200 transition rounded-3xl"
+								class="px-3.5 py-1.5 bg-gray-50 brand-nav-item dark:bg-gray-800 brand-nav-item border border-gray-100 dark:border-gray-700 text-gray-700 dark:text-gray-200 transition rounded-3xl"
 								on:click={() => {
 									editMessageConfirmHandler(false);
 								}}
@@ -345,7 +353,7 @@
 						<div class="flex space-x-1.5">
 							<button
 								id="close-edit-message-button"
-								class="px-3.5 py-1.5 bg-white dark:bg-gray-900 hover:bg-gray-100 text-gray-800 dark:text-gray-100 transition rounded-3xl"
+								class="px-3.5 py-1.5 bg-white dark:bg-gray-900 brand-nav-item text-gray-800 dark:text-gray-100 transition rounded-3xl"
 								on:click={() => {
 									cancelEditMessage();
 								}}
@@ -355,7 +363,7 @@
 
 							<button
 								id="confirm-edit-message-button"
-								class="px-3.5 py-1.5 bg-gray-900 dark:bg-white hover:bg-gray-850 text-gray-100 dark:text-gray-800 transition rounded-3xl"
+								class="px-3.5 py-1.5 bg-gray-900 dark:bg-white brand-nav-item text-gray-100 dark:text-gray-800 transition rounded-3xl"
 								on:click={() => {
 									editMessageConfirmHandler();
 								}}
@@ -404,7 +412,7 @@
 						{#if siblings.length > 1}
 							<div class="flex self-center" dir="ltr">
 								<button
-									class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
+									class="self-center p-1 brand-nav-item dark:hover:text-white hover:text-black rounded-md transition"
 									on:click={() => {
 										showPreviousMessage(message);
 									}}
@@ -471,7 +479,7 @@
 								{/if}
 
 								<button
-									class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
+									class="self-center p-1 brand-nav-item dark:hover:text-white hover:text-black rounded-md transition"
 									on:click={() => {
 										showNextMessage(message);
 									}}
@@ -499,7 +507,7 @@
 							<button
 								class="{($settings?.highContrastMode ?? false)
 									? ''
-									: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition edit-user-message-button"
+									: 'invisible group-hover:visible'} p-1.5 brand-nav-item rounded-lg dark:hover:text-white hover:text-black transition edit-user-message-button"
 								on:click={() => {
 									editMessageHandler();
 								}}
@@ -527,7 +535,7 @@
 							<button
 								class="{($settings?.highContrastMode ?? false)
 									? ''
-									: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
+									: 'invisible group-hover:visible'} p-1.5 brand-nav-item rounded-lg dark:hover:text-white hover:text-black transition"
 								on:click={() => {
 									copyToClipboard(message.content);
 								}}
@@ -588,7 +596,7 @@
 						{#if siblings.length > 1}
 							<div class="flex self-center" dir="ltr">
 								<button
-									class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
+									class="self-center p-1 brand-nav-item dark:hover:text-white hover:text-black rounded-md transition"
 									on:click={() => {
 										showPreviousMessage(message);
 									}}
@@ -655,7 +663,7 @@
 								{/if}
 
 								<button
-									class="self-center p-1 hover:bg-black/5 dark:hover:bg-white/5 dark:hover:text-white hover:text-black rounded-md transition"
+									class="self-center p-1 brand-nav-item dark:hover:text-white hover:text-black rounded-md transition"
 									on:click={() => {
 										showNextMessage(message);
 									}}

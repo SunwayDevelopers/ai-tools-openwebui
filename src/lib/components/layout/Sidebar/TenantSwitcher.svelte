@@ -34,7 +34,7 @@
 		>
 			<button
 				type="button"
-				class="group grow flex items-center w-full space-x-2 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+				class="group grow flex items-center w-full space-x-2 rounded-2xl px-2.5 py-2 brand-nav-item transition outline-none"
 				aria-label={$i18n.t('Switch workspace')}
 				disabled={$tenants.length < 2}
 			>
@@ -84,7 +84,7 @@
 				{#each $tenants as t (t.slug)}
 					<button
 						type="button"
-						class="flex items-center w-full gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+						class="flex items-center w-full gap-2 rounded-lg px-2 py-1.5 text-left brand-nav-item transition"
 						on:click={() => switchTo(t.slug)}
 					>
 						<div class="flex-1 min-w-0">

@@ -27,7 +27,6 @@
 	import UserMenu from '$lib/components/layout/Sidebar/UserMenu.svelte';
 	import AdjustmentsHorizontal from '../icons/AdjustmentsHorizontal.svelte';
 
-	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Banner from '../common/Banner.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
 
@@ -37,7 +36,13 @@
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
 	import ChatPlus from '../icons/ChatPlus.svelte';
 	import ChatCheck from '../icons/ChatCheck.svelte';
-	import Knobs from '../icons/Knobs.svelte';
+	// Sunway: ListBullet, not Knobs, for the Chat Instructions button. Knobs (sliders) reads as
+	// "settings/equaliser" — correct for upstream's "Controls", wrong for "write instructions" —
+	// and it is also the Valves icon (MessageInput.svelte, IntegrationsMenu.svelte), so one glyph
+	// meant two things. ListBullet reads as "a list of instructions", is stroke-based like the rest
+	// of this navbar, and collides with nothing here: PencilSquare is New Chat (layout/Sidebar),
+	// PageEdit/Note are Notes, Document* would read as a file attachment.
+	import ListBullet from '../icons/ListBullet.svelte';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 	const i18n = getContext('i18n');
@@ -103,7 +108,7 @@
 					>
 						<Tooltip content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}>
 							<button
-								class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+								class=" cursor-pointer flex rounded-lg brand-nav-item transition"
 								on:click={() => {
 									showSidebar.set(!$showSidebar);
 								}}
@@ -130,11 +135,11 @@
 					<!-- <div class="md:hidden flex self-center w-[1px] h-5 mx-2 bg-gray-300 dark:bg-stone-700" /> -->
 
 					<!-- Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md) -->
-					{#if ($config?.enable_temporary_chat ?? true) && ($user?.role === 'user' ? ($user?.permissions?.chat?.temporary ?? true) && !($user?.permissions?.chat?.temporary_enforced ?? false) : true)}
+					{#if ($config?.enable_temporary_chat ?? false) && ($user?.role === 'user' ? ($user?.permissions?.chat?.temporary ?? true) && !($user?.permissions?.chat?.temporary_enforced ?? false) : true)}
 						{#if !chat?.id}
 							<Tooltip content={$i18n.t(`Temporary Chat`)}>
 								<button
-									class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 									id="temporary-chat-button"
 									on:click={async () => {
 										if (($settings?.temporaryChatByDefault ?? false) && $temporaryChatEnabled) {
@@ -168,7 +173,7 @@
 						{:else if $temporaryChatEnabled}
 							<Tooltip content={$i18n.t(`Save Chat`)}>
 								<button
-									class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 									id="save-temporary-chat-button"
 									on:click={async () => {
 										onSaveTempChat();
@@ -187,7 +192,7 @@
 							<button
 								class=" flex {$showSidebar
 									? 'md:hidden'
-									: ''} cursor-pointer px-2 py-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+									: ''} cursor-pointer px-2 py-2 rounded-xl text-gray-600 dark:text-gray-400 brand-nav-item transition"
 								on:click={() => {
 									initNewChat();
 								}}
@@ -217,7 +222,7 @@
 							{moveChatHandler}
 						>
 							<button
-								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class="flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 								id="chat-context-menu-button"
 							>
 								<div class=" m-auto self-center">
@@ -233,16 +238,19 @@
 					     the admin/model system prompt — it never overrides Admin Settings → Models config
 					     or the served MLIS model. -->
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true)}
-						<Tooltip content={$i18n.t('Controls')}>
+						<!-- Sunway: labelled "Chat Instructions", not upstream's "Controls" — the panel now
+						     holds only the per-chat system prompt, and "Controls" told a general user
+						     nothing about what the button does. aria-label kept in step with the tooltip. -->
+						<Tooltip content={$i18n.t('Chat Instructions')}>
 							<button
-								class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class=" flex cursor-pointer px-2 py-2 rounded-xl brand-nav-item transition"
 								on:click={async () => {
 									await showControls.set(!$showControls);
 								}}
-								aria-label="Controls"
+								aria-label={$i18n.t('Chat Instructions')}
 							>
 								<div class=" m-auto self-center">
-									<Knobs className=" size-5" strokeWidth="1" />
+									<ListBullet className=" size-5" strokeWidth="1.5" />
 								</div>
 							</button>
 						</Tooltip>
@@ -261,7 +269,7 @@
 						>
 							<button
 								type="button"
-								class="select-none flex rounded-xl p-1.5 w-full hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								class="select-none flex rounded-xl p-1.5 w-full brand-nav-item transition"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class=" self-center">

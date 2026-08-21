@@ -15,7 +15,16 @@
 
 	let name = '';
 	let description = '';
-	let accessGrants = [];
+	// Sunway: knowledge bases are no longer configured per-KB. Team decision: a collection an
+	// admin creates is simply readable by the users in their group, so the create form asks for
+	// a name and a description and nothing else. Every new KB is seeded with the public read
+	// grant that the (now hidden) Private/Public picker used to set.
+	//
+	// "Public" is tenant-scoped by construction, not global: under ENABLE_MULTI_TENANCY the
+	// knowledge queries run on the IAM-brokered per-tenant session, so `user:*` reaches the
+	// users of this tenant and nobody else. Write access is unchanged -- it still follows
+	// ownership, and the public WRITE grant stays hidden (see AccessControl.svelte).
+	const accessGrants = [{ principal_type: 'user', principal_id: '*', permission: 'read' }];
 
 	const submitHandler = async () => {
 		loading = true;
@@ -45,7 +54,7 @@
 
 <div class="w-full max-h-full">
 	<button
-		class="flex space-x-1"
+		class="brand-backlink brand-pill-outline text-gray-600 dark:text-gray-300"
 		on:click={() => {
 			goto('/workspace/knowledge');
 		}}
@@ -109,23 +118,28 @@
 			</div>
 		</div>
 
-		<div class="mt-2">
-			<AccessControl
-				bind:accessGrants
-				accessRoles={['read', 'write']}
-				share={$user?.permissions?.sharing?.knowledge || $user?.role === 'admin'}
-				sharePublic={$user?.permissions?.sharing?.public_knowledge || $user?.role === 'admin'}
-				shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
-					$user?.role === 'admin'}
-			/>
-		</div>
+		<!-- Sunway: the Private/Public picker and the Add Access list are hidden here — see the
+		     note on accessGrants above. The component and its props are left intact so the step
+		     can be restored by unwrapping this guard. -->
+		{#if false}
+			<div class="mt-2">
+				<AccessControl
+					{accessGrants}
+					accessRoles={['read', 'write']}
+					share={$user?.permissions?.sharing?.knowledge || $user?.role === 'admin'}
+					sharePublic={$user?.permissions?.sharing?.public_knowledge || $user?.role === 'admin'}
+					shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) ||
+						$user?.role === 'admin'}
+				/>
+			</div>
+		{/if}
 
 		<div class="flex justify-end mt-2">
 			<div>
 				<button
 					class=" text-sm px-4 py-2 transition rounded-lg {loading
 						? ' cursor-not-allowed bg-gray-100 dark:bg-gray-800'
-						: ' bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800'} flex"
+						: ' brand-btn-primary'} flex"
 					type="submit"
 					disabled={loading}
 				>

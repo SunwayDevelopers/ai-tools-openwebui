@@ -64,9 +64,7 @@
 					</div>
 				{/if}
 
-				<div
-					class="w-full flex items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850"
-				>
+				<div class="w-full flex items-center rounded-lg text-sm py-2 px-3 brand-nav-item">
 					{#if showUserInfo && chat.user_id}
 						<div class="w-32 shrink-0 flex items-center gap-2">
 							<img

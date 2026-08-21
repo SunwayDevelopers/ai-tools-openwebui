@@ -277,7 +277,7 @@
 				(async () => {
 					if (terminalChanged) {
 						const config = await getTerminalConfig(terminal.url, terminal.key);
-						terminalEnabled = config?.features?.terminal !== false;
+						terminalEnabled = config?.features?.terminal === true;
 					}
 
 					const rawCwd = await getCwd(terminal.url, terminal.key, chatId ?? undefined);
@@ -831,7 +831,7 @@
 
 			// Discover server features on initial mount
 			const config = await getTerminalConfig(terminal.url, terminal.key);
-			terminalEnabled = config?.features?.terminal !== false;
+			terminalEnabled = config?.features?.terminal === true;
 
 			if (chatId || savedPath === '/') {
 				// Fetch session-specific cwd from the server (or global default for new chats)
@@ -968,7 +968,7 @@
 				{#if fileImageUrl !== null || (fileOfficeSlides !== null && fileOfficeSlides.length > 0)}
 					<Tooltip content={$i18n.t('Reset view')}>
 						<button
-							class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+							class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 							on:click={() => filePreviewRef?.resetImageView()}
 							aria-label={$i18n.t('Reset view')}
 						>
@@ -979,7 +979,7 @@
 				{#if filePdfData !== null}
 					<Tooltip content={$i18n.t('Reset view')}>
 						<button
-							class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+							class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 							on:click={() => filePreviewRef?.resetPdfView()}
 							aria-label={$i18n.t('Reset view')}
 						>
@@ -990,7 +990,7 @@
 				{#if (isMarkdown || isCsv || isHtml || isJson || isSvg || isNotebook) && fileContent !== null && !editing}
 					<Tooltip content={showRaw ? $i18n.t('Preview') : $i18n.t('Source')}>
 						<button
-							class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+							class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 							on:click={() => {
 								if (editing) filePreviewRef?.cancelEdit();
 								showRaw = !showRaw;
@@ -1040,7 +1040,7 @@
 					{#if isHtml && showRaw}
 						<Tooltip content={$i18n.t('Save')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.saveCodeFile()}
 								disabled={saving}
 								aria-label={$i18n.t('Save')}
@@ -1068,7 +1068,7 @@
 					{:else if isMarkdown && showRaw}
 						<Tooltip content={$i18n.t('Save')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.saveCodeFile()}
 								disabled={saving}
 								aria-label={$i18n.t('Save')}
@@ -1096,7 +1096,7 @@
 					{:else if isCode}
 						<Tooltip content={$i18n.t('Save')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.saveCodeFile()}
 								disabled={saving}
 								aria-label={$i18n.t('Save')}
@@ -1122,7 +1122,7 @@
 					{:else if editing}
 						<Tooltip content={$i18n.t('Cancel')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.cancelEdit()}
 								aria-label={$i18n.t('Cancel')}
 							>
@@ -1140,7 +1140,7 @@
 						</Tooltip>
 						<Tooltip content={$i18n.t('Save')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.saveEdit()}
 								disabled={saving}
 								aria-label={$i18n.t('Save')}
@@ -1166,7 +1166,7 @@
 					{:else}
 						<Tooltip content={$i18n.t('Edit')}>
 							<button
-								class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+								class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 								on:click={() => filePreviewRef?.startEdit()}
 								aria-label={$i18n.t('Edit')}
 							>
@@ -1179,7 +1179,7 @@
 				{#if fileContent !== null}
 					<Tooltip content={$i18n.t('Copy')}>
 						<button
-							class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+							class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 							on:click={async () => {
 								await navigator.clipboard.writeText(fileContent ?? '');
 								toast.success($i18n.t('Copied to clipboard'));
@@ -1205,7 +1205,7 @@
 				{/if}
 				<Tooltip content={$i18n.t('Download')}>
 					<button
-						class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+						class="shrink-0 p-1 rounded brand-nav-item transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 						on:click={() => downloadFile(selectedFile)}
 						aria-label={$i18n.t('Download')}
 					>
@@ -1417,16 +1417,14 @@
 					<!-- Drag handle (at top of panel) -->
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div class="relative cursor-row-resize group" on:mousedown={onHandleMouseDown}>
-						<div
-							class="h-px bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition"
-						/>
+						<div class="h-px bg-transparent brand-nav-item-group transition" />
 						<div class="absolute inset-x-0 -top-1.5 -bottom-1.5" />
 					</div>
 				{/if}
 
 				<!-- Toggle header (full-width button) -->
 				<button
-					class="w-full flex items-center gap-2 px-3 py-1 mb-0.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition"
+					class="w-full flex items-center gap-2 px-3 py-1 mb-0.5 text-xs text-gray-500 dark:text-gray-400 brand-nav-item/50 transition"
 					on:click={toggleTerminal}
 				>
 					<svg

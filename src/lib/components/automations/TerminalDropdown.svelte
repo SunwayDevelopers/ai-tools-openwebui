@@ -31,7 +31,7 @@
 			type="button"
 			class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs transition
 				{terminalServerId ? 'text-black dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}
-				hover:bg-black/5 dark:hover:bg-white/5"
+				brand-nav-item"
 		>
 			<Cloud className="size-3.5 shrink-0" strokeWidth="2" />
 			<span class="whitespace-nowrap max-w-32 truncate">{terminalLabel}</span>
@@ -60,7 +60,7 @@
 					class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl {terminalServerId ===
 					server.id
 						? 'bg-gray-50 dark:bg-gray-800/50'
-						: 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+						: 'brand-nav-item/50'}"
 					type="button"
 					on:click={() => {
 						if (terminalServerId === server.id) {

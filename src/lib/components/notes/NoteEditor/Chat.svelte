@@ -43,7 +43,7 @@
 	import { splitStream } from '$lib/utils';
 
 	import Messages from '$lib/components/notes/NoteEditor/Chat/Messages.svelte';
-	import MessageInput from '$lib/components/channel/MessageInput.svelte';
+	import MessageInput from '$lib/components/common/MessageInput.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Pencil from '$lib/components/icons/Pencil.svelte';
@@ -408,7 +408,7 @@ Based on the user's instruction, update and enhance the existing notes or select
 										}}
 										disabled={streaming || loading}
 										type="button"
-										class="px-2 @xl:px-2.5 py-2 flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden hover:bg-gray-50 dark:hover:bg-gray-800 {editEnabled
+										class="px-2 @xl:px-2.5 py-2 flex gap-1.5 items-center text-sm rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden brand-nav-item {editEnabled
 											? ' text-sky-500 dark:text-sky-300 bg-sky-50 dark:bg-sky-200/5'
 											: 'bg-transparent text-gray-600 dark:text-gray-300 '} disabled:opacity-50 disabled:pointer-events-none"
 									>

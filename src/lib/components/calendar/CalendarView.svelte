@@ -164,7 +164,7 @@
 					<button
 						class="p-1 min-h-0 text-left overflow-hidden transition cursor-pointer flex flex-col
 							{isCurrentMonth(day) ? '' : 'opacity-40'}
-							hover:bg-gray-50/80 dark:hover:bg-gray-850/30
+							brand-nav-item
 							{col > 0 ? 'border-l border-gray-100/20 dark:border-gray-850/20' : ''}
 							{row > 0 ? 'border-t border-gray-100/20 dark:border-gray-850/20' : ''}"
 						on:click={() => handleDayClick(day)}
@@ -251,7 +251,7 @@
 										<button
 											class="px-0.5 py-0.5 {day.getDay() > 0
 												? 'border-l border-gray-100/15 dark:border-gray-850/15'
-												: ''} hover:bg-gray-50/50 dark:hover:bg-gray-850/20 transition cursor-pointer min-w-0 flex flex-col"
+												: ''} brand-nav-item transition cursor-pointer min-w-0 flex flex-col"
 											on:click={() => handleHourClick(day, hour)}
 										>
 											<div class="flex flex-col gap-0.5 w-full min-h-0">
@@ -302,7 +302,7 @@
 						</div>
 						<button
 							class="flex-1 border-l border-gray-100/15 dark:border-gray-850/15 px-1.5 py-0.5
-								hover:bg-gray-50/50 dark:hover:bg-gray-850/20 transition cursor-pointer flex flex-col text-left justify-start"
+								brand-nav-item transition cursor-pointer flex flex-col text-left justify-start"
 							on:click={() => handleHourClick(currentDate, hour)}
 						>
 							<div class="flex flex-col gap-0.5 w-full">

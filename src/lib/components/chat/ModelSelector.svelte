@@ -19,6 +19,29 @@
 	// Behaviour is otherwise identical. See CLAUDE.md → "Deferred / hidden features".
 	export let compact = false;
 
+	// Sunway: explicit tier order for the picker — everyday first, then reasoning, then coding,
+	// which is the ordering the SOTA assistants use and the order the tiers are meant to be
+	// reached for.
+	//
+	// This is NOT cosmetic sugar over an existing order: there is no ordering anywhere in the
+	// stack to override. Models.get_all_models() (backend/open_webui/models/models.py) runs a
+	// bare `select(Model)` with NO ORDER BY, utils/models.py appends the rows in whatever order
+	// they come back, and nothing sorts them afterwards. So the picker inherited raw Postgres
+	// heap order — unspecified by definition, and NOT stable: Postgres rewrites a row on UPDATE,
+	// so editing any model could silently reshuffle the list. All three tiers also share one
+	// created_at, so no timestamp sort would separate them either.
+	//
+	// Ids, not names: names are display strings and are localised/renamable, ids are the stable
+	// key. Same convention as ALLOWED_LANGUAGE_CODES / HIDDEN_SHORTCUT_IDS elsewhere in the fork.
+	// Anything not listed sorts after these, alphabetically, so the order is fully deterministic
+	// for base models and any future tier rather than falling back to DB order.
+	const MODEL_TIER_ORDER = ['schat-quick', 'schat-deepthink', 'schat-coding'];
+
+	const tierRank = (id: string) => {
+		const idx = MODEL_TIER_ORDER.indexOf(id);
+		return idx === -1 ? MODEL_TIER_ORDER.length : idx;
+	};
+
 	const saveDefaultModel = async () => {
 		const hasEmptyModel = selectedModels.filter((it) => it === '');
 		if (hasEmptyModel.length) {
@@ -60,21 +83,46 @@
 		<div class="flex w-full max-w-fit">
 			<div class="overflow-hidden w-full">
 				<div class="max-w-full {($settings?.highContrastMode ?? false) ? 'm-1' : 'mr-1'}">
+					<!-- Sunway: searchEnabled={false} — an EXISTING upstream prop (Selector.svelte
+					     defaults it true), so no new gate. The picker lists exactly three curated
+					     tiers (Flash / Coder / Deepthink); a search box over three items is noise,
+					     and it also carried the "Pull {model} from Ollama.com" affordance, which is
+					     dead here (Ollama is deployed nowhere — chart pins ENABLE_OLLAMA_API=false). -->
 					<Selector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
-						items={$models.map((model) => ({
-							value: model.id,
-							label: model.name,
-							model: model
-						}))}
+						searchEnabled={false}
+						items={$models
+							.map((model) => ({
+								value: model.id,
+								label: model.name,
+								model: model
+							}))
+							.sort(
+								(a, b) =>
+									tierRank(a.value) - tierRank(b.value) ||
+									(a.label ?? '').localeCompare(b.label ?? '')
+							)}
 						{pinModelHandler}
 						bind:value={selectedModel}
 					/>
 				</div>
 			</div>
 
-			{#if $user?.role === 'admin' || ($user?.permissions?.chat?.multiple_models ?? true)}
+			<!-- Sunway: multi-model responses removed for the rollout. The "+" below adds a second
+			     model to the same turn, fanning the prompt out to every selected model and
+			     rendering side-by-side responses with a merge action. Out of scope: it multiplies
+			     token spend per turn, and the merge step attributes generated text to no single
+			     served model.
+			     Replaced the upstream gate (role === 'admin' || permissions.chat.multiple_models)
+			     rather than the permission itself, because `admin` does NOT distinguish super
+			     admin from BU admin under multi-tenancy — see CLAUDE.md. Hidden for EVERYONE.
+			     `selectedModelIdx !== 0` deliberately, NOT `false`: the inner {:else} branch is
+			     the "Remove Model" button. Gating the whole block off would also remove that,
+			     stranding anyone whose chat already carries a second model (selectedModels is
+			     restored from chat state) with no way to drop it. This keeps Remove reachable
+			     while Add can never render. -->
+			{#if selectedModelIdx !== 0}
 				{#if selectedModelIdx === 0}
 					<div
 						class="  self-center mx-1 disabled:text-gray-600 disabled:hover:text-gray-600 -translate-y-[0.5px]"

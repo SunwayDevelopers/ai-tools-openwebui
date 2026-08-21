@@ -30,7 +30,6 @@ export const appInfo = writable(null);
 export const appData = writable(null);
 
 // Frontend
-export const MODEL_DOWNLOAD_POOL = writable({});
 
 export const mobile = writable(false);
 
@@ -332,8 +331,6 @@ type Config = {
 		// Sunway: hide the Admin panel's Settings / Functions tabs (plain env, so a
 		// restart applies them). Optional because an older backend simply omits them,
 		// and the consuming gates treat "absent" as visible.
-		enable_admin_settings_ui?: boolean;
-		enable_admin_functions_ui?: boolean;
 		enable_community_sharing: boolean;
 		enable_memories: boolean;
 		enable_autocomplete_generation: boolean;
@@ -374,4 +371,10 @@ export type SessionUser = {
 	name: string;
 	role: string;
 	profile_image_url: string;
+	// Sunway: the authenticated half of the app config, delivered with the session rather
+	// than by /api/config (security review #18b, Option 2). /api/config runs outside tenant
+	// enforcement and so cannot resolve a multi-tenant user; this route can. Merged into the
+	// `config` store at sign-in and on app load — see routes/+layout.svelte and
+	// routes/auth/+page.svelte, and backend/open_webui/utils/app_config.py for the shape.
+	config?: Config | null;
 };

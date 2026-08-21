@@ -37,7 +37,6 @@
 	export let editMessage: Function;
 	export let saveMessage: Function;
 	export let rateMessage: Function;
-	export let actionMessage: Function;
 
 	export let submitMessage: Function;
 	export let deleteMessage: Function;
@@ -310,7 +309,6 @@
 									{saveMessage}
 									{rateMessage}
 									{deleteMessage}
-									{actionMessage}
 									{submitMessage}
 									{continueResponse}
 									regenerateResponse={async (message, prompt = null) => {
@@ -366,7 +364,6 @@
 										{saveMessage}
 										{rateMessage}
 										{deleteMessage}
-										{actionMessage}
 										{submitMessage}
 										{continueResponse}
 										regenerateResponse={async (message, prompt = null) => {
@@ -431,7 +428,7 @@
 									id="merge-response-button"
 									class="{true
 										? 'visible'
-										: 'invisible group-hover:visible'} p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
+										: 'invisible group-hover:visible'} p-1 brand-nav-item rounded-lg dark:hover:text-white hover:text-black transition"
 									on:click={() => {
 										mergeResponsesHandler();
 									}}

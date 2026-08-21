@@ -241,7 +241,7 @@
 						{:else}
 							{#each selectedFileItems as file, fileIdx (file.id)}
 								<button
-									class=" px-2.5 py-1 rounded-xl w-full text-left flex justify-between items-center text-sm hover:bg-gray-50 hover:dark:bg-gray-800 hover:dark:text-gray-100"
+									class=" px-2.5 py-1 rounded-xl w-full text-left flex justify-between items-center text-sm brand-nav-item hover:dark:bg-gray-800 hover:dark:text-gray-100"
 									type="button"
 									on:click={() => {
 										console.log(file);

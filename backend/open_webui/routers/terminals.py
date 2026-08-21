@@ -7,6 +7,7 @@ Routes:
 
 import logging
 import posixpath
+import uuid
 from urllib.parse import unquote
 
 import aiohttp
@@ -17,7 +18,7 @@ from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
 from open_webui.models.groups import Groups
 from open_webui.models.users import Users
 from open_webui.utils.access_control import has_connection_access
-from open_webui.utils.auth import get_verified_user
+from open_webui.utils.auth import get_verified_user, is_valid_token
 from starlette.background import BackgroundTask
 
 log = logging.getLogger(__name__)
@@ -120,13 +121,25 @@ async def proxy_terminal(
     cookies = {}
     auth_type = connection.get('auth_type', 'bearer')
 
+    # Sunway: SChat session credentials are NOT forwarded upstream (security review H3).
+    # Both branches below used to set `cookies = request.cookies`, which handed the terminal
+    # server the victim's entire cookie jar — `token`, `iam_token` AND `iam_refresh` — and the
+    # `session` branch additionally forwarded the SChat JWT as a bearer. Any compromise or
+    # misconfiguration of a terminal server therefore became SChat session compromise, and
+    # terminal server URLs are admin-configured, which under multi-tenancy means any BU admin.
+    # The upstream only needs to know WHO is calling, which X-User-Id / X-Session-Id (set above)
+    # already convey.
     if auth_type == 'bearer':
         headers['Authorization'] = f'Bearer {connection.get("key", "")}'
     elif auth_type == 'session':
-        cookies = request.cookies
-        headers['Authorization'] = f'Bearer {request.state.token.credentials}'
+        # Identity travels in X-User-Id / X-Session-Id only. This makes 'session' behave like
+        # 'none' at the transport level, which is the intent: SChat's own session is not a
+        # credential any third-party service should ever receive.
+        pass
     elif auth_type == 'system_oauth':
-        cookies = request.cookies
+        # Kept: this is the caller's OAuth token FOR THE UPSTREAM, supplied per-request in
+        # x-oauth-access-token. It is not a SChat credential, so it is not part of H3 —
+        # removing it would simply break this auth mode.
         oauth_token = request.headers.get('x-oauth-access-token', '')
         if oauth_token:
             headers['Authorization'] = f'Bearer {oauth_token}'
@@ -185,8 +198,16 @@ async def proxy_terminal(
 
     except Exception as error:
         await session.close()
-        log.exception('Terminal proxy error: %s', error)
-        return JSONResponse({'error': f'Terminal proxy error: {error}'}, status_code=502)
+        # Sunway: the raw exception is no longer returned to the client (security review M9).
+        # aiohttp errors embed the upstream URL, so this disclosed internal hostnames, ports
+        # and paths to anyone able to make the proxy fail. The detail is logged server-side
+        # with a correlation id the client can quote to support instead.
+        correlation_id = uuid.uuid4().hex[:12]
+        log.exception('Terminal proxy error [%s]: %s', correlation_id, error)
+        return JSONResponse(
+            {'error': 'Terminal proxy error', 'correlation_id': correlation_id},
+            status_code=502,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +241,21 @@ async def _resolve_authenticated_connection(ws: WebSocket, server_id: str):
         if data is None or 'id' not in data:
             await ws.close(code=4001, reason='Invalid token')
             return None
+        # Sunway: revocation + role checks added (security review H2). This path used to
+        # decode the JWT and stop there, so it accepted a token that sign-out or OIDC
+        # back-channel logout had already revoked, and it never applied the role gate that
+        # get_verified_user enforces on every HTTP route — meaning a 'pending' user passed.
+        # Mirrors utils/auth.py:413; `ws` is used in place of `request` because is_valid_token
+        # only needs `.app.state.redis`, which Starlette exposes on both.
+        if data.get('jti') and not await is_valid_token(ws, data):
+            await ws.close(code=4001, reason='Invalid token')
+            return None
         user = await Users.get_user_by_id(data['id'])
         if user is None:
             await ws.close(code=4001, reason='User not found')
+            return None
+        if user.role not in ('user', 'admin'):
+            await ws.close(code=4003, reason='Insufficient permissions')
             return None
     except (asyncio.TimeoutError, json.JSONDecodeError):
         await ws.close(code=4001, reason='Auth timeout or invalid payload')

@@ -1,1 +1,3 @@
-Name,Email,Password,Role
+Name,Email,Role
+Jane Doe,jane.doe@sunway.com.my,user
+John Smith,john.smith@sunway.com.my,admin

@@ -461,10 +461,10 @@
 			id="sidebar-chat-item"
 			class=" w-full flex justify-between rounded-xl px-[11px] py-[6px] {id === $chatId ||
 			confirmEdit
-				? 'bg-gray-100 dark:bg-gray-900 selected'
+				? 'brand-nav-active selected'
 				: selected
-					? 'bg-gray-100 dark:bg-gray-950 selected'
-					: 'group-hover:bg-gray-100 dark:group-hover:bg-gray-950'}  whitespace-nowrap text-ellipsis relative {generating
+					? 'brand-nav-active selected'
+					: 'brand-nav-item-group'}  whitespace-nowrap text-ellipsis relative {generating
 				? 'cursor-not-allowed'
 				: ''}"
 		>
@@ -497,10 +497,10 @@
 			id="sidebar-chat-item"
 			class=" w-full flex justify-between rounded-xl px-[11px] py-[6px] {id === $chatId ||
 			confirmEdit
-				? 'bg-gray-100 dark:bg-gray-900 selected'
+				? 'brand-nav-active selected'
 				: selected
-					? 'bg-gray-100 dark:bg-gray-950 selected'
-					: ' group-hover:bg-gray-100 dark:group-hover:bg-gray-950'}  whitespace-nowrap text-ellipsis"
+					? 'brand-nav-active selected'
+					: ' brand-nav-item-group'}  whitespace-nowrap text-ellipsis"
 			href="/c/{id}"
 			on:click={() => {
 				dispatch('select');
@@ -581,15 +581,13 @@
 		id="sidebar-chat-item-menu"
 		class="
         {id === $chatId || confirmEdit
-			? 'from-gray-100 dark:from-gray-900 selected'
+			? 'brand-fade-active selected'
 			: selected
-				? 'from-gray-100 dark:from-gray-950 selected'
-				: 'invisible group-hover:visible from-gray-100 dark:from-gray-950'}
+				? 'brand-fade-active selected'
+				: 'invisible group-hover:visible brand-fade-hover'}
             absolute {className === 'pr-2'
 			? 'right-[8px]'
-			: 'right-1'} top-[4px] py-1 pr-0.5 mr-1.5 pl-5 bg-linear-to-l from-80%
-
-              to-transparent"
+			: 'right-1'} top-[4px] py-1 pr-0.5 mr-1.5 pl-5"
 		on:mouseenter={(e) => {
 			mouseOver = true;
 		}}
@@ -617,7 +615,7 @@
 		{:else if shiftKey && mouseOver}
 			<div class=" flex items-center self-center space-x-1.5">
 				<!-- Sunway: archive deferred (redundant w/ retention); honor enable_chat_archive like the rest of the archive UI -->
-				{#if $config?.enable_chat_archive ?? true}
+				{#if $config?.enable_chat_archive ?? false}
 					<Tooltip content={$i18n.t('Archive')} className="flex items-center">
 						<button
 							class=" self-center dark:hover:text-white transition disabled:cursor-not-allowed"

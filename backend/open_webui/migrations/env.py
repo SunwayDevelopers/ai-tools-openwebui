@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging.config
 import logging
 import alembic.context
-from open_webui.env import DATABASE_PASSWORD, DATABASE_URL, LOG_FORMAT
+from open_webui.env import DATABASE_URL, LOG_FORMAT
 from open_webui.internal.db import extract_ssl_params_from_url, reattach_ssl_params_to_url
 from open_webui.models.auths import Auth
 from open_webui.models.calendar import Calendar, CalendarEvent, CalendarEventAttendee  # noqa: F401
-from sqlalchemy import create_engine, engine_from_config, pool
+from sqlalchemy import engine_from_config, pool
 
 alembic_config = alembic.context.config
 if alembic_config.config_file_name:
@@ -43,21 +43,15 @@ def run_migrations_offline() -> None:
 
 def _get_engine_connectable():
     """Build the database engine based on target URL and authentication credentials."""
+    # Sunway: the SQLCipher branch was DELETED here (security review L1) -- the second of the two
+    # sites that formatted the database password directly into a SQLite keying statement. Same
+    # reasoning as internal/db.py; see the comment there. Rejected loudly so a stale
+    # sqlite+sqlcipher:// URL cannot be quietly migrated as plain SQLite.
     if target_db_url and target_db_url.startswith('sqlite+sqlcipher://'):
-        if not DATABASE_PASSWORD or not DATABASE_PASSWORD.strip():
-            raise ValueError('DATABASE_PASSWORD is required when using sqlite+sqlcipher:// URLs')
-        raw_db_path = target_db_url.replace('sqlite+sqlcipher://', '')
-        if raw_db_path.startswith('/'):
-            raw_db_path = raw_db_path[1:]
-
-        def _sqlite_cipher_creator():
-            import sqlcipher3
-
-            cipher_conn = sqlcipher3.connect(raw_db_path, check_same_thread=False)
-            cipher_conn.execute(f"PRAGMA key = '{DATABASE_PASSWORD}'")
-            return cipher_conn
-
-        return create_engine('sqlite://', creator=_sqlite_cipher_creator, echo=False)
+        raise ValueError(
+            'sqlite+sqlcipher:// is not supported. schat runs on Postgres; the SQLCipher '
+            'support path was removed (security review L1).'
+        )
     return engine_from_config(
         alembic_config.get_section(alembic_config.config_ini_section, {}),
         prefix='sqlalchemy.',

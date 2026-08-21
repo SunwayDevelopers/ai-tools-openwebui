@@ -21,7 +21,6 @@
 		scrollPaginationEnabled,
 		currentChatPage,
 		temporaryChatEnabled,
-		channels,
 		socket,
 		config,
 		isApp,
@@ -44,7 +43,6 @@
 		toggleChatPinnedStatusById,
 		getChatById,
 		updateChatFolderIdById,
-		importChats,
 		deleteAllChats,
 		getChatListBySearchText,
 		getChatCount
@@ -67,9 +65,6 @@
 	import Folder from '../common/Folder.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Folders from './Sidebar/Folders.svelte';
-	import { getChannels, createNewChannel } from '$lib/apis/channels';
-	import ChannelModal from './Sidebar/ChannelModal.svelte';
-	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
 	import SearchModal from './SearchModal.svelte';
@@ -78,6 +73,10 @@
 	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
 	import Note from '../icons/Note.svelte';
 	import Code from '../icons/Code.svelte';
+	import QuestionMarkCircle from '../icons/QuestionMarkCircle.svelte';
+	import HelpCenterModal from './HelpCenterModal.svelte';
+
+	let showHelpCenter = false;
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
@@ -90,7 +89,6 @@
 	let shiftKey = false;
 
 	let selectedChatId = null;
-	let showCreateChannel = false;
 
 	// Pagination variables
 	let chatListLoading = false;
@@ -113,7 +111,6 @@
 			})
 			.catch(() => {});
 	}
-	let showChannels = false;
 	let showFolders = false;
 
 	let folders = {};
@@ -131,14 +128,14 @@
 					($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
 				);
 			case 'workspace':
-				return (
-					$user?.role === 'admin' ||
-					$user?.permissions?.workspace?.models ||
-					$user?.permissions?.workspace?.knowledge ||
-					$user?.permissions?.workspace?.prompts ||
-					$user?.permissions?.workspace?.tools ||
-					$user?.permissions?.workspace?.skills
-				);
+				// Sunway: Knowledge is the only workspace section left -- Models, Prompts, Skills are
+				// hidden and Tools is deleted -- so this entry is gated on workspace.knowledge alone.
+				// Upstream OR-ed all five, which on an existing DB (USER_PERMISSIONS is
+				// PersistentConfig, so a stored value beats the env default) could show a user the
+				// "Knowledge Base" entry off the back of, say, workspace.prompts, and then bounce
+				// them straight back to / from the route guard, because that guard checks
+				// workspace.knowledge. A visible link to nowhere.
+				return $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge;
 			case 'automations':
 				return (
 					$config?.features?.enable_automations &&
@@ -161,6 +158,10 @@
 	const getMenuItemMeta = (id) => {
 		const items = {
 			notes: { label: 'Notes', href: '/notes', iconType: 'note' },
+			// Sunway: reads "Knowledge Base" in the UI, not "Workspace". The key stays
+			// 'Workspace' and the three shipped locales translate it (en-GB/ms-MY/zh-CN
+			// translation.json), which also renames the user-menu entry and the page title
+			// in one place. Knowledge is the only section left in the workspace.
 			workspace: { label: 'Workspace', href: '/workspace', iconType: 'workspace' },
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
@@ -286,22 +287,6 @@
 		}
 	};
 
-	const initChannels = async () => {
-		// default (none), group, dm type
-		const res = await getChannels(localStorage.token).catch((error) => {
-			return null;
-		});
-
-		if (res) {
-			await channels.set(
-				res.sort(
-					(a, b) =>
-						['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
-				)
-			);
-		}
-	};
-
 	const initChatList = async () => {
 		// Reset pagination variables
 		console.log('initChatList');
@@ -360,46 +345,11 @@
 		chatListLoading = false;
 	};
 
-	const importChatHandler = async (items, pinned = false, folderId = null) => {
-		console.log('importChatHandler', items, pinned, folderId);
-		for (const item of items) {
-			console.log(item);
-			if (item.chat) {
-				await importChats(localStorage.token, [
-					{
-						chat: item.chat,
-						meta: item?.meta ?? {},
-						pinned: pinned,
-						folder_id: folderId,
-						created_at: item?.created_at ?? null,
-						updated_at: item?.updated_at ?? null
-					}
-				]);
-			}
-		}
+	// Sunway: importChatHandler() was removed here (hardening plan). It called the deleted
+	// POST /chats/import for chats dragged in from another schat instance.
 
-		initChatList();
-	};
-
-	const inputFilesHandler = async (files) => {
-		console.log(files);
-
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = async (e) => {
-				const content = e.target.result;
-
-				try {
-					const chatItems = JSON.parse(content);
-					importChatHandler(chatItems);
-				} catch {
-					toast.error($i18n.t(`Invalid file format.`));
-				}
-			};
-
-			reader.readAsText(file);
-		}
-	};
+	// Sunway: inputFilesHandler() was removed here (hardening plan). Its only job was to parse a
+	// dropped JSON file and feed it to the deleted chat-import endpoint.
 
 	const tagEventHandler = async (type, tagName, chatId) => {
 		console.log(type, tagName, chatId);
@@ -431,15 +381,9 @@
 		e.preventDefault();
 		console.log(e); // Log the drop event
 
-		// Perform file drop check and handle it accordingly
-		if (e.dataTransfer?.files) {
-			const inputFiles = Array.from(e.dataTransfer?.files);
-
-			if (inputFiles && inputFiles.length > 0) {
-				console.log(inputFiles); // Log the dropped files
-				inputFilesHandler(inputFiles); // Handle the dropped files
-			}
-		}
+		// Sunway: the dropped-file branch was removed here (hardening plan) -- dropping a chat
+		// export onto the sidebar imported it, bypassing the 30-chat cap. Dragging chats WITHIN
+		// the app is unaffected; that path uses getChatById, not import.
 
 		draggedOver = false; // Reset draggedOver status after drop
 	};
@@ -570,13 +514,6 @@
 				}
 
 				if (value) {
-					// Only fetch channels if the feature is enabled and user has permission
-					if (
-						$config?.features?.enable_channels &&
-						($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))
-					) {
-						await initChannels();
-					}
 					await initChatList();
 
 					// Check which chats have active tasks
@@ -681,7 +618,7 @@
 
 		// Sunway: Temporary Chat hidden for the rollout (honor enable_temporary_chat; see CLAUDE.md)
 		if (
-			($config?.enable_temporary_chat ?? true) &&
+			($config?.enable_temporary_chat ?? false) &&
 			$user?.role !== 'admin' &&
 			$user?.permissions?.chat?.temporary_enforced
 		) {
@@ -739,46 +676,6 @@
 	}}
 />
 
-<ChannelModal
-	bind:show={showCreateChannel}
-	onSubmit={async (payload: any) => {
-		let { type, name, is_private, access_grants, group_ids, user_ids } = payload ?? {};
-		name = name?.trim();
-
-		if (type === 'dm') {
-			if (!user_ids || user_ids.length === 0) {
-				toast.error($i18n.t('Please select at least one user for Direct Message channel.'));
-				return;
-			}
-		} else {
-			if (!name) {
-				toast.error($i18n.t('Channel name cannot be empty.'));
-				return;
-			}
-		}
-
-		const res = await createNewChannel(localStorage.token, {
-			type: type,
-			name: name,
-			is_private: is_private,
-			access_grants: access_grants,
-			group_ids: group_ids,
-			user_ids: user_ids
-		}).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			$socket.emit('join-channels', { auth: { token: $user?.token } });
-			await initChannels();
-			showCreateChannel = false;
-			showChannels = true;
-			goto(`/channels/${res.id}`);
-		}
-	}}
-/>
-
 <FolderModal
 	bind:show={showCreateFolderModal}
 	onSubmit={async (folder) => {
@@ -809,6 +706,10 @@
 	}}
 />
 
+<!-- Sunway: Help Center. Rendered once here rather than inside either sidebar variant, because
+     both the expanded footer row and the collapsed rail button open the same instance. -->
+<HelpCenterModal bind:show={showHelpCenter} />
+
 <button
 	id="sidebar-new-chat-button"
 	class="hidden"
@@ -830,7 +731,7 @@
 
 {#if !$mobile && !$showSidebar}
 	<div
-		class=" pt-[7px] pb-2 px-2 flex flex-col justify-between text-black dark:text-white hover:bg-gray-50/30 dark:hover:bg-gray-950/30 h-full z-10 transition-all border-e-[0.5px] border-gray-50 dark:border-gray-850/30"
+		class=" pt-[7px] pb-2 px-2 flex flex-col justify-between text-black dark:text-white brand-nav-item h-full z-10 transition-all border-e-[0.5px] border-gray-50 dark:border-gray-850/30"
 		id="sidebar"
 	>
 		<button
@@ -845,7 +746,7 @@
 					placement="right"
 				>
 					<button
-						class="flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group {isWindows
+						class="flex rounded-xl brand-nav-item transition group {isWindows
 							? 'cursor-pointer'
 							: 'cursor-[e-resize]'}"
 						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
@@ -867,7 +768,7 @@
 				<div class="">
 					<Tooltip content={$i18n.t('New Chat')} placement="right">
 						<a
-							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 							href="/"
 							draggable="false"
 							on:click={async (e) => {
@@ -889,7 +790,7 @@
 				<div>
 					<Tooltip content={$i18n.t('Search')} placement="right">
 						<button
-							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 							on:click={(e) => {
 								e.stopImmediatePropagation();
 								e.preventDefault();
@@ -912,7 +813,7 @@
 						<div class="">
 							<Tooltip content={$i18n.t(meta.label)} placement="right">
 								<a
-									class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+									class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 									href={meta.href}
 									on:click={async (e) => {
 										e.stopImmediatePropagation();
@@ -985,11 +886,33 @@
 
 		<div>
 			<div>
+				<!-- Sunway: the collapsed rail's counterpart to the Help row in the expanded footer.
+				     Both are needed: the rail is a distinct render, not the same markup at a narrower
+				     width, so a row added only to the expanded sidebar disappears entirely for anyone
+				     who works with the sidebar collapsed. -->
+				<div class=" py-1 flex justify-center items-center">
+					<Tooltip content={$i18n.t('Help')} placement="right">
+						<button
+							type="button"
+							class=" cursor-pointer flex rounded-xl brand-nav-item transition group text-gray-600 dark:text-gray-400"
+							draggable="false"
+							aria-label={$i18n.t('Help')}
+							on:click={() => {
+								showHelpCenter = true;
+							}}
+						>
+							<div class=" self-center flex items-center justify-center size-9">
+								<QuestionMarkCircle className="size-4.5" strokeWidth="1.5" />
+							</div>
+						</button>
+					</Tooltip>
+				</div>
+
 				<div class=" py-2 flex justify-center items-center">
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status ?? false}
 							showActiveUsers={false}
 							on:show={(e) => {
 								if (e.detail === 'archived-chat') {
@@ -999,7 +922,7 @@
 						>
 							<button
 								type="button"
-								class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+								class=" cursor-pointer flex rounded-xl brand-nav-item transition group"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class="self-center relative">
@@ -1056,7 +979,7 @@
 				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-3"
 			>
 				<a
-					class="flex items-center rounded-xl size-8.5 h-full justify-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition no-drag-region hidden"
+					class="flex items-center rounded-xl size-8.5 h-full justify-center brand-nav-item transition no-drag-region hidden"
 					href="/"
 					draggable="false"
 					on:click={newChatHandler}
@@ -1089,7 +1012,7 @@
 					placement="bottom"
 				>
 					<button
-						class="flex rounded-xl size-8.5 justify-center items-center hover:bg-gray-100/50 dark:hover:bg-gray-850/50 transition {isWindows
+						class="flex rounded-xl size-8.5 justify-center items-center brand-nav-item transition {isWindows
 							? 'cursor-pointer'
 							: 'cursor-[w-resize]'}"
 						on:click={() => {
@@ -1127,7 +1050,7 @@
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<a
 							id="sidebar-new-chat-button"
-							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition outline-none"
 							href="/"
 							draggable="false"
 							on:click={newChatHandler}
@@ -1148,7 +1071,7 @@
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<button
 							id="sidebar-search-button"
-							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition outline-none"
+							class="group grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition outline-none"
 							on:click={() => {
 								showSearch.set(true);
 							}}
@@ -1176,7 +1099,7 @@
 								>
 									<a
 										id="sidebar-{itemId}-button"
-										class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+										class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 brand-nav-item transition"
 										href={meta.href}
 										on:click={itemClickHandler}
 										draggable="false"
@@ -1277,7 +1200,7 @@
 						<div class="mt-0.5 pb-1.5">
 							{#each $pinnedNotes as note (note.id)}
 								<a
-									class="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition group text-sm"
+									class="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 brand-nav-item transition group text-sm"
 									href={`/notes/${note.id}`}
 									on:click={() => {
 										itemClickHandler();
@@ -1291,7 +1214,7 @@
 										{note.title}
 									</div>
 									<button
-										class="invisible group-hover:visible self-center p-0.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition"
+										class="invisible group-hover:visible self-center p-0.5 brand-nav-item rounded-lg transition"
 										on:click|preventDefault|stopPropagation={async () => {
 											await toggleNotePinnedStatusById(localStorage.token, note.id);
 											const _pinnedNotes = await getPinnedNoteList(localStorage.token).catch(
@@ -1322,40 +1245,7 @@
 					</Folder>
 				{/if}
 
-				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
-					<Folder
-						id="sidebar-channels"
-						bind:open={showChannels}
-						className="px-2 mt-0.5"
-						name={$i18n.t('Channels')}
-						chevron={false}
-						dragAndDrop={false}
-						onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)
-							? async () => {
-									await tick();
-
-									setTimeout(() => {
-										showCreateChannel = true;
-									}, 0);
-								}
-							: null}
-						onAddLabel={$i18n.t('Create Channel')}
-					>
-						{#each $channels as channel, channelIdx (`${channel?.id}`)}
-							<ChannelItem
-								{channel}
-								onUpdate={async () => {
-									await initChannels();
-								}}
-							/>
-
-							{#if channelIdx < $channels.length - 1 && channel.type !== $channels[channelIdx + 1]?.type}<hr
-									class=" border-gray-100/40 dark:border-gray-800/10 my-1.5 w-full"
-								/>
-							{/if}
-						{/each}
-					</Folder>
-				{/if}
+				<!-- Sunway: the Channels sidebar section was deleted here (hardening plan Item 6). -->
 
 				{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
 					<Folder
@@ -1400,10 +1290,6 @@
 							on:update={() => {
 								initChatList();
 							}}
-							on:import={(e) => {
-								const { folderId, items } = e.detail;
-								importChatHandler(items, false, folderId);
-							}}
 							on:change={async () => {
 								initChatList();
 							}}
@@ -1430,9 +1316,6 @@
 					on:change={async (e) => {
 						selectedFolder.set(null);
 					}}
-					on:import={(e) => {
-						importChatHandler(e.detail);
-					}}
 					on:drop={async (e) => {
 						const { type, id, item } = e.detail;
 
@@ -1440,18 +1323,7 @@
 							let chat = await getChatById(localStorage.token, id).catch((error) => {
 								return null;
 							});
-							if (!chat && item) {
-								chat = await importChats(localStorage.token, [
-									{
-										chat: item.chat,
-										meta: item?.meta ?? {},
-										pinned: false,
-										folder_id: null,
-										created_at: item?.created_at ?? null,
-										updated_at: item?.updated_at ?? null
-									}
-								]);
-							}
+							// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 							if (chat) {
 								console.log(chat);
@@ -1496,9 +1368,6 @@
 								<Folder
 									id="sidebar-pinned-chats"
 									buttonClassName=" text-gray-500"
-									on:import={(e) => {
-										importChatHandler(e.detail, true);
-									}}
 									on:drop={async (e) => {
 										const { type, id, item } = e.detail;
 
@@ -1506,18 +1375,7 @@
 											let chat = await getChatById(localStorage.token, id).catch((error) => {
 												return null;
 											});
-											if (!chat && item) {
-												chat = await importChats(localStorage.token, [
-													{
-														chat: item.chat,
-														meta: item?.meta ?? {},
-														pinned: false,
-														folder_id: null,
-														created_at: item?.created_at ?? null,
-														updated_at: item?.updated_at ?? null
-													}
-												]);
-											}
+											// Sunway: the cross-instance import fallback was removed here (hardening plan).
 
 											if (chat) {
 												console.log(chat);
@@ -1668,10 +1526,33 @@
 					class=" sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 dark:from-gray-950 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mt-6"
 				></div>
 				<div class="flex flex-col font-primary">
+					<!-- Sunway: Help Center entry point, modelled on sdeck's. Deliberately a sibling of
+					     the profile row inside the STICKY footer, not an item in the chat list. The list
+					     above scrolls and is capped at MAX_CHATS_PER_USER, so anything placed in it would
+					     compete with the user's own chats and scroll out of reach; here it is one fixed
+					     row that is always on screen.
+
+					     The feedback form lives in the modal's footer rather than being linked directly
+					     from here: a bare "Feedback" link invites reports of things that are documented
+					     answers, so the FAQ goes first and the form is what you reach past it. -->
+					<button
+						type="button"
+						class="flex items-center rounded-2xl py-2 px-1.5 w-full brand-nav-item transition text-gray-600 dark:text-gray-400"
+						aria-label={$i18n.t('Help')}
+						on:click={() => {
+							showHelpCenter = true;
+						}}
+					>
+						<div class="self-center mr-3 flex-shrink-0 size-7 flex items-center justify-center">
+							<QuestionMarkCircle className="size-5" strokeWidth="1.5" />
+						</div>
+						<div class="self-center text-sm truncate">{$i18n.t('Help')}</div>
+					</button>
+
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status ?? false}
 							showActiveUsers={false}
 							className="w-[calc(var(--sidebar-width)-1rem)]"
 							on:show={(e) => {
@@ -1682,7 +1563,7 @@
 						>
 							<button
 								type="button"
-								class=" flex items-center rounded-2xl py-2 px-1.5 w-full hover:bg-gray-100/50 dark:hover:bg-gray-900/50 transition"
+								class=" flex items-center rounded-2xl py-2 px-1.5 w-full brand-nav-item transition"
 								aria-label={$i18n.t('User menu')}
 							>
 								<div class=" self-center mr-3 relative flex-shrink-0">

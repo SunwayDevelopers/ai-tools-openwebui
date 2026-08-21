@@ -63,7 +63,7 @@
 
 		<div class="mt-6 flex items-center justify-center gap-3">
 			<button
-				class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+				class="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition brand-nav-item disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 brand-nav-item"
 				on:click={signOut}
 				disabled={signingOut}
 			>
@@ -76,7 +76,7 @@
 			     an admin granting access can. -->
 			{#if $config?.features?.landing_page_url}
 				<a
-					class="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+					class="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition brand-nav-item dark:border-gray-700 dark:text-gray-200 brand-nav-item"
 					href={$config.features.landing_page_url}
 				>
 					Back to catalogue

@@ -135,7 +135,7 @@
 <li class="group">
 	<div
 		class="w-full flex items-center transition
-			{selected ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}
+			{selected ? 'bg-blue-50 dark:bg-blue-900/20' : 'brand-nav-item'}
 			{dragOverFolder
 			? 'bg-blue-50 dark:bg-blue-900/30 ring-1 ring-blue-400 dark:ring-blue-500 ring-inset'
 			: ''}"
@@ -297,7 +297,7 @@
 			<button
 				class="shrink-0 p-0.5 mr-1 rounded-lg transition
 					text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-400
-					hover:bg-gray-100 dark:hover:bg-gray-800"
+					brand-nav-item"
 				aria-label={$i18n.t('More')}
 			>
 				<EllipsisHorizontal className="size-3.5" />
@@ -309,7 +309,7 @@
 				>
 					<button
 						type="button"
-						class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+						class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 						on:click={(e) => {
 							e.stopPropagation();
 							const path =
@@ -337,7 +337,7 @@
 
 					<button
 						type="button"
-						class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+						class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 						on:click={(e) => {
 							e.stopPropagation();
 							const path =
@@ -355,7 +355,7 @@
 
 					<button
 						type="button"
-						class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+						class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 						on:click={(e) => {
 							e.stopPropagation();
 							startRename();
@@ -367,7 +367,7 @@
 
 					<button
 						type="button"
-						class="select-none flex rounded-xl py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition items-center gap-2 text-sm"
+						class="select-none flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition items-center gap-2 text-sm"
 						on:click={(e) => {
 							e.stopPropagation();
 							onDelete(`${currentPath}${entry.name}`, entry.name);

@@ -6,6 +6,7 @@ import time
 from typing import Optional
 
 from open_webui.internal.db import Base, JSONField, get_async_db_context
+from open_webui.model_catalogue import CATALOGUE_USER_ID, MODEL_CATALOGUE
 from open_webui.models.access_grants import AccessGrantModel, AccessGrants
 from open_webui.models.groups import Groups
 from open_webui.models.users import User, UserModel, UserResponse, Users
@@ -142,135 +143,104 @@ class ModelForm(BaseModel):
     is_active: bool = True
 
 
+# Sunway: models are CODE, not rows (hardening plan Item 9). Every read below resolves against
+# `model_catalogue.py`; the `model` table is no longer a source and the write methods are gone
+# along with the routes that called them.
+#
+# Why the whole table and not just the two hot call sites: `get_model_by_id` alone had twelve
+# callers, including the completion path. Swapping the source inside ModelsTable means every
+# caller keeps working unchanged and none can accidentally keep reading rows.
+#
+# ACCESS GRANTS. Every catalogue model carries a synthetic wildcard READ grant. Grants used to
+# live in a separate table, and the plan flagged the failure mode: lose the `principal_id: "*"`
+# row and EVERY model becomes inaccessible. A grant that cannot go missing cannot cause that.
+# There is deliberately no write grant -- a code-defined model is not editable at runtime by
+# anyone. Per-group model scoping is not supported and is not wanted: all tenants get the same
+# models, which is the premise that makes the catalogue possible at all.
+_CATALOGUE_CACHE: list[ModelModel] | None = None
+
+
+def _catalogue_read_grant(model_id: str) -> AccessGrantModel:
+    return AccessGrantModel(
+        id=f'catalogue:{model_id}',
+        resource_type='model',
+        resource_id=model_id,
+        principal_type='user',
+        principal_id='*',
+        permission='read',
+        created_at=0,
+    )
+
+
+def _entry_to_model_model(entry: dict) -> ModelModel:
+    # The system prompt is assembled by model_catalogue.system_prompt() and stored under
+    # params.system, which is where the completion path reads it from.
+    params = dict(entry['params'])
+    if entry['system'] is not None:
+        params['system'] = entry['system']
+    return ModelModel.model_validate(
+        {
+            'id': entry['id'],
+            'user_id': CATALOGUE_USER_ID,
+            'base_model_id': entry['base_model_id'],
+            'name': entry['name'],
+            'params': params,
+            'meta': entry['meta'],
+            'access_grants': [_catalogue_read_grant(entry['id'])],
+            'is_active': entry['is_active'],
+            'created_at': entry['created_at'],
+            'updated_at': entry['updated_at'],
+        }
+    )
+
+
+def catalogue_models() -> list[ModelModel]:
+    """The catalogue as ModelModel instances. Built once -- the source cannot change at runtime."""
+    global _CATALOGUE_CACHE
+    if _CATALOGUE_CACHE is None:
+        _CATALOGUE_CACHE = [_entry_to_model_model(entry) for entry in MODEL_CATALOGUE]
+    return _CATALOGUE_CACHE
+
+
+def catalogue_display_names() -> dict[str, str]:
+    """id -> display name, including models no longer served.
+
+    Analytics renders historical usage by model id, and chats reference models by id string, so
+    a retired model would otherwise show its raw id. The catalogue knows every name it has ever
+    defined, which the caller's own model list does not.
+    """
+    return {entry['id']: entry['name'] for entry in MODEL_CATALOGUE}
+
+
 class ModelsTable:
-    async def _get_access_grants(self, model_id: str, db: AsyncSession | None = None) -> list[AccessGrantModel]:
-        return await AccessGrants.get_grants_by_resource('model', model_id, db=db)
-
-    async def _to_model_model(
-        self,
-        model: Model,
-        access_grants: list[AccessGrantModel | None] = None,
-        db: AsyncSession | None = None,
-    ) -> ModelModel:
-        model_data = ModelModel.model_validate(model).model_dump(exclude={'access_grants'})
-        model_data['access_grants'] = (
-            access_grants if access_grants is not None else await self._get_access_grants(model_data['id'], db=db)
-        )
-        return ModelModel.model_validate(model_data)
-
-    async def insert_new_model(
-        self, form_data: ModelForm, user_id: str, db: AsyncSession | None = None
-    ) -> ModelModel | None:
-        try:
-            async with get_async_db_context(db) as db:
-                result = Model(
-                    **{
-                        **form_data.model_dump(exclude={'access_grants'}),
-                        'user_id': user_id,
-                        'created_at': int(time.time()),
-                        'updated_at': int(time.time()),
-                    }
-                )
-                db.add(result)
-                await db.commit()
-                await db.refresh(result)
-                await AccessGrants.set_access_grants('model', result.id, form_data.access_grants, db=db)
-
-                if result:
-                    return await self._to_model_model(result, db=db)
-                else:
-                    return None
-        except Exception as e:
-            log.exception(f'Failed to insert a new model: {e}')
-            return None
+    # Sunway: every WRITE method was deleted here (hardening plan Item 9) -- insert, update,
+    # toggle, delete, delete_all and sync. ModelsTable reads the code catalogue, so a write
+    # would have landed in a table no read path consults. The routes that called them are
+    # gone too; see the note in routers/models.py.
 
     async def get_all_models(self, db: AsyncSession | None = None) -> list[ModelModel]:
-        async with get_async_db_context(db) as db:
-            result = await db.execute(select(Model))
-            all_models = result.scalars().all()
-            model_ids = [model.id for model in all_models]
-            grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-            models: list[ModelModel] = []
-            for model in all_models:
-                try:
-                    models.append(await self._to_model_model(model, access_grants=grants_map.get(model.id, []), db=db))
-                except Exception as exc:
-                    log.error('Skipping model %r during get_all_models due to error: %s', model.id, exc)
-            return models
+        return list(catalogue_models())
 
     async def get_models(self, db: AsyncSession | None = None) -> list[ModelUserResponse]:
-        async with get_async_db_context(db) as db:
-            result = await db.execute(select(Model).filter(Model.base_model_id != None))
-            all_models = result.scalars().all()
-
-            user_ids = list(set(model.user_id for model in all_models))
-            model_ids = [model.id for model in all_models]
-
-            users = await Users.get_users_by_user_ids(user_ids, db=db) if user_ids else []
-            users_dict = {user.id: user for user in users}
-            grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-
-            models = []
-            for model in all_models:
-                user = users_dict.get(model.user_id)
-                models.append(
-                    ModelUserResponse.model_validate(
-                        {
-                            **(
-                                await self._to_model_model(
-                                    model,
-                                    access_grants=grants_map.get(model.id, []),
-                                    db=db,
-                                )
-                            ).model_dump(),
-                            'user': user.model_dump() if user else None,
-                        }
-                    )
-                )
-            return models
+        # Presets only (base_model_id set), matching the previous query's filter.
+        return [
+            ModelUserResponse.model_validate({**m.model_dump(), 'user': None})
+            for m in catalogue_models()
+            if m.base_model_id is not None
+        ]
 
     async def get_base_models(self, db: AsyncSession | None = None) -> list[ModelModel]:
-        async with get_async_db_context(db) as db:
-            result = await db.execute(select(Model).filter(Model.base_model_id == None))
-            all_models = result.scalars().all()
-            model_ids = [model.id for model in all_models]
-            grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-            return [
-                await self._to_model_model(model, access_grants=grants_map.get(model.id, []), db=db)
-                for model in all_models
-            ]
+        return [m for m in catalogue_models() if m.base_model_id is None]
 
     async def get_models_by_user_id(
         self, user_id: str, permission: str = 'write', db: AsyncSession | None = None
     ) -> list[ModelUserResponse]:
-        models = await self.get_models(db=db)
-        user_groups = await Groups.get_groups_by_member_id(user_id, db=db)
-        user_group_ids = {group.id for group in user_groups}
-
-        result = []
-        for model in models:
-            if model.user_id == user_id:
-                result.append(model)
-            elif await AccessGrants.has_access(
-                user_id=user_id,
-                resource_type='model',
-                resource_id=model.id,
-                permission=permission,
-                user_group_ids=user_group_ids,
-                db=db,
-            ):
-                result.append(model)
-        return result
-
-    def _has_permission(self, db, query, filter: dict, permission: str = 'read'):
-        return AccessGrants.has_permission_filter(
-            db=db,
-            query=query,
-            DocumentModel=Model,
-            filter=filter,
-            resource_type='model',
-            permission=permission,
-        )
+        # Catalogue models are readable by everyone and writable by no one, so this collapses
+        # to a permission check rather than a per-user grant lookup. See the note above
+        # ModelsTable: per-group scoping is deliberately not supported.
+        if permission != 'read':
+            return []
+        return await self.get_models(db=db)
 
     async def search_models(
         self,
@@ -280,116 +250,26 @@ class ModelsTable:
         limit: int = 30,
         db: AsyncSession | None = None,
     ) -> ModelListResponse:
-        async with get_async_db_context(db) as db:
-            stmt = select(Model, User).outerjoin(User, User.id == Model.user_id)
-            stmt = stmt.filter(Model.base_model_id != None)
+        # Catalogue-backed. The old query filtered by access grant and joined the owning user;
+        # neither applies now -- every model is readable by everyone and none has an owner.
+        items = [m for m in catalogue_models() if m.base_model_id is not None]
 
-            if filter:
-                query_key = filter.get('query')
-                if query_key:
-                    stmt = stmt.filter(
-                        or_(
-                            Model.name.ilike(f'%{query_key}%'),
-                            Model.base_model_id.ilike(f'%{query_key}%'),
-                            User.name.ilike(f'%{query_key}%'),
-                            User.email.ilike(f'%{query_key}%'),
-                            User.username.ilike(f'%{query_key}%'),
-                        )
-                    )
+        query_key = (filter or {}).get('query')
+        if query_key:
+            needle = query_key.lower()
+            items = [m for m in items if needle in m.name.lower() or needle in (m.base_model_id or '').lower()]
 
-                view_option = filter.get('view_option')
-                if view_option == 'created':
-                    stmt = stmt.filter(Model.user_id == user_id)
-                elif view_option == 'shared':
-                    stmt = stmt.filter(Model.user_id != user_id)
-
-                # Apply access control filtering
-                stmt = self._has_permission(
-                    db,
-                    stmt,
-                    filter,
-                    permission='read',
-                )
-
-                tag = filter.get('tag')
-                if tag:
-                    # SQLite stores JSON text via json.dumps(ensure_ascii=True),
-                    # so non-ASCII chars are \uXXXX-escaped. PostgreSQL native JSONB
-                    # stores literal Unicode. Use the right pattern for each.
-                    if db.bind.dialect.name == 'sqlite':
-                        if tag.isascii():
-                            meta_text = func.lower(cast(Model.meta, String))
-                            pattern = f'%{json.dumps(tag.lower())}%'
-                        else:
-                            meta_text = cast(Model.meta, String)
-                            pattern = f'%{json.dumps(tag)}%'
-                    else:
-                        meta_text = func.lower(cast(Model.meta, String))
-                        pattern = f'%{json.dumps(tag.lower(), ensure_ascii=False)}%'
-                    stmt = stmt.filter(meta_text.like(pattern))
-
-                order_by = filter.get('order_by')
-                direction = filter.get('direction')
-
-                if order_by == 'name':
-                    if direction == 'asc':
-                        stmt = stmt.order_by(Model.name.asc())
-                    else:
-                        stmt = stmt.order_by(Model.name.desc())
-                elif order_by == 'created_at':
-                    if direction == 'asc':
-                        stmt = stmt.order_by(Model.created_at.asc())
-                    else:
-                        stmt = stmt.order_by(Model.created_at.desc())
-                elif order_by == 'updated_at':
-                    if direction == 'asc':
-                        stmt = stmt.order_by(Model.updated_at.asc())
-                    else:
-                        stmt = stmt.order_by(Model.updated_at.desc())
-
-            else:
-                stmt = stmt.order_by(Model.created_at.desc())
-
-            # Count BEFORE pagination
-            count_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
-            total = count_result.scalar()
-
-            if skip:
-                stmt = stmt.offset(skip)
-            if limit:
-                stmt = stmt.limit(limit)
-
-            result = await db.execute(stmt)
-            items = result.all()
-
-            model_ids = [model.id for model, _ in items]
-            grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-
-            models = []
-            for model, user in items:
-                models.append(
-                    ModelUserResponse(
-                        **(
-                            await self._to_model_model(
-                                model,
-                                access_grants=grants_map.get(model.id, []),
-                                db=db,
-                            )
-                        ).model_dump(),
-                        user=(UserResponse(**UserModel.model_validate(user).model_dump()) if user else None),
-                    )
-                )
-
-            return ModelListResponse(items=models, total=total)
+        total = len(items)
+        page = items[skip : skip + limit] if limit else items[skip:]
+        return ModelListResponse(
+            items=[ModelUserResponse.model_validate({**m.model_dump(), 'user': None}) for m in page],
+            total=total,
+        )
 
     async def get_model_meta_by_id(self, id: str, db: AsyncSession | None = None) -> tuple[dict, int | None]:
-        """Return (meta, updated_at) for a model, skipping access grant resolution."""
-        try:
-            async with get_async_db_context(db) as db:
-                result = await db.execute(select(Model.meta, Model.updated_at).filter_by(id=id))
-                return result.first()
-        except Exception:
-            return None
+        """Return (meta, updated_at) for a model, or None if it is not in the catalogue."""
+        model = next((m for m in catalogue_models() if m.id == id), None)
+        return (model.meta.model_dump(), model.updated_at) if model else None
 
     async def get_all_tags(
         self,
@@ -397,196 +277,27 @@ class ModelsTable:
         is_admin: bool = False,
         db: AsyncSession | None = None,
     ) -> set[str]:
-        """Extract unique tag names from model meta, querying only the meta column."""
-        async with get_async_db_context(db) as db:
-            stmt = select(Model.meta).filter(Model.base_model_id != None)
+        """Unique tag names across catalogue presets.
 
-            if not is_admin:
-                user_groups = await Groups.get_groups_by_member_id(user_id, db=db)
-                user_group_ids = [group.id for group in user_groups]
-
-                filter_dict = {'user_id': user_id}
-                if user_group_ids:
-                    filter_dict['group_ids'] = user_group_ids
-
-                stmt = self._has_permission(db, stmt, filter_dict, permission='read')
-
-            result = await db.execute(stmt)
-            rows = result.scalars().all()
-
-            tags_set: set[str] = set()
-            for meta in rows:
-                if not meta:
-                    continue
-                for tag in meta.get('tags', []):
-                    try:
-                        name = tag.get('name') if isinstance(tag, dict) else str(tag)
-                        if name:
-                            tags_set.add(name)
-                    except Exception:
-                        continue
-
-            return tags_set
+        No permission filtering: every catalogue model is readable by everyone, so the admin
+        and non-admin answers are the same.
+        """
+        tags_set: set[str] = set()
+        for model in catalogue_models():
+            if model.base_model_id is None:
+                continue
+            for tag in getattr(model.meta, 'tags', None) or []:
+                name = tag.get('name') if isinstance(tag, dict) else tag
+                if isinstance(name, str) and name:
+                    tags_set.add(name)
+        return tags_set
 
     async def get_model_by_id(self, id: str, db: AsyncSession | None = None) -> ModelModel | None:
-        try:
-            async with get_async_db_context(db) as db:
-                model = await db.get(Model, id)
-                return await self._to_model_model(model, db=db) if model else None
-        except Exception:
-            return None
+        return next((m for m in catalogue_models() if m.id == id), None)
 
     async def get_models_by_ids(self, ids: list[str], db: AsyncSession | None = None) -> list[ModelModel]:
-        try:
-            async with get_async_db_context(db) as db:
-                result = await db.execute(select(Model).filter(Model.id.in_(ids)))
-                models = result.scalars().all()
-                model_ids = [model.id for model in models]
-                grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-                return [
-                    await self._to_model_model(
-                        model,
-                        access_grants=grants_map.get(model.id, []),
-                        db=db,
-                    )
-                    for model in models
-                ]
-        except Exception:
-            return []
-
-    async def toggle_model_by_id(self, id: str, db: AsyncSession | None = None) -> ModelModel | None:
-        async with get_async_db_context(db) as db:
-            try:
-                result = await db.execute(select(Model).filter_by(id=id))
-                model = result.scalars().first()
-                if not model:
-                    return None
-
-                model.is_active = not model.is_active
-                model.updated_at = int(time.time())
-                await db.commit()
-                await db.refresh(model)
-
-                return await self._to_model_model(model, db=db)
-            except Exception:
-                return None
-
-    async def update_model_by_id(self, id: str, model: ModelForm, db: AsyncSession | None = None) -> ModelModel | None:
-        try:
-            async with get_async_db_context(db) as db:
-                # update only the fields that are present in the model
-                data = model.model_dump(exclude={'id', 'access_grants'})
-                data['updated_at'] = int(time.time())
-                await db.execute(update(Model).filter_by(id=id).values(**data))
-
-                await db.commit()
-                if model.access_grants is not None:
-                    await AccessGrants.set_access_grants('model', id, model.access_grants, db=db)
-
-                return await self.get_model_by_id(id, db=db)
-        except Exception as e:
-            log.exception(f'Failed to update the model by id {id}: {e}')
-            return None
-
-    async def update_model_updated_at_by_id(self, id: str, db: AsyncSession | None = None) -> ModelModel | None:
-        try:
-            async with get_async_db_context(db) as db:
-                result = await db.execute(select(Model).filter_by(id=id))
-                model_obj = result.scalars().first()
-                if not model_obj:
-                    return None
-                model_obj.updated_at = int(time.time())
-                await db.commit()
-                await db.refresh(model_obj)
-                return await self._to_model_model(model_obj, db=db)
-        except Exception as e:
-            log.exception(f'Failed to update the model updated_at by id {id}: {e}')
-            return None
-
-    async def delete_model_by_id(self, id: str, db: AsyncSession | None = None) -> bool:
-        try:
-            async with get_async_db_context(db) as db:
-                await AccessGrants.revoke_all_access('model', id, db=db)
-                await db.execute(delete(Model).filter_by(id=id))
-                await db.commit()
-
-                return True
-        except Exception:
-            return False
-
-    async def delete_all_models(self, db: AsyncSession | None = None) -> bool:
-        try:
-            async with get_async_db_context(db) as db:
-                result = await db.execute(select(Model.id))
-                model_ids = [row[0] for row in result.all()]
-                for model_id in model_ids:
-                    await AccessGrants.revoke_all_access('model', model_id, db=db)
-                await db.execute(delete(Model))
-                await db.commit()
-
-                return True
-        except Exception:
-            return False
-
-    async def sync_models(
-        self, user_id: str, models: list[ModelModel], db: AsyncSession | None = None
-    ) -> list[ModelModel]:
-        try:
-            async with get_async_db_context(db) as db:
-                # Get existing models
-                result = await db.execute(select(Model))
-                existing_models = result.scalars().all()
-                existing_ids = {model.id for model in existing_models}
-
-                # Prepare a set of new model IDs
-                new_model_ids = {model.id for model in models}
-
-                # Update or insert models
-                for model in models:
-                    if model.id in existing_ids:
-                        await db.execute(
-                            update(Model)
-                            .filter_by(id=model.id)
-                            .values(
-                                **model.model_dump(exclude={'access_grants'}),
-                                user_id=user_id,
-                                updated_at=int(time.time()),
-                            )
-                        )
-                    else:
-                        new_model = Model(
-                            **{
-                                **model.model_dump(exclude={'access_grants'}),
-                                'user_id': user_id,
-                                'updated_at': int(time.time()),
-                            }
-                        )
-                        db.add(new_model)
-                    await AccessGrants.set_access_grants('model', model.id, model.access_grants, db=db)
-
-                # Remove models that are no longer present
-                for model in existing_models:
-                    if model.id not in new_model_ids:
-                        await AccessGrants.revoke_all_access('model', model.id, db=db)
-                        await db.delete(model)
-
-                await db.commit()
-
-                result = await db.execute(select(Model))
-                all_models = result.scalars().all()
-                model_ids = [model.id for model in all_models]
-                grants_map = await AccessGrants.get_grants_by_resources('model', model_ids, db=db)
-                return [
-                    await self._to_model_model(
-                        model,
-                        access_grants=grants_map.get(model.id, []),
-                        db=db,
-                    )
-                    for model in all_models
-                ]
-        except Exception as e:
-            log.exception(f'Error syncing models for user {user_id}: {e}')
-            return []
+        wanted = set(ids)
+        return [m for m in catalogue_models() if m.id in wanted]
 
 
 Models = ModelsTable()  # singleton model registry

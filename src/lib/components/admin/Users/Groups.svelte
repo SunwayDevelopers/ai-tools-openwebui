@@ -133,7 +133,7 @@
 
 			<div class="flex w-full justify-end gap-1.5">
 				<button
-					class="px-2 py-1.5 rounded-xl bg-black text-white dark:bg-white dark:text-black transition font-medium text-sm flex items-center"
+					class="px-2 py-1.5 rounded-xl brand-btn-primary transition font-medium text-sm flex items-center"
 					on:click={() => {
 						showAddGroupModal = !showAddGroupModal;
 					}}
@@ -146,9 +146,7 @@
 		</div>
 	</div>
 
-	<div
-		class="py-2 bg-white dark:bg-gray-900 rounded-3xl border border-gray-100/30 dark:border-gray-850/30"
-	>
+	<div class="py-2 brand-surface rounded-3xl">
 		<div class="flex items-center w-full space-x-2 py-0.5 px-3.5">
 			<div class="flex flex-1">
 				<div class="self-center ml-1 mr-3">
@@ -163,7 +161,7 @@
 				{#if query}
 					<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
 						<button
-							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							class="p-0.5 rounded-full brand-nav-item transition"
 							aria-label={$i18n.t('Clear search')}
 							on:click={() => {
 								query = '';

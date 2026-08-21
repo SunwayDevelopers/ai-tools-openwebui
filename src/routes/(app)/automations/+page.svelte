@@ -252,7 +252,7 @@
 								>
 									<button
 										id="sidebar-toggle-button"
-										class="cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+										class="cursor-pointer flex rounded-lg brand-nav-item transition"
 										on:click={() => {
 											showSidebar.set(!$showSidebar);
 										}}
@@ -271,7 +271,7 @@
 
 						<div class="flex w-full justify-end gap-1.5">
 							<button
-								class="px-2 py-1.5 rounded-xl bg-black text-white dark:bg-white dark:text-black transition font-medium text-sm flex items-center"
+								class="px-2 py-1.5 rounded-xl brand-btn-primary transition font-medium text-sm flex items-center"
 								on:click={() => {
 									showCreateModal = true;
 								}}
@@ -304,7 +304,7 @@
 							{#if query}
 								<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
 									<button
-										class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+										class="p-0.5 rounded-full brand-nav-item transition"
 										aria-label={$i18n.t('Clear search')}
 										on:click={() => {
 											query = '';
@@ -356,7 +356,7 @@
 						<Dropdown align="end">
 							<Tooltip content={$i18n.t('Actions')}>
 								<button
-									class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+									class="p-1 rounded-lg brand-nav-item transition"
 									type="button"
 									aria-label={$i18n.t('Actions')}
 								>
@@ -369,7 +369,7 @@
 									class="w-[170px] rounded-xl p-1 border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-850 dark:text-white shadow-sm"
 								>
 									<button
-										class="select-none flex w-full gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+										class="select-none flex w-full gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer brand-nav-item rounded-md"
 										type="button"
 										on:click={() => bulkToggleHandler(true)}
 									>
@@ -377,7 +377,7 @@
 										{$i18n.t('Enable All')}
 									</button>
 									<button
-										class="select-none flex w-full gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+										class="select-none flex w-full gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer brand-nav-item rounded-md"
 										type="button"
 										on:click={() => bulkToggleHandler(false)}
 									>
@@ -415,7 +415,7 @@
 						<div class="gap-2 grid my-2 px-3">
 							{#each automations as automation (automation.id)}
 								<a
-									class="flex space-x-4 text-left w-full px-3 py-2.5 dark:hover:bg-gray-850/50 hover:bg-gray-50 transition rounded-2xl"
+									class="flex space-x-4 text-left w-full px-3 py-2.5 brand-nav-item transition rounded-2xl"
 									href={`/automations/${automation.id}`}
 								>
 									<div class="flex-1">
@@ -439,7 +439,7 @@
 											}}
 										>
 											<button
-												class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+												class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white brand-nav-item rounded-xl"
 												type="button"
 											>
 												<EllipsisHorizontal className="size-5" />
