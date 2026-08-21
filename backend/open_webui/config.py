@@ -3539,7 +3539,20 @@ API_KEYS_ALLOWED_ENDPOINTS = ConfigVar(
     os.getenv('API_KEYS_ALLOWED_ENDPOINTS', os.getenv('API_KEY_ALLOWED_ENDPOINTS', '')),
 )
 
-JWT_EXPIRES_IN = ConfigVar('JWT_EXPIRES_IN', 'auth.jwt_expiry', os.getenv('JWT_EXPIRES_IN', '4w'))
+# Sunway: default lowered from upstream's '4w' to '8h' (VAPT GS/RPT/D306 finding 4.4).
+#
+# Two changes were needed, not one. The chart already pinned JWT_EXPIRES_IN to "8h", but
+# `auth.jwt_expiry` is listed in internal/config.py `_NEVER_PERSIST_PATHS` because a stale
+# "4w" row in the `config` table was overriding it. This default is the second half: it is
+# what applies when the env var is absent, so a deployment that forgets to set it gets a
+# workday-length session rather than a month-long one.
+#
+# 8h is a working-day session, not the VAPT recommendation verbatim — the report asked for
+# tokens that "expire at the end of user session". Under multi-tenancy the IAM/WorkOS
+# session is the real authority here and this JWT rides alongside it; note also that
+# without Redis the revocation path is a no-op (review finding M1b), so a long-lived token
+# is also an unrevokable one. Both are reasons to keep this short.
+JWT_EXPIRES_IN = ConfigVar('JWT_EXPIRES_IN', 'auth.jwt_expiry', os.getenv('JWT_EXPIRES_IN', '8h'))
 
 if JWT_EXPIRES_IN.value == '-1':
     log.warning(
