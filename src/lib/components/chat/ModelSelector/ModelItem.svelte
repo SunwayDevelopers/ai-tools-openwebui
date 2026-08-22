@@ -184,7 +184,12 @@
 							</svg>
 						</div>
 					</Tooltip>
-				{:else if item.model.connection_type === 'external'}
+				{:else if false && item.model.connection_type === 'external'}
+					<!-- Sunway: badge hidden -- every user-facing model here is served through the
+					     LiteLLM gateway with connection_type:"external" (OPENAI_API_CONFIGS), so this
+					     rendered on every model in the selector with no distinguishing value; it read
+					     as an error/warning indicator to non-technical staff, not useful metadata. -->
+
 					<Tooltip content={`${$i18n.t('External')}`}>
 						<div class="translate-y-[1px]">
 							<svg
@@ -272,27 +277,33 @@
 			</Tooltip>
 		{/if}
 
-		<ModelItemMenu
-			bind:show={showMenu}
-			model={item.model}
-			{pinModelHandler}
-			{deleteModelHandler}
-			copyLinkHandler={() => {
-				copyLinkHandler(item.model);
-			}}
-		>
-			<button
-				aria-label={`${$i18n.t('More Options')}`}
-				class="flex"
-				on:click={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					showMenu = !showMenu;
+		<!-- Sunway: "more options" (Keep in Sidebar / Copy Link) hidden -- Workspace/Models is
+		     already hidden and models are code-defined (model_catalogue.py), so there is no
+		     per-model sidebar-pinning workflow left for this menu to serve; it read as a stray
+		     clickable "..." with no clear purpose in a 10K-staff rollout. -->
+		{#if false}
+			<ModelItemMenu
+				bind:show={showMenu}
+				model={item.model}
+				{pinModelHandler}
+				{deleteModelHandler}
+				copyLinkHandler={() => {
+					copyLinkHandler(item.model);
 				}}
 			>
-				<EllipsisHorizontal />
-			</button>
-		</ModelItemMenu>
+				<button
+					aria-label={`${$i18n.t('More Options')}`}
+					class="flex"
+					on:click={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						showMenu = !showMenu;
+					}}
+				>
+					<EllipsisHorizontal />
+				</button>
+			</ModelItemMenu>
+		{/if}
 
 		{#if value === item.value}
 			<div>
