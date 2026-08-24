@@ -519,8 +519,13 @@ textarea::placeholder {
 	@apply underline;
 }
 
+/* Sunway: fallback chain was 'SunwaySans', 'Archivo', 'Vazirmatn' -- Archivo/Vazirmatn are
+ * upstream Open WebUI's own fonts. If SunwaySans ever fails to load (network hiccup, missing
+ * weight), the failure path fell straight into upstream's identity instead of a neutral font --
+ * backwards for a rebrand. Falls to a plain system stack instead, matching the pattern in
+ * lib/i18n/index.ts's own SUPPORTED_LOCALES comment: --font-sans: 'SunwaySans', system-ui, sans-serif. */
 .font-primary {
-	font-family: 'SunwaySans', 'Archivo', 'Vazirmatn', sans-serif;
+	font-family: 'SunwaySans', system-ui, sans-serif;
 }
 
 .drag-region {

@@ -705,7 +705,7 @@
 	"Image Max Compression Size": "",
 	"Image Max Compression Size height": "",
 	"Image Max Compression Size width": "",
-	"Image will be read as text for model(s) without vision support.": "",
+	"Image(s) will be described and/or extracted as text automatically.": "",
 	"Images": "",
 	"Images for model(s) without vision support are not available in a temporary chat.": "",
 	"Import": "",
