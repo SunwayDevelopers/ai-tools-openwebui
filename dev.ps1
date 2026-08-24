@@ -306,6 +306,41 @@ Set-EnvDefault RAG_OFFICE_FAST_PATH_ENGINE   'unstructured'
 # Admin Settings -> Documents -> Allowed File Extensions. Add code exts (py,js,ts,...) if
 # you want code upload; do NOT add exe/bat/ps1/cmd/sh/env (scripts/secrets).
 Set-EnvDefault RAG_ALLOWED_FILE_EXTENSIONS   'pdf,docx,xlsx,pptx,csv,txt,md,png,jpg,jpeg'
+Set-EnvDefault RAG_FILE_MAX_COUNT            '10'
+Set-EnvDefault RAG_FILE_MAX_SIZE             '30'
+# Item 7 local seed (Sunway, 2026-08-24): with ENABLE_PERSISTENT_CONFIG=false (.env),
+# env is authoritative instead of the DB, so every one of these needs a value here or
+# it silently falls back to its raw code/upstream default. Values verified against
+# staging in docs/item7-seed-block.md §2/§5/§6 -- see that file for the two settings
+# deliberately NOT copied from it (RAG_ALLOWED_FILE_EXTENSIONS above and
+# SEARXNG_QUERY_URL below already have correct values here; the doc's captures for
+# both are in the wrong format/missing a required path segment).
+Set-EnvDefault OPENAI_API_CONFIGS            '{"0":{"enable":true,"tags":[],"prefix_id":"","model_ids":[],"connection_type":"external","auth_type":"bearer"}}'
+Set-EnvDefault CHUNK_SIZE                    '1024'
+Set-EnvDefault CHUNK_OVERLAP                 '200'
+Set-EnvDefault CHUNK_MIN_SIZE_TARGET         '256'
+Set-EnvDefault RAG_TEXT_SPLITTER             'token'
+Set-EnvDefault RAG_TOP_K                     '20'
+Set-EnvDefault RAG_TOP_K_RERANKER            '10'
+Set-EnvDefault WEB_SEARCH_RESULT_COUNT       '5'
+Set-EnvDefault WEB_SEARCH_CONCURRENT_REQUESTS '10'
+Set-EnvDefault WEB_LOADER_CONCURRENT_REQUESTS '20'
+Set-EnvDefault BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL 'true'
+# Tier ordering + which preset a brand-new chat opens on -- BAAI/bge-m3 deliberately
+# dropped from the order list, that MLIS deployment was paused 2026-08-16.
+Set-EnvDefault DEFAULT_MODELS                'schat-quick'
+Set-EnvDefault MODEL_ORDER_LIST              '["deepseek-ai/DeepSeek-V4-Flash-0731","google/gemma-4-E4B-it","Qwen/Qwen-Image","Qwen/Qwen3.6-35B-A3B","schat-coding","schat-deepthink","schat-quick"]'
+# Curated safety nets -- without these, the flip reverts both to upstream's raw
+# permissive defaults (terminal/code_interpreter/notes all "on" for every model and
+# user), silently re-arming everything the global flags currently suppress.
+Set-EnvDefault DEFAULT_MODEL_METADATA        '{"capabilities":{"file_context":true,"vision":true,"file_upload":true,"web_search":true,"image_generation":true,"citations":true,"status_updates":true,"builtin_tools":true,"code_interpreter":false,"terminal":false}}'
+Set-EnvDefault USER_PERMISSIONS              '{"features":{"channels":false,"notes":false,"folders":false,"memories":false,"calendar":false,"code_interpreter":false},"chat":{"stt":false,"tts":false,"call":false,"valves":false,"rate_response":false,"temporary":false}}'
+# Image generation: enable + model id only. The endpoint URL and its ServiceAccount
+# key are NOT here -- like RAG_IMAGE_VISION_LLM_* above, they live in .env only
+# (ISO 27001, no committed creds) as IMAGES_OPENAI_API_BASE_URL / IMAGES_OPENAI_API_KEY.
+# Enabling this without those two set in .env leaves the feature on but unauthenticated.
+Set-EnvDefault ENABLE_IMAGE_GENERATION       'true'
+Set-EnvDefault IMAGE_GENERATION_MODEL        'Qwen/Qwen-Image'
 # Image vision LLM (Sunway): route uploaded IMAGES to a small vision model (Gemma via
 # vLLM/LiteLLM) so text-only models (DeepSeek) get non-text visual understanding OCR
 # can't provide. COMBINE_OCR keeps Docling authoritative for text in text-embedded

@@ -93,13 +93,20 @@ async def get_sorted_filter_ids(request, model: dict, enabled_filter_ids: list =
 
 # Grant these filters the discernment to pass what serves
 # and refuse what harms, for every soul in the house.
-async def process_filter_functions(request, filter_functions, filter_type, form_data, extra_params):
+async def process_filter_functions(request, filter_ids, filter_type, form_data, extra_params):
+    """Run each filter's inlet/outlet/stream handler in order.
+
+    Sunway: takes filter IDS, not pre-fetched Functions rows. It used to take a
+    `filter_functions` list built by looking `filter_ids` up in the `function` DB table --
+    but built-in filters (schat_guardrails) are a code module since hardening plan Item 8,
+    not a table row, so that lookup silently returned [] for them and this loop never ran
+    at all. get_function_module() below already checks the built-in registry before the DB,
+    so it needs only the id string -- the DB row was never read for anything else here.
+    """
     skip_files = None
 
-    for function in filter_functions:
-        filter = function
-        filter_id = function.id
-        if not filter:
+    for filter_id in filter_ids:
+        if not filter_id:
             continue
 
         function_module = await get_function_module(request, filter_id, load_from_db=(filter_type != 'stream'))

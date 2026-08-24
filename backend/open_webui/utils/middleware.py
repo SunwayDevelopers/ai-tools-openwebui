@@ -43,7 +43,6 @@ from open_webui.env import (
 )
 from open_webui.models.chats import Chats
 from open_webui.models.folders import Folders
-from open_webui.models.functions import Functions
 from open_webui.models.models import Models
 from open_webui.models.oauth_sessions import OAuthSessions
 from open_webui.models.users import UserModel, Users
@@ -2649,11 +2648,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     try:
         filter_ids = await get_sorted_filter_ids(request, model, metadata.get('filter_ids', []))
-        filter_functions = await Functions.get_functions_by_ids(filter_ids)
 
         form_data, flags = await process_filter_functions(
             request=request,
-            filter_functions=filter_functions,
+            filter_ids=filter_ids,
             filter_type='inlet',
             form_data=form_data,
             extra_params=extra_params,
@@ -3549,11 +3547,10 @@ async def outlet_filter_handler(ctx):
         }
 
         filter_ids = await get_sorted_filter_ids(request, model, metadata.get('filter_ids', []))
-        filter_functions = await Functions.get_functions_by_ids(filter_ids)
 
         outlet_result, _ = await process_filter_functions(
             request=request,
-            filter_functions=filter_functions,
+            filter_ids=filter_ids,
             filter_type='outlet',
             form_data=outlet_data,
             extra_params=extra_params,
@@ -3782,10 +3779,7 @@ async def streaming_chat_response_handler(response, ctx):
         '__model__': model,
     }
 
-    filter_functions = [
-        await Functions.get_function_by_id(filter_id)
-        for filter_id in await get_sorted_filter_ids(request, model, metadata.get('filter_ids', []))
-    ]
+    filter_ids = await get_sorted_filter_ids(request, model, metadata.get('filter_ids', []))
 
     # Standard streaming response handler
     # event_caller is optional — only needed for direct (client-side) tools
@@ -4158,7 +4152,7 @@ async def streaming_chat_response_handler(response, ctx):
 
                             data, _ = await process_filter_functions(
                                 request=request,
-                                filter_functions=filter_functions,
+                                filter_ids=filter_ids,
                                 filter_type='stream',
                                 form_data=data,
                                 extra_params={'__body__': form_data, **extra_params},
@@ -5451,7 +5445,7 @@ async def streaming_chat_response_handler(response, ctx):
             for event in events:
                 event, _ = await process_filter_functions(
                     request=request,
-                    filter_functions=filter_functions,
+                    filter_ids=filter_ids,
                     filter_type='stream',
                     form_data=event,
                     extra_params=extra_params,
@@ -5463,7 +5457,7 @@ async def streaming_chat_response_handler(response, ctx):
             async for data in original_generator:
                 data, _ = await process_filter_functions(
                     request=request,
-                    filter_functions=filter_functions,
+                    filter_ids=filter_ids,
                     filter_type='stream',
                     form_data=data,
                     extra_params=extra_params,
