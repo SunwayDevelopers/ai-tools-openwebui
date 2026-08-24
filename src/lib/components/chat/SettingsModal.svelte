@@ -656,7 +656,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'general';
@@ -680,7 +680,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'interface';
@@ -705,7 +705,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
 										selectedTab = 'connections';
@@ -731,7 +731,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
 										selectedTab = 'tools';
@@ -756,7 +756,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'personalization';
@@ -781,7 +781,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 									on:click={() => {
 										selectedTab = 'audio';
@@ -806,7 +806,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'data_controls';
@@ -830,7 +830,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'account';
@@ -854,7 +854,7 @@
 											: 'brand-nav-active'
 										: ($settings?.highContrastMode ?? false)
 											? 'brand-nav-item'
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+											: 'text-gray-300 dark:text-gray-500 hover:text-gray-700 dark:hover:text-white'
 								}`}
 								on:click={() => {
 									selectedTab = 'about';

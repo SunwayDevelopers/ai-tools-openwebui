@@ -30,7 +30,7 @@
 
 {#if mounted && isVisible}
 	<div
-		class="hidden md:flex items-center self-center text-xs text-gray-400 dark:text-gray-600 {className}"
+		class="hidden md:flex items-center self-center text-xs text-gray-400 dark:text-gray-500 {className}"
 	>
 		<span>{keys.map(formatKey).join(isMac ? '' : '+')}</span>
 	</div>

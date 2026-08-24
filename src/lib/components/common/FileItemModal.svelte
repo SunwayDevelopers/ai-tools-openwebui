@@ -362,10 +362,8 @@
 				<div class="flex flex-col items-center md:flex-row gap-1 justify-between w-full">
 					<div class=" flex flex-wrap text-xs gap-1 text-gray-500">
 						{#if item?.type === 'collection'}
-							{#if item?.type}
-								<div class="capitalize shrink-0">{item.type}</div>
-								•
-							{/if}
+							<div class="capitalize shrink-0">{$i18n.t('Knowledge Base')}</div>
+							•
 
 							{#if item?.description}
 								<div class="line-clamp-1">{item.description}</div>

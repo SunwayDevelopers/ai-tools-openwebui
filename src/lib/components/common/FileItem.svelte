@@ -174,6 +174,8 @@
 						<div class="text-gray-500 text-xs shrink-0">{statusLabel}</div>
 					{:else if size}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
+					{:else if type === 'collection'}
+						<div class="text-gray-500 text-xs capitalize shrink-0">{$i18n.t('Knowledge Base')}</div>
 					{:else}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{type}</div>
 					{/if}

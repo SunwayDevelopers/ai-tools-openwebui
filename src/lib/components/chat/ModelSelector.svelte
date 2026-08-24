@@ -88,11 +88,16 @@
 					     tiers (Flash / Coder / Deepthink); a search box over three items is noise,
 					     and it also carried the "Pull {model} from Ollama.com" affordance, which is
 					     dead here (Ollama is deployed nowhere — chart pins ENABLE_OLLAMA_API=false). -->
+					<!-- Sunway: no triggerClassName override — the trigger's font-size/line-height are
+					     fixed by the .brand-pill-outline class (app.css), which is unlayered CSS and
+					     therefore always wins over any Tailwind text-* utility passed here (Tailwind
+					     utilities live in @layer utilities; unlayered CSS beats layered CSS regardless
+					     of source order or specificity). Change the size in app.css if it ever needs
+					     to differ from Attach Files / Attach Knowledge, which share the same class. -->
 					<Selector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
 						searchEnabled={false}
-						triggerClassName={compact ? 'text-lg' : 'text-lg'}
 						items={$models
 							.map((model) => ({
 								value: model.id,
