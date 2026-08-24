@@ -92,6 +92,7 @@
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
 						searchEnabled={false}
+						triggerClassName={compact ? 'text-lg' : 'text-lg'}
 						items={$models
 							.map((model) => ({
 								value: model.id,

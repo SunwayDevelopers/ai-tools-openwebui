@@ -1702,17 +1702,17 @@
 
 							<div class=" flex justify-between mt-0.5 mb-2.5 mx-0.5 max-w-full" dir="ltr">
 								<div class="ml-1 self-end flex items-center gap-1.5 flex-1 max-w-[80%]">
-									<Tooltip content={$i18n.t('Attach File')}>
+									<Tooltip content={$i18n.t('Upload Files')}>
 										<button
 											type="button"
 											class="brand-pill-outline text-gray-600 dark:text-gray-300 text-xs"
-											aria-label={$i18n.t('Attach File')}
+											aria-label={$i18n.t('Upload Files')}
 											on:click={() => {
 												filesInputElement.click();
 											}}
 										>
 											<Clip className="size-3.5" />
-											<span class="hidden md:block">{$i18n.t('Attach File')}</span>
+											<span class="hidden md:block">{$i18n.t('Upload Files')}</span>
 										</button>
 									</Tooltip>
 

@@ -272,7 +272,7 @@
 					{/if}
 
 					<!-- Sunway: "Attach Knowledge" moved out of this menu into a standalone composer
-					     button (MessageInput.svelte, next to Attach File) — same reasoning as Upload
+					     button (MessageInput.svelte, next to Upload Files) — same reasoning as Upload
 					     Files above. The 'knowledge' tab panel and its trigger are gone with it. -->
 
 					<!-- Sunway: "Reference Chats" (pull other chats in as context) deferred with the
