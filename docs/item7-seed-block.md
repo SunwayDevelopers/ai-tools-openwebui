@@ -13,13 +13,13 @@ is the one that determines what has to be written.
 
 ## 1. Numbers
 
-| | |
-|---|---|
-| Captured settings (flat, non-secret) | 110 |
-| Already declared in the chart | 6 |
-| **Not in the chart** | **104** |
-| Secret-named | 15 (only **4** non-empty) |
-| Nested objects with no flat env var | 10 |
+|                                      |                           |
+| ------------------------------------ | ------------------------- |
+| Captured settings (flat, non-secret) | 110                       |
+| Already declared in the chart        | 6                         |
+| **Not in the chart**                 | **104**                   |
+| Secret-named                         | 15 (only **4** non-empty) |
+| Nested objects with no flat env var  | 10                        |
 
 Most of the 104 are upstream defaults for engines schat does not use. The list below is what
 actually needs writing.
@@ -29,51 +29,51 @@ actually needs writing.
 ## 2. Seed these — `values.staging.yaml` → `env:`
 
 **26 settings.** Every one verified to differ from its code default, with code defaults computed
-*outside* the repo so the dev `.env` could not contaminate them.
+_outside_ the repo so the dev `.env` could not contaminate them.
 
 ```yaml
-  # ── Providers ───────────────────────────────────────────────────────────────
-  OPENAI_API_CONFIGS: '{"0":{"enable":true,"tags":[],"prefix_id":"","model_ids":[],"connection_type":"external","auth_type":"bearer"}}'
+# ── Providers ───────────────────────────────────────────────────────────────
+OPENAI_API_CONFIGS: '{"0":{"enable":true,"tags":[],"prefix_id":"","model_ids":[],"connection_type":"external","auth_type":"bearer"}}'
 
-  # ── Sdeck MCP  ⚠️ WITHOUT THIS, SLIDE GENERATION STOPS ──────────────────────
-  TOOL_SERVER_CONNECTIONS: '[{"url":"http://staging-presenton-app.presenton-staging.svc.cluster.local/mcp","path":"openapi.json","type":"mcp","auth_type":"none","headers":{"x-user-email":"{{USER_EMAIL}}"},"key":"","config":{"enable":true,"function_name_filter_list":"","access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"id":"SDeck Staging","name":"Slide Deck","description":""},"spec_type":"url","spec":""}]'
+# ── Sdeck MCP  ⚠️ WITHOUT THIS, SLIDE GENERATION STOPS ──────────────────────
+TOOL_SERVER_CONNECTIONS: '[{"url":"http://staging-presenton-app.presenton-staging.svc.cluster.local/mcp","path":"openapi.json","type":"mcp","auth_type":"none","headers":{"x-user-email":"{{USER_EMAIL}}"},"key":"","config":{"enable":true,"function_name_filter_list":"","access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"id":"SDeck Staging","name":"Slide Deck","description":""},"spec_type":"url","spec":""}]'
 
-  # ── Document extraction ─────────────────────────────────────────────────────
-  CONTENT_EXTRACTION_ENGINE: "docling"
-  DOCLING_SERVER_URL: "http://docling-service.docling.svc.cluster.local:5001"
-  DOCLING_PARAMS: '{"do_ocr":true,"ocr_engine":"easyocr","ocr_lang":"en","images_scale":2,"table_mode":"accurate"}'
+# ── Document extraction ─────────────────────────────────────────────────────
+CONTENT_EXTRACTION_ENGINE: 'docling'
+DOCLING_SERVER_URL: 'http://docling-service.docling.svc.cluster.local:5001'
+DOCLING_PARAMS: '{"do_ocr":true,"ocr_engine":"easyocr","ocr_lang":"en","images_scale":2,"table_mode":"accurate"}'
 
-  # ── Chunking + retrieval ────────────────────────────────────────────────────
-  CHUNK_SIZE: "1024"
-  CHUNK_OVERLAP: "200"
-  CHUNK_MIN_SIZE_TARGET: "256"
-  RAG_TEXT_SPLITTER: "token"
-  RAG_TOP_K: "20"
-  RAG_TOP_K_RERANKER: "10"
-  RAG_EMBEDDING_BATCH_SIZE: "32"
+# ── Chunking + retrieval ────────────────────────────────────────────────────
+CHUNK_SIZE: '1024'
+CHUNK_OVERLAP: '200'
+CHUNK_MIN_SIZE_TARGET: '256'
+RAG_TEXT_SPLITTER: 'token'
+RAG_TOP_K: '20'
+RAG_TOP_K_RERANKER: '10'
+RAG_EMBEDDING_BATCH_SIZE: '32'
 
-  # ── Web search (shared SearXNG) ─────────────────────────────────────────────
-  ENABLE_WEB_SEARCH: "true"
-  WEB_SEARCH_ENGINE: "searxng"
-  SEARXNG_QUERY_URL: "http://searxng-http.searxng.svc.cluster.local:8080"
-  WEB_SEARCH_RESULT_COUNT: "5"
-  WEB_SEARCH_CONCURRENT_REQUESTS: "10"
-  WEB_LOADER_CONCURRENT_REQUESTS: "20"
-  BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: "true"
+# ── Web search (shared SearXNG) ─────────────────────────────────────────────
+ENABLE_WEB_SEARCH: 'true'
+WEB_SEARCH_ENGINE: 'searxng'
+SEARXNG_QUERY_URL: 'http://searxng-http.searxng.svc.cluster.local:8080'
+WEB_SEARCH_RESULT_COUNT: '5'
+WEB_SEARCH_CONCURRENT_REQUESTS: '10'
+WEB_LOADER_CONCURRENT_REQUESTS: '20'
+BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: 'true'
 
-  # ── Files ───────────────────────────────────────────────────────────────────
-  RAG_ALLOWED_FILE_EXTENSIONS: '["pdf","docx","xlsx","pptx","csv","txt","md","png","jpg","jpeg"]'
-  RAG_FILE_MAX_COUNT: "10"
-  RAG_FILE_MAX_SIZE: "30"
+# ── Files ───────────────────────────────────────────────────────────────────
+RAG_ALLOWED_FILE_EXTENSIONS: '["pdf","docx","xlsx","pptx","csv","txt","md","png","jpg","jpeg"]'
+RAG_FILE_MAX_COUNT: '10'
+RAG_FILE_MAX_SIZE: '30'
 
-  # ── Image generation ────────────────────────────────────────────────────────
-  ENABLE_IMAGE_GENERATION: "true"
-  IMAGE_GENERATION_MODEL: "Qwen/Qwen-Image"
-  IMAGES_OPENAI_API_BASE_URL: "https://qwen-image.project-user-ivanbek.serving.mymswgl-ai-application.sunway.com/v1"
+# ── Image generation ────────────────────────────────────────────────────────
+ENABLE_IMAGE_GENERATION: 'true'
+IMAGE_GENERATION_MODEL: 'Qwen/Qwen-Image'
+IMAGES_OPENAI_API_BASE_URL: 'https://qwen-image.project-user-ivanbek.serving.mymswgl-ai-application.sunway.com/v1'
 
-  # ── Models / presets (Item 9) ───────────────────────────────────────────────
-  DEFAULT_MODELS: "schat-quick"
-  MODEL_ORDER_LIST: '["deepseek-ai/DeepSeek-V4-Flash-0731","google/gemma-4-E4B-it","Qwen/Qwen-Image","Qwen/Qwen3.6-35B-A3B","schat-coding","schat-deepthink","schat-quick"]'
+# ── Models / presets (Item 9) ───────────────────────────────────────────────
+DEFAULT_MODELS: 'schat-quick'
+MODEL_ORDER_LIST: '["deepseek-ai/DeepSeek-V4-Flash-0731","google/gemma-4-E4B-it","Qwen/Qwen-Image","Qwen/Qwen3.6-35B-A3B","schat-coding","schat-deepthink","schat-quick"]'
 ```
 
 Plus the curated `DEFAULT_MODEL_METADATA` (§5) and `USER_PERMISSIONS` (§6).
@@ -89,7 +89,7 @@ of the twenty-six above are affected.
 
 The seven web-search settings were **absent from the first version of this list**. They were found
 only when the production-alignment question forced a second look. The cause is worth recording,
-because it is a flaw in the *method*, not a typo: the first pass walked the capture
+because it is a flaw in the _method_, not a typo: the first pass walked the capture
 subsystem-by-subsystem, and web search lives under `rag.web.*` — inside the retrieval subtree,
 several levels below where the embedding and chunking settings sit — so scanning "retrieval" by
 eye skipped it.
@@ -144,18 +144,18 @@ Two are actively misleading if seeded: `MINERU_API_URL: "http://localhost:8000"`
 
 Four of the fifteen secret-named fields are non-empty:
 
-| Key | What it is |
-|---|---|
-| `OPENAI_API_KEYS` | LiteLLM |
-| `RAG_OPENAI_API_KEY` | embeddings (Infinity) |
-| `RAG_EXTERNAL_RERANKER_API_KEY` | reranker |
-| `IMAGES_OPENAI_API_KEY` | **a Kubernetes ServiceAccount token**, not a vendor key — expires 2027-06-25 (finding **C4**) |
+| Key                             | What it is                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEYS`               | LiteLLM                                                                                       |
+| `RAG_OPENAI_API_KEY`            | embeddings (Infinity)                                                                         |
+| `RAG_EXTERNAL_RERANKER_API_KEY` | reranker                                                                                      |
+| `IMAGES_OPENAI_API_KEY`         | **a Kubernetes ServiceAccount token**, not a vendor key — expires 2027-06-25 (finding **C4**) |
 
 `values.yaml:53-55` already documents the first two as belonging to the secret. The chart mounts
 `existingSecret` wholesale through `envFrom.secretRef`, so these need no `secretKeyRef` stanza —
 they only have to exist in that Secret under these exact names.
 
-**Rotation, in context.** C4's remediation is *"rotate the four secrets, then delete the rows"* —
+**Rotation, in context.** C4's remediation is _"rotate the four secrets, then delete the rows"_ —
 and the reason is not public exposure. It is that the secrets sit at rest in the `config` table
 and in every backup. **Completing Item 7 is the remediation**: once these live in the Secret and
 the config rows are deleted, they stop being at rest in the database. Rotation then becomes
@@ -170,10 +170,20 @@ MLIS/platform owner.
 Staging holds:
 
 ```json
-{"capabilities": {"file_context": true, "vision": true, "file_upload": true,
-                  "web_search": true, "image_generation": true, "code_interpreter": true,
-                  "terminal": true, "citations": true, "status_updates": true,
-                  "builtin_tools": true}}
+{
+	"capabilities": {
+		"file_context": true,
+		"vision": true,
+		"file_upload": true,
+		"web_search": true,
+		"image_generation": true,
+		"code_interpreter": true,
+		"terminal": true,
+		"citations": true,
+		"status_updates": true,
+		"builtin_tools": true
+	}
+}
 ```
 
 This is the **global default applied to every model**, and it is an upstream default nobody chose.
@@ -185,7 +195,7 @@ trap from `CLAUDE.md` in its widest form — flip one global flag later and this
 capability to every model at once. Seed a curated version instead:
 
 ```yaml
-  DEFAULT_MODEL_METADATA: '{"capabilities":{"file_context":true,"vision":true,"file_upload":true,"web_search":true,"image_generation":true,"citations":true,"status_updates":true,"builtin_tools":true,"code_interpreter":false,"terminal":false}}'
+DEFAULT_MODEL_METADATA: '{"capabilities":{"file_context":true,"vision":true,"file_upload":true,"web_search":true,"image_generation":true,"citations":true,"status_updates":true,"builtin_tools":true,"code_interpreter":false,"terminal":false}}'
 ```
 
 ---
@@ -194,16 +204,16 @@ capability to every model at once. Seed a curated version instead:
 
 Agreed to curate. Changes from what staging holds:
 
-| Permission | Staging | Curated | Why |
-|---|---|---|---|
-| `features.channels` | true | **false** | feature deleted |
-| `features.notes` | true | **false** | deferred; now server-gated |
-| `features.folders` · `memories` · `calendar` · `code_interpreter` | true | **false** | deferred, globally off |
-| `chat.stt` · `tts` · `call` | true | **false** | Voice deferred; now server-gated |
-| `chat.valves` | true | **false** | Valves UI deleted |
-| `chat.rate_response` | true | **false** | ratings deleted with Evaluations |
-| `chat.temporary` | true | **false** | Temporary Chat deferred |
-| everything else | — | unchanged | |
+| Permission                                                        | Staging | Curated   | Why                              |
+| ----------------------------------------------------------------- | ------- | --------- | -------------------------------- |
+| `features.channels`                                               | true    | **false** | feature deleted                  |
+| `features.notes`                                                  | true    | **false** | deferred; now server-gated       |
+| `features.folders` · `memories` · `calendar` · `code_interpreter` | true    | **false** | deferred, globally off           |
+| `chat.stt` · `tts` · `call`                                       | true    | **false** | Voice deferred; now server-gated |
+| `chat.valves`                                                     | true    | **false** | Valves UI deleted                |
+| `chat.rate_response`                                              | true    | **false** | ratings deleted with Evaluations |
+| `chat.temporary`                                                  | true    | **false** | Temporary Chat deferred          |
+| everything else                                                   | —       | unchanged |                                  |
 
 **No behaviour changes today** — every one is already neutralised by a global flag. What changes
 is the failure mode: right now, re-enabling `ENABLE_NOTES` would instantly grant Notes to every
@@ -214,7 +224,7 @@ can be pinned like anything else. Two design points worth knowing before you wri
 
 - **It merges over the defaults, it does not replace them.** State only the keys you want to
   change. A full replacement would silently drop any permission key a later upstream version
-  adds — and an absent key reads as *permitted* in several frontend gates (`?? true`).
+  adds — and an absent key reads as _permitted_ in several frontend gates (`?? true`).
 - **Malformed JSON logs and falls back to the defaults** rather than raising. A typo in a
   permissions string should not stop the pod booting, because fixing it would then need a
   deploy to recover from a deploy.
@@ -222,7 +232,7 @@ can be pinned like anything else. Two design points worth knowing before you wri
 So the curated block above can be written as just the differences:
 
 ```yaml
-  USER_PERMISSIONS: '{"features":{"channels":false,"notes":false,"folders":false,"memories":false,"calendar":false,"code_interpreter":false},"chat":{"stt":false,"tts":false,"call":false,"valves":false,"rate_response":false,"temporary":false}}'
+USER_PERMISSIONS: '{"features":{"channels":false,"notes":false,"folders":false,"memories":false,"calendar":false,"code_interpreter":false},"chat":{"stt":false,"tts":false,"call":false,"valves":false,"rate_response":false,"temporary":false}}'
 ```
 
 Verified: with no env var the defaults are unchanged; with the block above only those twelve keys
