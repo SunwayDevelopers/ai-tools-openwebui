@@ -3,8 +3,6 @@
 	import { fly } from 'svelte/transition';
 
 	import { config, user, tools as _tools, mobile, knowledge } from '$lib/stores';
-	import { getKnowledgeBases } from '$lib/apis/knowledge';
-
 	import { createPicker } from '$lib/utils/google-drive-picker';
 
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
@@ -12,19 +10,16 @@
 	import DocumentArrowUp from '$lib/components/icons/DocumentArrowUp.svelte';
 	import Camera from '$lib/components/icons/Camera.svelte';
 	import Note from '$lib/components/icons/Note.svelte';
-	import Clip from '$lib/components/icons/Clip.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
 	import Refresh from '$lib/components/icons/Refresh.svelte';
 	import Agile from '$lib/components/icons/Agile.svelte';
 	import ClockRotateRight from '$lib/components/icons/ClockRotateRight.svelte';
-	import Database from '$lib/components/icons/Database.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import PageEdit from '$lib/components/icons/PageEdit.svelte';
 	import Chats from './InputMenu/Chats.svelte';
 	import Files from './InputMenu/Files.svelte';
 	import Notes from './InputMenu/Notes.svelte';
-	import Knowledge from './InputMenu/Knowledge.svelte';
 	import AttachWebpageModal from './AttachWebpageModal.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 
@@ -36,7 +31,6 @@
 	export let fileUploadCapableModels: string[] = [];
 
 	export let screenCaptureHandler: Function;
-	export let uploadFilesHandler: Function;
 	export let inputFilesHandler: Function;
 
 	export let uploadGoogleDriveHandler: Function;
@@ -54,6 +48,19 @@
 	$: fileUploadEnabled =
 		fileUploadCapableModels.length === selectedModels.length &&
 		($user?.role === 'admin' || $user?.permissions?.chat?.file_upload);
+
+	// Sunway: with Upload Files and Attach Knowledge moved out to standalone composer
+	// buttons, this menu can end up with nothing left to show — Notes, Google Drive and
+	// OneDrive are all separately flag-gated and off by default. Exported so the parent
+	// only renders the "+" trigger when there is something behind it to open.
+	export let hasVisibleItems = false;
+	$: hasVisibleItems =
+		($config?.features?.enable_notes ?? false) ||
+		(fileUploadEnabled &&
+			(($config?.features?.enable_google_drive_integration ?? false) ||
+				(($config?.features?.enable_onedrive_integration ?? false) &&
+					(($config?.features?.enable_onedrive_personal ?? false) ||
+						($config?.features?.enable_onedrive_business ?? false)))));
 
 	let webUploadEnabled = true;
 	$: webUploadEnabled = $user?.role === 'admin' || ($user?.permissions?.chat?.web_upload ?? true);
@@ -126,31 +133,10 @@
 		>
 			{#if tab === ''}
 				<div in:fly={{ x: -20, duration: 150 }}>
-					<Tooltip
-						content={fileUploadCapableModels.length !== selectedModels.length
-							? $i18n.t('Model(s) do not support file upload')
-							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
-								: ''}
-						className="w-full"
-					>
-						<button
-							class="flex w-full gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer brand-nav-item/50 rounded-xl {!fileUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							type="button"
-							on:click={() => {
-								if (fileUploadEnabled) {
-									uploadFilesHandler();
-									show = false;
-								}
-							}}
-						>
-							<Clip />
-
-							<div class="line-clamp-1">{$i18n.t('Upload Files')}</div>
-						</button>
-					</Tooltip>
+					<!-- Sunway: "Upload Files" moved out of this menu into a standalone composer
+					     button (MessageInput.svelte, next to Attach Knowledge) so both are one click
+					     instead of a click-then-pick. uploadFilesHandler is gone with it -- the new
+					     button calls filesInputElement.click() directly. -->
 
 					<!-- Sunway: camera/screen Capture deferred — hidden for everyone incl. admins; kept in code, gated off. -->
 					{#if false}
@@ -285,35 +271,9 @@
 						</Tooltip>
 					{/if}
 
-					<Tooltip
-						content={fileUploadCapableModels.length !== selectedModels.length
-							? $i18n.t('Model(s) do not support file upload')
-							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
-								: ''}
-						className="w-full"
-					>
-						<button
-							class="flex gap-2 w-full items-center px-3 py-1.5 text-sm cursor-pointer brand-nav-item/50 rounded-xl {!fileUploadEnabled
-								? 'opacity-50'
-								: ''}"
-							on:click={() => {
-								tab = 'knowledge';
-							}}
-						>
-							<Database />
-
-							<div class="flex items-center w-full justify-between">
-								<div class=" line-clamp-1">
-									{$i18n.t('Attach Knowledge')}
-								</div>
-
-								<div class="text-gray-500">
-									<ChevronRight />
-								</div>
-							</div>
-						</button>
-					</Tooltip>
+					<!-- Sunway: "Attach Knowledge" moved out of this menu into a standalone composer
+					     button (MessageInput.svelte, next to Upload Files) — same reasoning as Upload
+					     Files above. The 'knowledge' tab panel and its trigger are gone with it. -->
 
 					<!-- Sunway: "Reference Chats" (pull other chats in as context) deferred with the
 					     Memories concept — hidden for everyone incl. admins; kept in code, gated off.
@@ -497,25 +457,6 @@
 							</button>
 						{/if}
 					{/if}
-				</div>
-			{:else if tab === 'knowledge'}
-				<div in:fly={{ x: 20, duration: 150 }}>
-					<button
-						class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer rounded-xl brand-nav-item/50"
-						on:click={() => {
-							tab = '';
-						}}
-					>
-						<ChevronLeft />
-
-						<div class="flex items-center w-full justify-between">
-							<div>
-								{$i18n.t('Knowledge Base')}
-							</div>
-						</div>
-					</button>
-
-					<Knowledge {onSelect} />
 				</div>
 			{:else if tab === 'notes'}
 				<div in:fly={{ x: 20, duration: 150 }}>

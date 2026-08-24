@@ -50,8 +50,13 @@
 	aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label })}
 	class="flex group/item w-full text-left font-medium line-clamp-1 select-none items-center rounded-button py-2 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 brand-nav-item rounded-xl cursor-pointer data-highlighted:bg-muted {index ===
 	selectedModelIdx
-		? 'bg-gray-100 dark:bg-gray-800 group-hover:bg-transparent'
+		? 'group-hover:bg-transparent'
 		: ''}"
+	style={value === item.value
+		? 'background: var(--brand-soft); color: var(--brand-primary);'
+		: index === selectedModelIdx
+			? 'background: var(--brand-soft);'
+			: ''}
 	data-arrow-selected={index === selectedModelIdx}
 	data-value={item.value}
 	on:click={() => {
@@ -184,7 +189,12 @@
 							</svg>
 						</div>
 					</Tooltip>
-				{:else if item.model.connection_type === 'external'}
+				{:else if false && item.model.connection_type === 'external'}
+					<!-- Sunway: badge hidden -- every user-facing model here is served through the
+					     LiteLLM gateway with connection_type:"external" (OPENAI_API_CONFIGS), so this
+					     rendered on every model in the selector with no distinguishing value; it read
+					     as an error/warning indicator to non-technical staff, not useful metadata. -->
+
 					<Tooltip content={`${$i18n.t('External')}`}>
 						<div class="translate-y-[1px]">
 							<svg
@@ -245,7 +255,7 @@
 		     above; plain text rather than markdown — these are one-liners. -->
 		{#if item.model?.info?.meta?.description}
 			<div
-				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-500 dark:text-gray-400 line-clamp-2"
+				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-600 dark:text-gray-400 line-clamp-2"
 			>
 				{item.model.info.meta.description}
 			</div>
@@ -272,27 +282,33 @@
 			</Tooltip>
 		{/if}
 
-		<ModelItemMenu
-			bind:show={showMenu}
-			model={item.model}
-			{pinModelHandler}
-			{deleteModelHandler}
-			copyLinkHandler={() => {
-				copyLinkHandler(item.model);
-			}}
-		>
-			<button
-				aria-label={`${$i18n.t('More Options')}`}
-				class="flex"
-				on:click={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					showMenu = !showMenu;
+		<!-- Sunway: "more options" (Keep in Sidebar / Copy Link) hidden -- Workspace/Models is
+		     already hidden and models are code-defined (model_catalogue.py), so there is no
+		     per-model sidebar-pinning workflow left for this menu to serve; it read as a stray
+		     clickable "..." with no clear purpose in a 10K-staff rollout. -->
+		{#if false}
+			<ModelItemMenu
+				bind:show={showMenu}
+				model={item.model}
+				{pinModelHandler}
+				{deleteModelHandler}
+				copyLinkHandler={() => {
+					copyLinkHandler(item.model);
 				}}
 			>
-				<EllipsisHorizontal />
-			</button>
-		</ModelItemMenu>
+				<button
+					aria-label={`${$i18n.t('More Options')}`}
+					class="flex"
+					on:click={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						showMenu = !showMenu;
+					}}
+				>
+					<EllipsisHorizontal />
+				</button>
+			</ModelItemMenu>
+		{/if}
 
 		{#if value === item.value}
 			<div>

@@ -145,7 +145,7 @@
 								{#if item?.type === 'note'}
 									{$i18n.t('Notes')}
 								{:else if item?.type === 'collection'}
-									{$i18n.t('Collections')}
+									{$i18n.t('Knowledge Bases')}
 								{:else if item?.type === 'file'}
 									{$i18n.t('Files')}
 								{/if}
@@ -174,7 +174,7 @@
 										</Tooltip>
 									{:else if item.type === 'collection'}
 										<Tooltip
-											content={$i18n.t('Collection')}
+											content={$i18n.t('Knowledge Base')}
 											placement="top"
 											tippyOptions={{ zIndex: 100000 }}
 										>

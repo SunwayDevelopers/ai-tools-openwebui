@@ -345,7 +345,7 @@
 		on:click={toggleOpen}
 	>
 		<div
-			class="flex w-full text-left px-0.5 bg-transparent truncate {triggerClassName} justify-between {($settings?.highContrastMode ??
+			class="brand-pill-outline w-full text-gray-600 dark:text-gray-300 text-left truncate {triggerClassName} justify-between {($settings?.highContrastMode ??
 			false)
 				? 'dark:placeholder-gray-100 placeholder-gray-800'
 				: 'placeholder-gray-400'}"
@@ -363,7 +363,7 @@
 			{:else}
 				{placeholder}
 			{/if}
-			<ChevronDown className=" self-center ml-2 size-3" strokeWidth="2.5" />
+			<ChevronDown className=" self-center size-3" strokeWidth="2.5" />
 		</div>
 	</button>
 

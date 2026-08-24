@@ -202,9 +202,15 @@
 					</div>
 				</div>
 
+				<!-- Sunway: model description under the greeting hidden. It duplicates the same
+				     text already shown under the model in the composer's own selector dropdown
+				     (ModelItem.svelte) — SOTA assistants (ChatGPT, Claude, Gemini) show a mode's
+				     description only in its own picker, not a second time on the greeting screen.
+				     The community-model "By {user}" byline a few lines down went with it; schat's
+				     models are never community models, so it was always dead for this fork. -->
 				<div class="flex mt-1 mb-2">
 					<div in:fade={{ duration: 100, delay: 50 }}>
-						{#if models[selectedModelIdx]?.info?.meta?.description ?? null}
+						{#if false && (models[selectedModelIdx]?.info?.meta?.description ?? null)}
 							<Tooltip
 								className=" w-fit"
 								content={DOMPurify.sanitize(

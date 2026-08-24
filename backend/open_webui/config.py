@@ -1999,7 +1999,7 @@ LINKUP_SEARCH_PARAMS = ConfigVar(
 ENABLE_IMAGE_GENERATION = ConfigVar(
     'ENABLE_IMAGE_GENERATION',
     'image_generation.enable',
-    os.getenv('ENABLE_IMAGE_GENERATION', '').lower() == 'true',
+    os.getenv('ENABLE_IMAGE_GENERATION', 'True').lower() == 'true',
 )
 
 IMAGE_GENERATION_ENGINE = ConfigVar(

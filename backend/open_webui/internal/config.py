@@ -128,9 +128,28 @@ _all_configs: list[ConfigVar] = []
 # revert any DB-only value to its code default. This list needs no such prerequisite.
 #
 # Same shape as the `oauth.` carve-out below: entries are matched on the config_path.
+#
+# 2026-08-22: extended past the single JWT case, ahead of the full ENABLE_PERSISTENT_CONFIG
+# flip on staging. Two classes of entry:
+#
+#  - 'rag.file.allowed_extensions': same shape as the JWT finding -- the chart already
+#    pins the correct comma-separated list (values.staging.yaml), but a stale DB row
+#    (missing 'pdf') was winning and rejecting every PDF upload.
+#  - the four secret paths: these are live credentials (LiteLLM key, embedding key, the
+#    reranker key that reuses it, and the image-generation key -- which was found in the
+#    `config` row as a live Kubernetes ServiceAccount token, hardening plan Item 7). A
+#    leaked/rotated-away DB copy of any of these must never be able to outrank whatever is
+#    actually in the deployment's Secret, independent of whether the global flip holds --
+#    it was already reverted once (2026-08-21, IMAGES_OPENAI_API_KEY missing from the
+#    chart broke image generation), so these do not get to depend on that flag staying on.
 _NEVER_PERSIST_PATHS: frozenset[str] = frozenset(
     {
         'auth.jwt_expiry',  # session lifetime — VAPT 4.4
+        'rag.file.allowed_extensions',  # upload allowlist — stale row was missing 'pdf'
+        'openai.api_keys',  # LiteLLM key
+        'rag.openai_api_key',  # embedding key
+        'rag.external_reranker_api_key',  # reranker key (reuses the embedding key)
+        'image_generation.openai.api_key',  # image-gen key — the 2026-08-21 breakage
     }
 )
 
