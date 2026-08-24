@@ -1,23 +1,23 @@
 # schat.ai — Rollout Scope Record
 
-**What this is.** The record of what schat deliberately does *not* expose, why, and what
+**What this is.** The record of what schat deliberately does _not_ expose, why, and what
 remains true after each decision. It exists so that a capability removed or hidden for the
 phase 1 rollout is a **decision on file** rather than something a future reader discovers by
 accident — and so the reasoning survives a fresh clone, which a local file does not.
 
 **Audience.** Reviewers, CAB, ISMS. Engineers working in the code should read `CLAUDE.md`
-for the per-file mechanics; this document answers *why*, not *where*.
+for the per-file mechanics; this document answers _why_, not _where_.
 
 **Scope classes.** Every row below is one of three, and the class determines the mechanism:
 
-| Class | Meaning | Mechanism |
-|---|---|---|
-| **Removed** | out of scope; not coming back in a foreseeable phase | code deleted — git history is the archive |
-| **Deferred** | under review for a later phase | hidden behind a guard or flag; code retained |
-| **Retained, gated** | in scope, but reachable only under a stated condition | interlock or config gate |
+| Class               | Meaning                                               | Mechanism                                    |
+| ------------------- | ----------------------------------------------------- | -------------------------------------------- |
+| **Removed**         | out of scope; not coming back in a foreseeable phase  | code deleted — git history is the archive    |
+| **Deferred**        | under review for a later phase                        | hidden behind a guard or flag; code retained |
+| **Retained, gated** | in scope, but reachable only under a stated condition | interlock or config gate                     |
 
 Recovering removed code: `git log --oneline --diff-filter=D -- <path>` finds the deleting
-commit, `git show <sha>^:<path>` prints the file. Rows below name the commit *subject* rather
+commit, `git show <sha>^:<path>` prints the file. Rows below name the commit _subject_ rather
 than a SHA, so the reference survives rebases and amends.
 
 ---
@@ -44,7 +44,7 @@ Two things follow, and they shape most of this document:
   than it sounds, which is why several capabilities were removed outright rather than
   restricted.
 
-When the tier becomes expressible in code, the re-enable steps below should gate on *that*
+When the tier becomes expressible in code, the re-enable steps below should gate on _that_
 signal, never on `role === 'admin'`.
 
 ---
@@ -73,12 +73,12 @@ into any review:
 
 ### 3.1 Removed — server-side code execution
 
-| | |
-|---|---|
-| **What** | Tools authoring, Functions authoring, Pipelines |
-| **Class** | Removed |
-| **Mechanism** | authoring endpoints deleted; `utils/plugin.py`, the `exec()` loader, deleted with them |
-| **Commit** | `git log --grep='delete tool authoring'` (and the functions / pipelines commits alongside it) |
+|               |                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| **What**      | Tools authoring, Functions authoring, Pipelines                                               |
+| **Class**     | Removed                                                                                       |
+| **Mechanism** | authoring endpoints deleted; `utils/plugin.py`, the `exec()` loader, deleted with them        |
+| **Commit**    | `git log --grep='delete tool authoring'` (and the functions / pipelines commits alongside it) |
 
 **Justification.** A "Tool" was Python source stored in a database row and executed by `exec()`
 on the server when a model invoked it — no sandbox, with the pod's filesystem, network,
@@ -93,8 +93,8 @@ by the operator.
 
 **What "deleted" means precisely, because it differs by feature.** Functions was self-contained
 and its router is gone entirely. Tools and Pipelines are not: each keeps a runtime path that the
-chat request still traverses, so in both the *authoring surface* was removed and the *execution
-path* left in place —
+chat request still traverses, so in both the _authoring surface_ was removed and the _execution
+path_ left in place —
 
 - **Tools** keeps the tool-server listing, which executes nothing inside schat and is how the
   Sdeck MCP server reaches a model. What went is the 13 authoring routes, including
@@ -111,7 +111,7 @@ new code.
 **A second execution path went with it, which is worth stating separately.** Besides the two
 `exec()` calls, `utils/plugin.py` provided a startup routine that read a `requirements:` field
 from each stored tool and function and **pip-installed the named packages into the running pod
-on every boot**. So database content could introduce not just code but arbitrary *dependencies*,
+on every boot**. So database content could introduce not just code but arbitrary _dependencies_,
 fetched from the public index at start-up. That routine is deleted along with the module.
 
 **Verification that the tables are now inert.** After the deletions, the only remaining writers
@@ -135,9 +135,9 @@ The only surviving matches are Sunway comments recording what was removed, plus 
 pipeline's unrelated `Batch.exec()`.
 
 **Residual risk after removal.** None from this path; the code no longer exists rather than
-being unreachable. Two adjacent things remain by design and are *not* the same class: the code
+being unreachable. Two adjacent things remain by design and are _not_ the same class: the code
 interpreter runs in browser Pyodide or an external Jupyter, outside the schat process, with its
-own gates; and `kb_exec` is a *simulated* shell that parses read-only commands against knowledge
+own gates; and `kb_exec` is a _simulated_ shell that parses read-only commands against knowledge
 documents and executes nothing.
 
 **What would reverse it.** A reviewed, code-only tool mechanism — tools as modules in the
@@ -147,11 +147,11 @@ that way. Restoring database-backed authoring is not the path back.
 
 ### 3.2 Removed — administrative access to other users' chat content
 
-| | |
-|---|---|
-| **What** | `/chats/list/user/{id}`, `/chats/all/db`, `/utils/db/download`, the three content-bearing analytics endpoints — all **deleted**; the `/chats/{id}` admin fallback — **gated** |
-| **Class** | Removed / gated |
-| **Mechanism** | code deleted, plus `ENABLE_ADMIN_CHAT_ACCESS` and `ENABLE_ADMIN_EXPORT` for what remains — both **plain env**, both defaulting `False` |
+|               |                                                                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What**      | `/chats/list/user/{id}`, `/chats/all/db`, `/utils/db/download`, the three content-bearing analytics endpoints — all **deleted**; the `/chats/{id}` admin fallback — **gated** |
+| **Class**     | Removed / gated                                                                                                                                                               |
+| **Mechanism** | code deleted, plus `ENABLE_ADMIN_CHAT_ACCESS` and `ENABLE_ADMIN_EXPORT` for what remains — both **plain env**, both defaulting `False`                                        |
 
 **Justification.** Upstream allows any admin to read any user's chats. Under multi-tenancy that
 means every BU admin, for every user in their tenant, through the browser.
@@ -167,11 +167,11 @@ endpoints were flag-gated first, to keep an admin support path reversible. That 
 only had value while a UI existed to reverse to; the drill-down modal is gone, so the endpoints
 guarded nothing any caller used. Three more followed for the same reason:
 
-| Endpoint | What it returned |
-|---|---|
+| Endpoint                    | What it returned                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
 | `GET /chats/list/user/{id}` | another user's chat list, to any admin — with `UserChatsModal`, the admin UI that browsed it |
-| `GET /chats/all/db` | every chat message belonging to every user, in one response |
-| `GET /utils/db/download` | the raw SQLite database file |
+| `GET /chats/all/db`         | every chat message belonging to every user, in one response                                  |
+| `GET /utils/db/download`    | the raw SQLite database file                                                                 |
 
 The last two were already double-locked behind `ENABLE_ADMIN_EXPORT`, and the third only ever
 worked on SQLite, so both were inert on a Postgres deployment with the flag unset. They were
@@ -185,34 +185,34 @@ endpoint left at all** — `get_admin_user` is no longer imported there. The ent
 now user-scoped.
 
 **What `ENABLE_ADMIN_CHAT_ACCESS` still governs**, and why it was kept: four live gates inside
-*user-facing* endpoints (`chats.py:886, 893, 952, 1271`) — the admin fallback in `GET /chats/{id}`,
+_user-facing_ endpoints (`chats.py:886, 893, 952, 1271`) — the admin fallback in `GET /chats/{id}`,
 the share lookup, and `clone/shared`. Those are where the genuine privacy-versus-support policy
 question lives, and it is a policy call rather than a technical one.
 
 **Residual risk.** The five surviving analytics endpoints return counts and totals only. But an
-admin still sees *metadata* — per-user message counts, token counts, activity. That is a
+admin still sees _metadata_ — per-user message counts, token counts, activity. That is a
 deliberate retention for capacity and cost management, and should be confirmed as intended
 rather than assumed.
 
 **The admin read paths are now deleted, not gated.** This row previously rested on
-`ENABLE_ADMIN_CHAT_ACCESS` being `False`. The plan's target was stricter — *"endpoints returning
-other users' messages: 4 → 0"* and *"Admin reading user messages: Closed"* — and off-by-default
+`ENABLE_ADMIN_CHAT_ACCESS` being `False`. The plan's target was stricter — _"endpoints returning
+other users' messages: 4 → 0"_ and _"Admin reading user messages: Closed"_ — and off-by-default
 is not closed: it is one environment variable from open, and `admin` does not distinguish a super
 admin from a BU admin. Four code paths were therefore removed outright:
 
-| Endpoint | What the admin branch did |
-|---|---|
-| `GET /chats/share/{share_id}` | re-read the id as a **chat** id, returning an **unshared** chat |
-| `GET /chats/share/{share_id}` | skipped the access-grant check entirely for an admin |
-| `GET /chats/{id}` | returned **any** user's chat by id |
-| `POST /chats/{id}/clone/shared` | cloned an **unshared** chat by id |
+| Endpoint                        | What the admin branch did                                       |
+| ------------------------------- | --------------------------------------------------------------- |
+| `GET /chats/share/{share_id}`   | re-read the id as a **chat** id, returning an **unshared** chat |
+| `GET /chats/share/{share_id}`   | skipped the access-grant check entirely for an admin            |
+| `GET /chats/{id}`               | returned **any** user's chat by id                              |
+| `POST /chats/{id}/clone/shared` | cloned an **unshared** chat by id                               |
 
 Access is now by ownership or an explicit grant, for every role. `ENABLE_ADMIN_CHAT_ACCESS` is no
 longer imported by `routers/chats.py` at all; it still gates the analytics guard.
 
 **One of these was not behind the flag.** The grant check in `clone/shared` was bypassed on
 `user.role != 'admin'` alone, so it was live even with the flag off — an admin could clone any
-*shared* chat without holding a grant. Narrower than the others (shared content only), but it
+_shared_ chat without holding a grant. Narrower than the others (shared content only), but it
 means the pre-existing posture was never quite "off".
 
 **Two admin WRITE paths were closed on the same pass**, and they were arguably worse than the
@@ -230,11 +230,11 @@ a reviewed commit and a deploy, which is the intent.
 **Four further admin bypasses were closed once their justification was actually checked.** They
 had been left on the reasoning that each served an operational need. None did:
 
-| Endpoint | Claimed need | What the code showed |
-|---|---|---|
-| `DELETE /chats/{id}` | user-deletion cascade, retention sweep | **Neither.** Retention calls `Chats.delete_chat_by_id()`; user deletion calls `Chats.delete_chats_by_user_id()`. Both at the model layer, never over HTTP. The branch also skipped the `chat.delete` permission check. |
-| `GET /chats/stats/export/{chat_id}` | admin metadata view | Sole caller is `SyncStatsModal` — a **user** feature. Returns per-message role, model, timestamp, content length, rating and **tags** for any chat. No text, but we deleted the analytics `/overview` endpoint partly *because* it returned conversation tags. |
-| `GET`/`POST /chats/shared/{id}/access` | grant management | Sole caller is `ShareChatModal` — **the user's own share button**. An admin could read and rewrite anyone's sharing. |
+| Endpoint                               | Claimed need                           | What the code showed                                                                                                                                                                                                                                           |
+| -------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DELETE /chats/{id}`                   | user-deletion cascade, retention sweep | **Neither.** Retention calls `Chats.delete_chat_by_id()`; user deletion calls `Chats.delete_chats_by_user_id()`. Both at the model layer, never over HTTP. The branch also skipped the `chat.delete` permission check.                                         |
+| `GET /chats/stats/export/{chat_id}`    | admin metadata view                    | Sole caller is `SyncStatsModal` — a **user** feature. Returns per-message role, model, timestamp, content length, rating and **tags** for any chat. No text, but we deleted the analytics `/overview` endpoint partly _because_ it returned conversation tags. |
+| `GET`/`POST /chats/shared/{id}/access` | grant management                       | Sole caller is `ShareChatModal` — **the user's own share button**. An admin could read and rewrite anyone's sharing.                                                                                                                                           |
 
 The general point, worth carrying to the next router: these were **upstream defaults nobody chose**,
 not decisions. Users own their sharing through the share button, and the 30-chat cap and retention
@@ -246,16 +246,16 @@ permission — but every one of those paths looks the chat up with
 `get_chat_by_id_and_user_id(id, user.id)`, so an admin can only ever act on **their own** chat.
 Feature gates, not cross-user access.
 
-**⚠ Not addressed by this row.** These controls stop *future* reads. Message content already
+**⚠ Not addressed by this row.** These controls stop _future_ reads. Message content already
 stored — including any personal data — is untouched, as are database backups. See §4.
 
 ### 3.3 Removed — administrative access to other users' files
 
-| | |
-|---|---|
-| **What** | Nine admin bypasses in `routers/files.py`, one in `routers/retrieval.py`, and `DELETE /api/v1/files/all` |
-| **Class** | Removed |
-| **Mechanism** | code deleted; access is ownership or an explicit grant, for every role |
+|               |                                                                                                          |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| **What**      | Nine admin bypasses in `routers/files.py`, one in `routers/retrieval.py`, and `DELETE /api/v1/files/all` |
+| **Class**     | Removed                                                                                                  |
+| **Mechanism** | code deleted; access is ownership or an explicit grant, for every role                                   |
 
 **Justification.** The same pattern as §3.2, on data that is arguably more sensitive — a document
 a user uploaded, rather than the conversation about it. Every file endpoint carried
@@ -264,7 +264,7 @@ the HTML rendering, renaming and deletion.
 
 **The listing endpoints were the worst of it.** `GET /files/` and `GET /files/search` passed
 `user_id=None` for an admin when `BYPASS_ADMIN_ACCESS_CONTROL` was set — which **defaults true** —
-so an admin was handed *every user's file list*. No id-guessing was needed; the ids were simply
+so an admin was handed _every user's file list_. No id-guessing was needed; the ids were simply
 provided, and each could then be read.
 
 That flag is **left untouched elsewhere**, and the distinction is the point: for knowledge bases,
@@ -302,15 +302,15 @@ different findings with different blast radii.
 **Provenance, because it affects who should review this.** The deletion manifest flagged
 `DELETE /files/all` and a separate config-write defect at `files.py:380-382`. The nine admin
 bypasses and the `retrieval.py` one were **not** in any report — they were found while closing the
-equivalent paths in `chats.py`. So the tester demonstrated the *symptom* in August; the
-*mechanism* was not written down anywhere until now.
+equivalent paths in `chats.py`. So the tester demonstrated the _symptom_ in August; the
+_mechanism_ was not written down anywhere until now.
 
 ### 3.4 Removed — the unauthenticated-by-tenant cache route
 
-| | |
-|---|---|
-| **What** | `GET /cache/{path}` |
-| **Class** | Removed |
+|               |                                                                |
+| ------------- | -------------------------------------------------------------- |
+| **What**      | `GET /cache/{path}`                                            |
+| **Class**     | Removed                                                        |
 | **Mechanism** | route deleted; nothing migrated, because nothing referenced it |
 
 **Justification.** Security review finding **H5b**, rated High. The route required only
@@ -324,7 +324,7 @@ middleware's `_SYSTEM_PATH_PREFIXES` bypass list, so tenant resolution never ran
 entry has been removed too.
 
 **Not the route behind the VAPT tester's image finding**, despite the obvious similarity — that
-was the `files.py` admin bypass in 3.3, corrected below. This route is a *separate* and in one
+was the `files.py` admin bypass in 3.3, corrected below. This route is a _separate_ and in one
 respect broader exposure: it needed **no admin role at all** and reached **across tenants**.
 Nobody is known to have exercised it; it was found by review, not by test.
 
@@ -345,10 +345,10 @@ URL that now 404s. `CHAT_RETENTION_DAYS` is 30, so such history has long since b
 
 ### 3.5 Removed — Channels, and the only unauthenticated write endpoint
 
-| | |
-|---|---|
-| **What** | Slack-style Channels — 28 endpoints, the frontend, and four model-callable tools |
-| **Class** | Removed |
+|               |                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------- |
+| **What**      | Slack-style Channels — 28 endpoints, the frontend, and four model-callable tools      |
+| **Class**     | Removed                                                                               |
 | **Mechanism** | `routers/channels.py` deleted; the `channel` tables and `models/channels.py` retained |
 
 **Justification.** Channels is a feature schat does not offer. It also contained
@@ -376,18 +376,18 @@ live under `components/common/`.
 
 ### 3.6 Removed — Evaluations, and with it Good/Bad message ratings
 
-| | |
-|---|---|
-| **What** | Arena leaderboard, feedback store, and the thumbs up/down rating UI — 15 endpoints |
-| **Class** | Removed |
-| **Mechanism** | `routers/evaluations.py` deleted, with its admin pages and API client |
+|               |                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------- |
+| **What**      | Arena leaderboard, feedback store, and the thumbs up/down rating UI — 15 endpoints |
+| **Class**     | Removed                                                                            |
+| **Mechanism** | `routers/evaluations.py` deleted, with its admin pages and API client              |
 
 **Justification.** There is no evaluation programme, ratings were already disabled
 (`ENABLE_MESSAGE_RATING=false`) and arena models switched off, so the leaderboard and feedback
 screens were permanently dataless. The router also carried a bulk feedback export and a
 delete-all.
 
-**⚠ Note the reclassification.** Good/Bad ratings were previously recorded as *deferred* —
+**⚠ Note the reclassification.** Good/Bad ratings were previously recorded as _deferred_ —
 hidden by a flag, restorable by flipping it. The three endpoints the thumbs called
 (`POST /evaluations/feedback` and the two `feedback/{id}` routes) lived in this router, so
 deleting it **moves message rating from deferred to removed**. Restoring ratings now means
@@ -395,14 +395,14 @@ restoring code, not changing configuration. That is a deliberate consequence, no
 
 ### 3.7 Removed — one admin editing another admin
 
-| | |
-|---|---|
-| **What** | `POST /api/v1/users/{user_id}/update` and the user-edit UI; admin-on-admin deletion |
-| **Class** | Removed / gated |
-| **Mechanism** | endpoint deleted; a 403 added to `DELETE /{user_id}` when the target is an admin |
+|               |                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------- |
+| **What**      | `POST /api/v1/users/{user_id}/update` and the user-edit UI; admin-on-admin deletion |
+| **Class**     | Removed / gated                                                                     |
+| **Mechanism** | endpoint deleted; a 403 added to `DELETE /{user_id}` when the target is an admin    |
 
 **Justification.** Both actions protected only the **first account ever created**. Any admin could
-therefore edit or delete any *other* admin, including changing their role — and under
+therefore edit or delete any _other_ admin, including changing their role — and under
 multi-tenancy `admin` is a per-tenant IAM role, so that meant every departmental admin.
 
 **Why the edit endpoint was deleted rather than restricted.** Every field on that form belonged
@@ -416,7 +416,7 @@ to IAM, so none of the edits actually held:
 - **`name`** is synced from the IAM identity at provisioning.
 
 **This matters for how the finding is described.** The instinct is to call it privilege
-escalation, but the role field is self-healing — that is the *weakest* part of it. The real damage
+escalation, but the role field is self-healing — that is the _weakest_ part of it. The real damage
 is **account integrity**: the email change is persistent, destructive and not self-healing, and
 admin-on-admin deletion is permanent. Framing it as escalation invites the (correct, and
 irrelevant) rebuttal that IAM overwrites the role anyway.
@@ -447,7 +447,7 @@ recorded in `CLAUDE.md`.
 boundary**. Where a hidden feature still has a live endpoint, that endpoint remains callable by
 anyone who knows the URL. Hiding is adequate only where either the backend is genuinely disabled
 (the `PersistentConfig` flags do disable server-side) or there is no backend capability at all
-(purely visual surfaces). It is *not* adequate as a control against a determined caller, and is
+(purely visual surfaces). It is _not_ adequate as a control against a determined caller, and is
 not claimed as one.
 
 **Reversal.** Each is re-enabled by its flag or by unwrapping its guard; `CLAUDE.md` records the
@@ -461,19 +461,19 @@ question per feature: **with the UI hidden, can the endpoint still be called?**
 
 Each row below was checked against the code, not against the hide-site list.
 
-| Hidden feature | Flag enforced server-side? | Endpoint reachable |
-|---|---|---|
-| Memory / Personalisation | ✅ `memories.py` — 7 gates | no |
-| Chat Folders | ✅ `folders.py` | no |
-| Calendar | ✅ `calendar.py`, `automations.py` | no |
-| Automations | ✅ `automations.py` | no |
-| Chat Archive | ✅ `chats.py` | no |
-| Notes | ✅ **fixed** — router-level gate added | no |
-| Voice (STT/TTS) | ✅ **fixed** — router-level gate added | no |
-| Code Interpreter | ❌ `ENABLE_CODE_INTERPRETER` not enforced… | …but `/utils/code/execute` is gated by `ENABLE_CODE_EXECUTION`, which **is** enforced and defaults off |
-| Temporary Chat | ❌ not enforced | n/a — a temporary chat is simply one never persisted; there is no endpoint |
-| Attach Webpage | n/a | **endpoint deleted** — see below |
-| Import Chats | n/a | **endpoint deleted** — see below |
+| Hidden feature           | Flag enforced server-side?                 | Endpoint reachable                                                                                     |
+| ------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Memory / Personalisation | ✅ `memories.py` — 7 gates                 | no                                                                                                     |
+| Chat Folders             | ✅ `folders.py`                            | no                                                                                                     |
+| Calendar                 | ✅ `calendar.py`, `automations.py`         | no                                                                                                     |
+| Automations              | ✅ `automations.py`                        | no                                                                                                     |
+| Chat Archive             | ✅ `chats.py`                              | no                                                                                                     |
+| Notes                    | ✅ **fixed** — router-level gate added     | no                                                                                                     |
+| Voice (STT/TTS)          | ✅ **fixed** — router-level gate added     | no                                                                                                     |
+| Code Interpreter         | ❌ `ENABLE_CODE_INTERPRETER` not enforced… | …but `/utils/code/execute` is gated by `ENABLE_CODE_EXECUTION`, which **is** enforced and defaults off |
+| Temporary Chat           | ❌ not enforced                            | n/a — a temporary chat is simply one never persisted; there is no endpoint                             |
+| Attach Webpage           | n/a                                        | **endpoint deleted** — see below                                                                       |
+| Import Chats             | n/a                                        | **endpoint deleted** — see below                                                                       |
 
 **Three findings worth stating plainly.**
 
@@ -509,7 +509,7 @@ controls on that path are documented in §4.
   `/process/web/search` is a different thing and remains.
 - **Import Chats** — `POST /chats/import` deleted. It bypassed `MAX_CHATS_PER_USER`, which is
   enforced only at `/chats/new` and on the completion path. Deleted rather than cap-enforced
-  because nothing imports *from* schat now that bulk export is hidden. Exporting your **own**
+  because nothing imports _from_ schat now that bulk export is hidden. Exporting your **own**
   chats is untouched — that is the part with a data-portability dimension under PDPA.
 
 **Why this section still matters after the fixes.** It is the difference between "we hid it" and
@@ -527,11 +527,11 @@ as inert.
 
 ### 3.10 Removed — the runtime configuration surface
 
-| | |
-|---|---|
-| **What** | 35 admin endpoints that read or wrote process-global configuration, plus four destructive maintenance routes |
-| **Class** | Removed |
-| **Mechanism** | routes deleted; configuration seeded in the chart |
+|               |                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| **What**      | 35 admin endpoints that read or wrote process-global configuration, plus four destructive maintenance routes |
+| **Class**     | Removed                                                                                                      |
+| **Mechanism** | routes deleted; configuration seeded in the chart                                                            |
 
 **Justification.** Two reasons, and the second is the stronger one.
 
@@ -592,9 +592,9 @@ target of ~330.
 
 ### 3.11 Retained, gated — terminals
 
-| | |
-|---|---|
-| **Class** | Retained, gated |
+|               |                                                                    |
+| ------------- | ------------------------------------------------------------------ |
+| **Class**     | Retained, gated                                                    |
 | **Mechanism** | `TERMINAL_SERVER_CONNECTIONS` pinned to `[]` in the chart template |
 
 **Justification.** The feature has real intended use for developers and general staff, so it is
@@ -609,15 +609,15 @@ that writes it still exists. It becomes a complete control once that endpoint is
 
 ### 3.12 Fixed — every feature gate now fails closed
 
-| | |
-|---|---|
-| **What** | Eight frontend gates that read a **missing** feature flag as permission |
-| **Class** | Fixed |
-| **Mechanism** | `?? true` → `?? false`, `!== false` → `=== true` |
+|               |                                                                         |
+| ------------- | ----------------------------------------------------------------------- |
+| **What**      | Eight frontend gates that read a **missing** feature flag as permission |
+| **Class**     | Fixed                                                                   |
+| **Mechanism** | `?? true` → `?? false`, `!== false` → `=== true`                        |
 
 **Justification.** This is the standing principle of the whole review — a hidden button is not a
 security boundary — applied to its own enforcement layer. A gate written `?? true` renders the
-feature whenever the flag is *absent*, which is exactly what happens when a flag is not emitted at
+feature whenever the flag is _absent_, which is exactly what happens when a flag is not emitted at
 all. Two independent bugs had to line up for this to matter, and they did: the backend stopped
 sending the flags, and the frontend read their absence as a yes.
 
@@ -632,22 +632,22 @@ defence for the window before the session resolves, and against the same class r
 
 **One of the eight was not cosmetic.** `CodeBlock.svelte` gates the **Run** button on Python code
 blocks, and that button executes in a browser Pyodide worker — no backend call, therefore no
-backend gate. The UI check was the *only* check. So code execution was live for every user while
+backend gate. The UI check was the _only_ check. So code execution was live for every user while
 `ENABLE_CODE_EXECUTION` was `False`. The other seven were UI-truthfulness: the API-key form
 rendered but the backend refused the key (`utils/auth.py:485`), and terminals is unconfigured.
 
 **Deliberately not flipped:** `routes/auth/+page.svelte` reads `features.auth !== false`. Here
-fail-open *is* fail-secure — absence means "assume authentication is on", which shows the login
+fail-open _is_ fail-secure — absence means "assume authentication is on", which shows the login
 form. Rewriting it to `=== true` would make a missing flag skip authentication, and would lock
 every user out if the flag were ever dropped. Fail-closed is a direction, not a syntax rule.
 
 ### 3.13 Removed — the SQLCipher keying path
 
-| | |
-|---|---|
-| **What** | The `sqlite+sqlcipher://` branch in `internal/db.py` and `migrations/env.py` |
-| **Class** | Removed |
-| **Mechanism** | branch deleted; the URL scheme is now rejected with a clear error |
+|               |                                                                              |
+| ------------- | ---------------------------------------------------------------------------- |
+| **What**      | The `sqlite+sqlcipher://` branch in `internal/db.py` and `migrations/env.py` |
+| **Class**     | Removed                                                                      |
+| **Mechanism** | branch deleted; the URL scheme is now rejected with a clear error            |
 
 **Justification.** Both sites formatted `DATABASE_PASSWORD` directly into a SQLite keying
 statement with an f-string. Neither was reachable — the branch is gated on a `sqlite+sqlcipher://`
@@ -668,11 +668,11 @@ The async engine already rejected the scheme (`_make_async_url`); the sync path 
 
 ### 3.14 Fixed — the container no longer runs as root
 
-| | |
-|---|---|
-| **What** | No `USER` in the Dockerfile and no `securityContext` in the chart (M6) |
-| **Class** | Fixed |
-| **Mechanism** | `USER 1000` (primary group 0) + pod and container `securityContext` |
+|               |                                                                        |
+| ------------- | ---------------------------------------------------------------------- |
+| **What**      | No `USER` in the Dockerfile and no `securityContext` in the chart (M6) |
+| **Class**     | Fixed                                                                  |
+| **Mechanism** | `USER 1000` (primary group 0) + pod and container `securityContext`    |
 
 **Justification.** Root in the container was the last privilege nobody had asked for. Nothing the
 app does needs it: it binds 8080, which is unprivileged, and talks to Postgres, Qdrant and HTTP
@@ -686,11 +686,11 @@ whatever UID it is finally given.
 
 **This was verified, not assumed.** The image was built and run three ways:
 
-| Run as | Result |
-|---|---|
-| `1000:0` | all writes OK |
-| `31337:0` | all writes OK — this is what group 0 buys |
-| `31337:31337` | **every write fails** |
+| Run as        | Result                                    |
+| ------------- | ----------------------------------------- |
+| `1000:0`      | all writes OK                             |
+| `31337:0`     | all writes OK — this is what group 0 buys |
+| `31337:31337` | **every write fails**                     |
 
 So `runAsGroup: 0` and `fsGroup: 0` in the chart are load-bearing. "Tidying" them to `1000` breaks
 the pod, which is why both the Dockerfile and the template say so.
@@ -713,11 +713,11 @@ in proportion to the files already on the volume. If that trips the readiness pr
 
 ### 3.15 Removed — model definitions leave the database
 
-| | |
-|---|---|
-| **What** | The `model` table as a source, its 8 write routes, and the whole model-authoring UI |
-| **Class** | Removed |
-| **Mechanism** | `model_catalogue.py`; `ModelsTable` reads only from there |
+|               |                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------- |
+| **What**      | The `model` table as a source, its 8 write routes, and the whole model-authoring UI |
+| **Class**     | Removed                                                                             |
+| **Mechanism** | `model_catalogue.py`; `ModelsTable` reads only from there                           |
 
 **Justification.** Provisioning a tenant meant hand-importing a models export, and `params.system`
 carries Sunway operating policy — the race/religion/royalty rules, the language policy, "do not
@@ -744,7 +744,7 @@ domain hint. Flash and Deepthink share the base prompt exactly, because tier dep
 
 **Nothing was standardised away.** All five prompts are reproduced **byte-for-byte**; a
 field-by-field round-trip of all 8 models against the production export reports zero mismatches.
-`test_model_catalogue.py` pins this with golden SHA-256 hashes, deliberately *not* expressed via
+`test_model_catalogue.py` pins this with golden SHA-256 hashes, deliberately _not_ expressed via
 the assembly function — a test comparing the catalogue to `system_prompt()` is self-referential
 and cannot catch a change to the function itself. Mutation-tested: reordering the slots and
 changing the join separator both fail.
@@ -771,7 +771,7 @@ inert. **There is now no runtime admin surface that writes process-global config
 entire reason the flag existed.
 
 **A side benefit worth recording.** Analytics rendered model usage by mapping ids against the
-*viewer's* model list, so a retired model showed its raw id (`schat-coding` instead of `Coder`).
+_viewer's_ model list, so a retired model showed its raw id (`schat-coding` instead of `Coder`).
 The backend now resolves the name from the catalogue, which knows every name it has ever defined.
 
 **Residual.** Deleting a knowledge base can no longer strip itself out of a model's
@@ -785,17 +785,17 @@ figure is 31.
 
 ### 3.16 Hardened — the per-chat system prompt as an injection surface
 
-| | |
-|---|---|
-| **What** | User-supplied system prompts reaching the model at operator level |
-| **Class** | Retained, hardened |
+|               |                                                                     |
+| ------------- | ------------------------------------------------------------------- |
+| **What**      | User-supplied system prompts reaching the model at operator level   |
+| **Class**     | Retained, hardened                                                  |
 | **Mechanism** | structural isolation + injection detection + a pinned escape corpus |
 
 **Why this exists.** Enabling per-chat system prompts handed every user a way to place text in
 front of the model at **operator** level. That is a jailbreak surface, and the obvious first
 target for a penetration tester. It was raised as `schat-ba-docs` **CL-016** with an honest
 finding: "guardrail / content filter / input filter / moderation" appear **nowhere** in the PRS,
-FRS, decisions or scope audit. The only workspace hit is *"retention guardrails"* — the
+FRS, decisions or scope audit. The only workspace hit is _"retention guardrails"_ — the
 30-chat/30-day caps — a **term collision** that made the topic look covered.
 
 **The control objective**, which is what CL-016 was missing:
@@ -806,11 +806,11 @@ FRS, decisions or scope audit. The only workspace hit is *"retention guardrails"
 **Three layers, none of which replaces another.**
 
 1. **Structural isolation** (`utils/system_prompt.py`, on by default) caps at 4,000 chars, fences
-   the text in `<user_preferences>`, strips fences the user typed, frames the contents as *input,
-   not policy*, and appends a precedence reminder. The operator gets the first and last word.
+   the text in `<user_preferences>`, strips fences the user typed, frames the contents as _input,
+   not policy_, and appends a precedence reminder. The operator gets the first and last word.
 2. **Injection detection** (`filters/guardrails.py`) now scans `body.params.system` as a
    **separate** pass from the messages. Separate because the block message must name the
-   *Controls panel* rather than the composer — the text persists for the whole chat, so a
+   _Controls panel_ rather than the composer — the text persists for the whole chat, so a
    misdirected message would send the user hunting in the wrong place while every subsequent
    message in that chat was blocked.
 3. **The model's own prompt** asserts precedence. Defence by prompt design, and explicitly the
@@ -824,8 +824,8 @@ token mid-block is a plausible cue that the user's section has ended, which is t
 confusion the fence exists to prevent. The strip is now pattern-based with invisible characters
 removed first, and all nine escape payloads are contained.
 
-**§3, the one-word evasion, is closed.** The override heuristic did not include `my`, so *"ignore
-my previous instruction"* — a phrasing found in a real production chat — sailed through. The
+**§3, the one-word evasion, is closed.** The override heuristic did not include `my`, so _"ignore
+my previous instruction"_ — a phrasing found in a real production chat — sailed through. The
 alternation now covers `my`, `our`, `those`, `these`, `that` and plural nouns, with tests
 asserting it does **not** fire on ordinary English ("Please ignore my typos").
 
@@ -835,22 +835,22 @@ reverting the pattern widening fails 6.
 
 **What is deliberately NOT claimed.** This is mitigation, not a boundary. Detection is heuristic
 and warn-by-default outside the control-token tier; the filter fails open. A determined user can
-still influence the model with persuasive text *inside* the fence — no fencing prevents that.
+still influence the model with persuasive text _inside_ the fence — no fencing prevents that.
 
 **Out of scope, with reasons.** **Content moderation** (blocking abusive or harmful text) is
 **not built and not scheduled**: it has no requirement, needs a classifier on the hot path of
 every request, and — decisively — flagging an employee creates a conduct record on 10,000 people
 with no owner. HR, Legal and PDPA must accept ownership before a line is written. **Model output
-safety** resolved to what `outlet` already does: it runs *after* streaming, so it redacts the
+safety** resolved to what `outlet` already does: it runs _after_ streaming, so it redacts the
 persisted record and every re-render, and cannot block text the user has already read. Blocking
 output would mean disabling streaming for everyone.
 
 ### 3.17 Fixed — PII redaction now reaches the database
 
-| | |
-|---|---|
-| **What** | The stored chat record kept the unredacted text the model never saw |
-| **Class** | Fixed |
+|               |                                                                                  |
+| ------------- | -------------------------------------------------------------------------------- |
+| **What**      | The stored chat record kept the unredacted text the model never saw              |
+| **Class**     | Fixed                                                                            |
 | **Mechanism** | `ENABLE_STORAGE_REDACTION` (plain env, default on) at all three chat write paths |
 
 **The defect.** `inlet` rewrote the request body on its way to the model provider, but the chat
@@ -859,13 +859,13 @@ history. The two paths never met. A real NRIC therefore reached the production `
 backups and its exports, while the provider only ever saw `[REDACTED_NRIC]`.
 
 **Why it was worse than a plain gap.** `notify_on_redaction` is on by default, so the user was
-shown *"Sensitive data was removed before sending"* and reasonably concluded it was gone. The
+shown _"Sensitive data was removed before sending"_ and reasonably concluded it was gone. The
 platform was announcing a protection it did not deliver to storage.
 
 **Both halves are fixed.** Storage is now redacted through the **same shared filter instance** as
 the request path, so the valves cannot drift between "what the model saw" and "what we stored" —
 that divergence was the whole bug. And the toast now claims only what the filter itself
-guarantees: *"removed from your message before it was sent to the model."* It deliberately does
+guarantees: _"removed from your message before it was sent to the model."_ It deliberately does
 **not** mention storage, because storage redaction is on its own switch and the claim would go
 false the moment that flag is turned off — the same bug in a new place. The filter also cannot
 read that flag: it imports nothing beyond the stdlib and pydantic, which is what keeps it
@@ -891,7 +891,7 @@ and pattern 2 read the intervening "is" as the value and rejected it at its 12-c
 patterns were added: a **copula** form (`password is …`) and a **numeric** form for bank accounts,
 PINs, OTPs and CVVs, which are digits-only and so were invisible to the alphanumeric patterns.
 
-The copula form initially fired on *"your password is **required** to proceed"* — exactly the
+The copula form initially fired on _"your password is **required** to proceed"_ — exactly the
 false-positive class the file's own note warns about. It now requires the value to contain a
 digit, borrowing pattern 2's test. Known trade, recorded in the code: an all-letter password is
 missed, which is the trade pattern 2 already makes.
@@ -931,11 +931,11 @@ behaviour: each redaction class, the multimodal path, the scope rules, both inje
 and the fail-open policy in point 1 above.
 
 It deliberately pins the **limits** as well as the coverage — that the unhyphenated NRIC form is
-*not* matched, that landlines are *not* matched, and that the outlet does *not* redact identity
+_not_ matched, that landlines are _not_ matched, and that the outlet does _not_ redact identity
 data. Those assertions exist so closing a gap is a deliberate act that updates a test, rather
 than a silent change in either direction. The suite was mutation-checked: four independent
 defects introduced into the filter (a broken NRIC pattern, a removed Luhn check, an over-broad
-outlet, and a fail-*closed* handler) were each caught.
+outlet, and a fail-_closed_ handler) were each caught.
 
 This does not widen what the guardrail covers. It means a future change cannot narrow it
 unnoticed.
@@ -960,15 +960,15 @@ legal and procurement question, not an engineering one, and remains open.
 
 ## 6. Open items with owners
 
-| Item | Owner | Blocking |
-|---|---|---|
-| Personal data already stored, and in backups — leave, purge, or mask | data protection | the ISMS wording on redaction |
-| Best-effort redaction acceptable for phase 1? | data protection | §4 claim |
-| Healthcare business unit in scope? | business | whether a regex control suffices at all |
-| IAM "BU admin" intended to carry schat administrative rights — confirm in writing | IAM owner | reads as signed-off design rather than a finding |
-| Admin visibility of per-user chat *metadata* — intended? | product / data protection | §3.2 residual |
-| Enterprise licence position for the intended user count | legal / procurement | §5 |
-| **Notes endpoints are live while the feature is "disabled"** — 9 routes, no flag check | engineering | §3.9; decide gate-or-delete |
-| Voice/audio endpoints reachable with `ENABLE_VOICE=false` | engineering | §3.9 |
-| `POST /retrieval/process/web` live while Attach Webpage is hidden — the SSRF surface | engineering / security | §3.9, §4 |
-| `POST /chats/import` live while the button is hidden; bypasses the 30-chat cap | product | §3.9 |
+| Item                                                                                   | Owner                     | Blocking                                         |
+| -------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------ |
+| Personal data already stored, and in backups — leave, purge, or mask                   | data protection           | the ISMS wording on redaction                    |
+| Best-effort redaction acceptable for phase 1?                                          | data protection           | §4 claim                                         |
+| Healthcare business unit in scope?                                                     | business                  | whether a regex control suffices at all          |
+| IAM "BU admin" intended to carry schat administrative rights — confirm in writing      | IAM owner                 | reads as signed-off design rather than a finding |
+| Admin visibility of per-user chat _metadata_ — intended?                               | product / data protection | §3.2 residual                                    |
+| Enterprise licence position for the intended user count                                | legal / procurement       | §5                                               |
+| **Notes endpoints are live while the feature is "disabled"** — 9 routes, no flag check | engineering               | §3.9; decide gate-or-delete                      |
+| Voice/audio endpoints reachable with `ENABLE_VOICE=false`                              | engineering               | §3.9                                             |
+| `POST /retrieval/process/web` live while Attach Webpage is hidden — the SSRF surface   | engineering / security    | §3.9, §4                                         |
+| `POST /chats/import` live while the button is hidden; bypasses the 30-chat cap         | product                   | §3.9                                             |

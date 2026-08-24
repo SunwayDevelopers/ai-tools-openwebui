@@ -18,11 +18,11 @@ the same drift.
 stored `config` row is ignored. That is the goal. The hazard is what happens to settings the
 chart does not mention.
 
-| | Count |
-|---|---|
+|                                     | Count   |
+| ----------------------------------- | ------- |
 | `ConfigVar` settings in `config.py` | **360** |
-| Mentioned anywhere in the chart | **23** |
-| **Not in the chart at all** | **337** |
+| Mentioned anywhere in the chart     | **23**  |
+| **Not in the chart at all**         | **337** |
 
 Flip the flag today and those 337 fall back to their **code default**, silently discarding
 whatever each tenant configured. Most are harmless — upstream defaults for features schat does
@@ -32,19 +32,19 @@ anything ever set through Admin Settings.
 **Only 15 of the 360 have no environment variable at all.** The security review estimated 23; the
 real list is shorter and mostly irrelevant here:
 
-| Setting | Matters to schat? |
-|---|---|
-| `openai.api_configs` | **Yes** — the MLIS/LiteLLM connection |
-| `ui.model_order_list` | **Yes** — tier ordering (Flash / Deepthink / Coder) |
-| `ui.prompt_suggestions` | **Yes** |
-| `user.permissions` | **Yes** — the whole permission matrix |
-| `image_generation.openai.params` | **Yes** — image generation is in scope |
-| `auth.api_key.endpoint_restrictions` | Yes, minor |
-| `audio.stt.allowed_extensions` | No — Voice deferred and now gated |
-| `code_interpreter.jupyter.*` (4) | No — deferred, no external Jupyter |
-| `evaluation.arena.models` | No — Evaluations deleted |
-| `ollama.api_configs`, `rag.web.search.ollama_cloud_api_key` | No — Ollama removed |
-| `oauth.microsoft.picture_url` | No — IAM owns identity |
+| Setting                                                     | Matters to schat?                                   |
+| ----------------------------------------------------------- | --------------------------------------------------- |
+| `openai.api_configs`                                        | **Yes** — the MLIS/LiteLLM connection               |
+| `ui.model_order_list`                                       | **Yes** — tier ordering (Flash / Deepthink / Coder) |
+| `ui.prompt_suggestions`                                     | **Yes**                                             |
+| `user.permissions`                                          | **Yes** — the whole permission matrix               |
+| `image_generation.openai.params`                            | **Yes** — image generation is in scope              |
+| `auth.api_key.endpoint_restrictions`                        | Yes, minor                                          |
+| `audio.stt.allowed_extensions`                              | No — Voice deferred and now gated                   |
+| `code_interpreter.jupyter.*` (4)                            | No — deferred, no external Jupyter                  |
+| `evaluation.arena.models`                                   | No — Evaluations deleted                            |
+| `ollama.api_configs`, `rag.web.search.ollama_cloud_api_key` | No — Ollama removed                                 |
+| `oauth.microsoft.picture_url`                               | No — IAM owns identity                              |
 
 So the no-env-var problem is **six settings**, not twenty-three. Each needs either a value written
 into the seed or a new environment variable added in `config.py`.
@@ -55,18 +55,18 @@ into the seed or a new environment variable added in `config.py`.
 
 Restricting to subsystems schat actually uses:
 
-| Subsystem | Settings | In chart | Note |
-|---|---|---|---|
-| `rag` | 137 | 6 | **the bulk** — bge-m3 embeddings, reranker, Docling, chunking, web search |
-| `image_generation` + `images` | 33 | 0 | in scope |
-| `task` | 18 | 0 | title / tag / query generation |
-| `ui` | 17 | 3 | includes model order list |
-| `auth` | 6 | 2 | |
-| `openai` | 4 | 1 | **the MLIS connection** |
-| `models` | 3 | 0 | presets — this is Item 9 |
-| `user` | 1 | 0 | the permission matrix |
-| `tool_server` | 1 | 0 | **Sdeck MCP** |
-| **in-scope total** | **224** | **13** | **211 to seed or verify** |
+| Subsystem                     | Settings | In chart | Note                                                                      |
+| ----------------------------- | -------- | -------- | ------------------------------------------------------------------------- |
+| `rag`                         | 137      | 6        | **the bulk** — bge-m3 embeddings, reranker, Docling, chunking, web search |
+| `image_generation` + `images` | 33       | 0        | in scope                                                                  |
+| `task`                        | 18       | 0        | title / tag / query generation                                            |
+| `ui`                          | 17       | 3        | includes model order list                                                 |
+| `auth`                        | 6        | 2        |                                                                           |
+| `openai`                      | 4        | 1        | **the MLIS connection**                                                   |
+| `models`                      | 3        | 0        | presets — this is Item 9                                                  |
+| `user`                        | 1        | 0        | the permission matrix                                                     |
+| `tool_server`                 | 1        | 0        | **Sdeck MCP**                                                             |
+| **in-scope total**            | **224**  | **13**   | **211 to seed or verify**                                                 |
 
 Out of scope and safe on code defaults: `oauth` (52) and `ldap` (17) — IAM owns identity;
 `audio` (29) — deferred and now server-gated; `code_interpreter` + `code_execution` (15) —
@@ -81,7 +81,7 @@ deleted or flag-disabled.
 nowhere in the chart.** Sdeck's MCP connection lives in the database today.
 
 Flipping `ENABLE_PERSISTENT_CONFIG` without seeding it first **stops slide generation**. It does
-have an environment variable, so it is seedable — but it has to be in the seed *before* the flip,
+have an environment variable, so it is seedable — but it has to be in the seed _before_ the flip,
 not after. Capture the live value first:
 
 ```sql
@@ -138,10 +138,10 @@ Sdeck.
 
 Route counts against the deletion manifest's targets:
 
-| | Now | After Item 7 | Manifest target |
-|---|---|---|---|
-| Total routes | 342 | ~300 | ~330 |
-| Admin-gated | 80 | **~36** | ~36 |
+|              | Now | After Item 7 | Manifest target |
+| ------------ | --- | ------------ | --------------- |
+| Total routes | 342 | ~300         | ~330            |
+| Admin-gated  | 80  | **~36**      | ~36             |
 
 Item 7 is the single largest remaining reduction, and it is what lets `JWT_EXPIRES_IN` and
 `USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS` become genuinely authoritative rather than
@@ -186,7 +186,7 @@ sequencing constraint is the engagement, not the code.
 winning. The chart can be made completely correct and deployed with zero behavioural change, which
 means the only step left after VAPT is placing four secrets and flipping one flag.
 
-**What must not be forgotten:** the flip is only safe *because* B is complete. If the seed is
+**What must not be forgotten:** the flip is only safe _because_ B is complete. If the seed is
 still missing an entry when someone flips the flag months from now, that setting reverts silently.
 The web-search miss recorded in `item7-seed-block.md` §2 is the proof that this is a live risk, not
 a hypothetical one.
@@ -196,7 +196,7 @@ a hypothetical one.
 ## 9. `values.production.yaml` — what actually has to differ
 
 Production merges on top of `values.yaml`, so the 45 keys in the base file are already inherited;
-the real gap is **44 keys that staging sets and production does not**. Sorting them by *why* they
+the real gap is **44 keys that staging sets and production does not**. Sorting them by _why_ they
 differ, rather than by subsystem, gives a much shorter list of decisions than the raw count
 suggests.
 
@@ -208,16 +208,16 @@ in-cluster DNS (`prod-infinity.embedding.svc`, `docling-service.docling.svc`,
 `searxng-http.searxng.svc`) or by a single external hostname. A namespace change does not change
 any of them.
 
-| Group | Keys |
-|---|---|
-| Embeddings + reranking | 6 |
-| Web search (SearXNG) | 7 |
-| Document extraction (Docling) | 3 |
-| Chunking + retrieval tuning | 7 |
-| File caps | 3 |
-| Image-vision LLM (same LiteLLM) | 2 |
-| Image generation — enable + model | 2 |
-| Provider config, model order, defaults, metadata, permissions | 5 |
+| Group                                                         | Keys |
+| ------------------------------------------------------------- | ---- |
+| Embeddings + reranking                                        | 6    |
+| Web search (SearXNG)                                          | 7    |
+| Document extraction (Docling)                                 | 3    |
+| Chunking + retrieval tuning                                   | 7    |
+| File caps                                                     | 3    |
+| Image-vision LLM (same LiteLLM)                               | 2    |
+| Image generation — enable + model                             | 2    |
+| Provider config, model order, defaults, metadata, permissions | 5    |
 
 The last group is policy, not infrastructure: `USER_PERMISSIONS`, `DEFAULT_MODEL_METADATA`,
 `MODEL_ORDER_LIST` and `DEFAULT_MODELS` **should** be identical, because a permission matrix or a
@@ -226,13 +226,13 @@ test of production.
 
 ### Must differ — 5 keys
 
-| Key | Why |
-|---|---|
-| `LANDING_PAGE_URL` | contains `-staging` |
-| `WORKOS_ORGANIZATION_ID` | staging WorkOS org |
-| `WORKOS_ORGANIZATION_ID_EDU` | staging WorkOS org |
-| `TOOL_SERVER_CONNECTIONS` | Sdeck — see below |
-| `CONTENT_SECURITY_POLICY` | staging pins `""`; production is where the report-only → enforced promotion eventually lands |
+| Key                          | Why                                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| `LANDING_PAGE_URL`           | contains `-staging`                                                                          |
+| `WORKOS_ORGANIZATION_ID`     | staging WorkOS org                                                                           |
+| `WORKOS_ORGANIZATION_ID_EDU` | staging WorkOS org                                                                           |
+| `TOOL_SERVER_CONNECTIONS`    | Sdeck — see below                                                                            |
+| `CONTENT_SECURITY_POLICY`    | staging pins `""`; production is where the report-only → enforced promotion eventually lands |
 
 **Sdeck is not just a hostname swap.** The value is a JSON blob, and three things inside it are
 environment-bound: the cluster URL
@@ -245,7 +245,7 @@ not inferred. A wrong URL here fails the way §3 describes: slide generation sto
 ### Needs a decision — 4 keys
 
 **`IMAGES_OPENAI_API_BASE_URL` points at a personal MLIS project namespace**
-(`qwen-image.project-user-ivanbek.serving...`). It is the same cluster, so it *works*, but a
+(`qwen-image.project-user-ivanbek.serving...`). It is the same cluster, so it _works_, but a
 user-scoped serving endpoint can be paused or deleted by its owner — which is exactly what
 happened to `BAAI/bge-m3` on 2026-08-16. Fine for staging; production image generation should hang
 off a shared or team-owned endpoint before go-live. This is a conversation with the model's owner,
@@ -255,7 +255,7 @@ not a config edit.
 `TENANT_ENGINE_IDLE_TIMEOUT`, plus `TENANT_ENGINE_CACHE_SIZE` where staging overrides the base
 `10` with `50`) are safe to copy but are **capacity settings, not correctness settings** — they
 size a connection pool per active tenant. Copying staging's numbers into a 10K-user production is
-a guess. Note these are *not* the tenant groups themselves, which live in IAM and are created by
+a guess. Note these are _not_ the tenant groups themselves, which live in IAM and are created by
 the MT/RBAC owner; nothing about tenant membership belongs in this chart.
 
 ### Two corrections to the production file as it stands

@@ -110,7 +110,7 @@
 			{#if !loading}
 				<Tooltip
 					content={type === 'collection'
-						? $i18n.t('Collection')
+						? $i18n.t('Knowledge Base')
 						: type === 'note'
 							? $i18n.t('Note')
 							: type === 'chat'
@@ -156,7 +156,7 @@
 				{:else if type === 'doc'}
 					{$i18n.t('Document')}
 				{:else if type === 'collection'}
-					{$i18n.t('Collection')}
+					{$i18n.t('Knowledge Base')}
 				{:else}
 					<span class=" capitalize line-clamp-1">{type}</span>
 				{/if}
@@ -174,6 +174,8 @@
 						<div class="text-gray-500 text-xs shrink-0">{statusLabel}</div>
 					{:else if size}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
+					{:else if type === 'collection'}
+						<div class="text-gray-500 text-xs capitalize shrink-0">{$i18n.t('Knowledge Base')}</div>
 					{:else}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{type}</div>
 					{/if}

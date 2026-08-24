@@ -2227,10 +2227,13 @@
 					!(model.info?.meta?.capabilities?.vision ?? true) &&
 					!imageGenerationEnabled
 				) {
-					toast.error(
-						$i18n.t('Model {{modelName}} is not vision capable', {
-							modelName: model.name ?? model.id
-						})
+					toast.info(
+						$i18n.t(
+							'{{modelName}} will read the text extracted from the image(s) only and may not fully describe pure visuals, charts or diagrams',
+							{
+								modelName: model.name ?? model.id
+							}
+						)
 					);
 				}
 			}

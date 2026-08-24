@@ -50,8 +50,13 @@
 	aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label })}
 	class="flex group/item w-full text-left font-medium line-clamp-1 select-none items-center rounded-button py-2 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 brand-nav-item rounded-xl cursor-pointer data-highlighted:bg-muted {index ===
 	selectedModelIdx
-		? 'bg-gray-100 dark:bg-gray-800 group-hover:bg-transparent'
+		? 'group-hover:bg-transparent'
 		: ''}"
+	style={value === item.value
+		? 'background: var(--brand-soft); color: var(--brand-primary);'
+		: index === selectedModelIdx
+			? 'background: var(--brand-soft);'
+			: ''}
 	data-arrow-selected={index === selectedModelIdx}
 	data-value={item.value}
 	on:click={() => {
@@ -250,7 +255,7 @@
 		     above; plain text rather than markdown — these are one-liners. -->
 		{#if item.model?.info?.meta?.description}
 			<div
-				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-500 dark:text-gray-400 line-clamp-2"
+				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-600 dark:text-gray-400 line-clamp-2"
 			>
 				{item.model.info.meta.description}
 			</div>

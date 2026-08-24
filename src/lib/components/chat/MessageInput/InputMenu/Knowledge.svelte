@@ -168,8 +168,11 @@
 				<div
 					class=" px-2.5 py-1 rounded-xl w-full text-left flex justify-between items-center text-sm {idx ===
 					selectedIdx
-						? ' bg-gray-50 dark:bg-gray-800 dark:text-gray-100 selected-command-option-button'
+						? ' selected-command-option-button'
 						: ''}"
+					style={idx === selectedIdx
+						? 'background: var(--brand-soft); color: var(--brand-primary);'
+						: ''}
 				>
 					<button
 						class="w-full flex-1"
@@ -191,7 +194,7 @@
 						data-selected={idx === selectedIdx}
 					>
 						<div class="w-full text-left text-black dark:text-gray-100 flex items-center gap-1">
-							<Tooltip content={$i18n.t('Collection')} placement="top">
+							<Tooltip content={$i18n.t('Knowledge Base')} placement="top">
 								<Database className="size-4" />
 							</Tooltip>
 
@@ -253,7 +256,7 @@
 									}}
 								>
 									<div class=" flex items-center gap-1.5">
-										<Tooltip content={$i18n.t('Collection')} placement="top">
+										<Tooltip content={$i18n.t('Knowledge Base')} placement="top">
 											<DocumentPage className="size-4" />
 										</Tooltip>
 

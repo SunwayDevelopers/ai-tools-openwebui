@@ -505,6 +505,41 @@ class Filter:
         except Exception:
             pass  # a failed toast must never affect the request
 
+    @staticmethod
+    async def _log_event(
+        event_type: str,
+        action: str,
+        user_id: Optional[str],
+        chat_id: Optional[str],
+        source: Optional[str] = None,
+        patterns: Optional[list] = None,
+        detail: Optional[str] = None,
+    ):
+        """Persist a security event to the guardrail_event table.
+
+        Lazy-imported so this module's load-time footprint stays stdlib +
+        pydantic only (see the header note on why that matters — it is what
+        keeps the regex core unit-testable without a DB). A write failure
+        here must never affect the request, matching this file's own
+        FAILURE POLICY: log.warning()/log.info() above already recorded the
+        event for real-time ops visibility, so a lost DB row here is a gap
+        in the audit trail, not a broken guardrail.
+        """
+        try:
+            from open_webui.models.guardrail_events import GuardrailEvents
+
+            await GuardrailEvents.insert(
+                event_type=event_type,
+                action=action,
+                user_id=user_id,
+                chat_id=chat_id,
+                source=source,
+                patterns=patterns,
+                detail=detail,
+            )
+        except Exception:
+            log.error("[guardrails] failed to persist audit event %s", event_type)
+
     # ── inlet ────────────────────────────────────────────────────────────────
 
     async def inlet(
@@ -535,6 +570,11 @@ class Filter:
                 (__user__ or {}).get("email") or (__user__ or {}).get("id") or "unknown"
             )
             chat_id = (__metadata__ or {}).get("chat_id", "-")
+            # Sunway: DB rows use the canonical id, not the email used in the log
+            # lines above — same reasoning as PII redaction: don't put more
+            # identity data in a new place than the row needs.
+            uid_for_db = (__user__ or {}).get("id")
+            chat_id_for_db = chat_id if chat_id and chat_id != "-" else None
 
             # ── Class 2: injection, evaluated BEFORE redaction so patterns see
             # the original text. A block here aborts the request entirely.
@@ -568,6 +608,14 @@ class Filter:
                                 chat_id,
                                 sys_high,
                             )
+                            await self._log_event(
+                                "injection_block",
+                                "blocked",
+                                uid_for_db,
+                                chat_id_for_db,
+                                source="system_prompt",
+                                patterns=sys_high,
+                            )
                             raise GuardrailBlock(
                                 "The system prompt for this chat contains formatting reserved for "
                                 "system instructions. Edit it in the chat's Controls panel and "
@@ -579,6 +627,14 @@ class Filter:
                                 uid,
                                 chat_id,
                                 sys_heur,
+                            )
+                            await self._log_event(
+                                "injection_heuristic",
+                                "blocked" if self.valves.injection_action == "block" else "warned",
+                                uid_for_db,
+                                chat_id_for_db,
+                                source="system_prompt",
+                                patterns=sys_heur,
                             )
                             if self.valves.injection_action == "block":
                                 raise GuardrailBlock(
@@ -614,6 +670,14 @@ class Filter:
                         chat_id,
                         high,
                     )
+                    await self._log_event(
+                        "injection_block",
+                        "blocked",
+                        uid_for_db,
+                        chat_id_for_db,
+                        source="message",
+                        patterns=high,
+                    )
                     raise GuardrailBlock(
                         "This message was blocked because it contains formatting reserved for system "
                         "instructions. Please rephrase it as ordinary text."
@@ -626,6 +690,14 @@ class Filter:
                         chat_id,
                         heur,
                     )
+                    await self._log_event(
+                        "injection_heuristic",
+                        "blocked" if self.valves.injection_action == "block" else "warned",
+                        uid_for_db,
+                        chat_id_for_db,
+                        source="message",
+                        patterns=heur,
+                    )
                     if self.valves.injection_action == "block":
                         raise GuardrailBlock(
                             "This message was blocked because it appears to try to override the "
@@ -634,7 +706,7 @@ class Filter:
                     await self._notify(
                         __event_emitter__,
                         "warning",
-                        "This message looks like an attempt to override the assistant. It was allowed but logged.",
+                        "This message looks like an attempt to override the AI assistant. It was allowed but logged in the database.",
                     )
 
             # ── Class 1: redaction
@@ -652,6 +724,14 @@ class Filter:
                         sorted(found),
                         uid,
                         chat_id,
+                    )
+                    await self._log_event(
+                        "pii_redacted",
+                        "redacted",
+                        uid_for_db,
+                        chat_id_for_db,
+                        source="message",
+                        patterns=sorted(found),
                     )
                     if self.valves.notify_on_redaction:
                         # Sunway: wording corrected. It previously read "was removed before
@@ -725,6 +805,10 @@ class Filter:
             uid = (
                 (__user__ or {}).get("email") or (__user__ or {}).get("id") or "unknown"
             )
+            uid_for_db = (__user__ or {}).get("id")
+            # outlet_data (middleware.py) always sets 'chat_id' on body, temp
+            # chats included — no "-" placeholder to strip here, unlike inlet.
+            chat_id_for_db = body.get("chat_id") or None
 
             # ── Class 3: credentials in the reply
             if self.valves.enable_output_scan:
@@ -746,6 +830,14 @@ class Filter:
                         sorted(found),
                         uid,
                     )
+                    await self._log_event(
+                        "output_credential_redacted",
+                        "redacted",
+                        uid_for_db,
+                        chat_id_for_db,
+                        source="output",
+                        patterns=sorted(found),
+                    )
                     await self._notify(
                         __event_emitter__,
                         "warning",
@@ -761,6 +853,14 @@ class Filter:
                         "[guardrails] answer cites no source despite %d attached, user=%s",
                         len(sources),
                         uid,
+                    )
+                    await self._log_event(
+                        "citation_missing",
+                        "logged",
+                        uid_for_db,
+                        chat_id_for_db,
+                        source="output",
+                        detail=f"{len(sources)} source(s) attached, no citation markers in reply",
                     )
                     if self.valves.citation_action == "note":
                         note = "\n\n---\n*Note: sources were attached to this question but the answer does not cite them. Please verify against the source documents.*"
