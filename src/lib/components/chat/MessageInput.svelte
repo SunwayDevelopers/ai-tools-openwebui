@@ -94,7 +94,10 @@
 	import TerminalMenu from './MessageInput/TerminalMenu.svelte';
 	import Component from '../icons/Component.svelte';
 	import PlusAlt from '../icons/PlusAlt.svelte';
+	import Clip from '../icons/Clip.svelte';
+	import Database from '../icons/Database.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
+	import AttachKnowledgeMenu from './MessageInput/InputMenu/Knowledge.svelte';
 
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
 	import Note from '../icons/Note.svelte';
@@ -458,6 +461,19 @@
 	let filesInputElement;
 	let commandsElement;
 
+	let inputMenuHasVisibleItems = false;
+
+	// Sunway: standalone "Attach Knowledge" composer button — mirrors the onSelect logic
+	// InputMenu.svelte used before that dropdown's own Attach Knowledge row moved here.
+	let showAttachKnowledgeMenu = false;
+	const onAttachKnowledgeSelect = (item) => {
+		if (files.find((f) => f.id === item.id)) {
+			return;
+		}
+		files = [...files, { ...item, status: 'processed' }];
+		showAttachKnowledgeMenu = false;
+	};
+
 	let inputFiles;
 
 	let showInputModal = false;
@@ -796,7 +812,7 @@
 				}
 
 				if (useOcr) {
-					toast.info($i18n.t('Image will be read as text for model(s) without vision support.'));
+					toast.info($i18n.t('Image(s) will be described and/or extracted as text automatically.'));
 				}
 
 				const compressImageHandler = async (imageUrl, settings = {}, config = {}) => {
@@ -1685,16 +1701,48 @@
 							</div>
 
 							<div class=" flex justify-between mt-0.5 mb-2.5 mx-0.5 max-w-full" dir="ltr">
-								<div class="ml-1 self-end flex items-center flex-1 max-w-[80%]">
+								<div class="ml-1 self-end flex items-center gap-1.5 flex-1 max-w-[80%]">
+									<Tooltip content={$i18n.t('Attach File')}>
+										<button
+											type="button"
+											class="brand-pill-outline text-gray-600 dark:text-gray-300 text-xs"
+											aria-label={$i18n.t('Attach File')}
+											on:click={() => {
+												filesInputElement.click();
+											}}
+										>
+											<Clip className="size-3.5" />
+											<span class="hidden md:block">{$i18n.t('Attach File')}</span>
+										</button>
+									</Tooltip>
+
+									<Dropdown bind:show={showAttachKnowledgeMenu}>
+										<Tooltip content={$i18n.t('Attach Knowledge')}>
+											<button
+												type="button"
+												class="brand-pill-outline text-gray-600 dark:text-gray-300 text-xs"
+												aria-label={$i18n.t('Attach Knowledge')}
+											>
+												<Database className="size-3.5" />
+												<span class="hidden md:block">{$i18n.t('Attach Knowledge')}</span>
+											</button>
+										</Tooltip>
+
+										<div slot="content">
+											<div
+												class="w-70 rounded-2xl px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg max-h-72 overflow-y-auto overflow-x-hidden scrollbar-thin transition"
+											>
+												<AttachKnowledgeMenu onSelect={onAttachKnowledgeSelect} />
+											</div>
+										</div>
+									</Dropdown>
+
 									<InputMenu
 										bind:files
 										selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
 										{fileUploadCapableModels}
 										{screenCaptureHandler}
 										{inputFilesHandler}
-										uploadFilesHandler={() => {
-											filesInputElement.click();
-										}}
 										uploadGoogleDriveHandler={async () => {
 											try {
 												const fileData = await createPicker();
@@ -1737,15 +1785,21 @@
 											const chatInput = document.getElementById('chat-input');
 											chatInput?.focus();
 										}}
+										bind:hasVisibleItems={inputMenuHasVisibleItems}
 									>
-										<button
-											type="button"
-											id="input-menu-button"
-											class="bg-transparent brand-nav-item text-gray-700 dark:text-white brand-nav-item rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
-											aria-label={$i18n.t('More')}
-										>
-											<PlusAlt className="size-5.5" />
-										</button>
+										<!-- Sunway: only rendered when InputMenu itself has something to show —
+										     Notes/Google Drive/OneDrive are all separately flag-gated and typically
+										     all off, which would otherwise leave a "+" that opens an empty panel. -->
+										{#if inputMenuHasVisibleItems}
+											<button
+												type="button"
+												id="input-menu-button"
+												class="bg-transparent brand-nav-item text-gray-700 dark:text-white brand-nav-item rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
+												aria-label={$i18n.t('More')}
+											>
+												<PlusAlt className="size-5.5" />
+											</button>
+										{/if}
 									</InputMenu>
 
 									<!-- Sunway: the entire composer integrations toolbar is hidden — the divider and

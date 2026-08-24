@@ -110,7 +110,7 @@
 			{#if !loading}
 				<Tooltip
 					content={type === 'collection'
-						? $i18n.t('Collection')
+						? $i18n.t('Knowledge Base')
 						: type === 'note'
 							? $i18n.t('Note')
 							: type === 'chat'
@@ -156,7 +156,7 @@
 				{:else if type === 'doc'}
 					{$i18n.t('Document')}
 				{:else if type === 'collection'}
-					{$i18n.t('Collection')}
+					{$i18n.t('Knowledge Base')}
 				{:else}
 					<span class=" capitalize line-clamp-1">{type}</span>
 				{/if}

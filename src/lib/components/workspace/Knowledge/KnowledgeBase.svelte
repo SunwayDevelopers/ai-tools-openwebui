@@ -1297,8 +1297,8 @@
 					<input
 						class=" w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent"
 						bind:value={query}
-						aria-label={$i18n.t('Search Collection')}
-						placeholder={$i18n.t('Search Collection')}
+						aria-label={$i18n.t('Search Knowledge Base')}
+						placeholder={$i18n.t('Search Knowledge Base')}
 						on:focus={() => {
 							selectedFileId = null;
 						}}

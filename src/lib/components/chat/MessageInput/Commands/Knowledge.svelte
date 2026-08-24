@@ -148,7 +148,7 @@
 				{#if item?.type === 'folder'}
 					{$i18n.t('Folders')}
 				{:else if item?.type === 'collection'}
-					{$i18n.t('Collections')}
+					{$i18n.t('Knowledge Bases')}
 				{:else if item?.type === 'file'}
 					{$i18n.t('Files')}
 				{/if}
@@ -159,8 +159,11 @@
 			<button
 				class=" px-2 py-1 rounded-xl w-full text-left flex justify-between items-center {idx ===
 				selectedIdx
-					? ' bg-gray-50 dark:bg-gray-800 dark:text-gray-100 selected-command-option-button'
+					? 'selected-command-option-button'
 					: ''}"
+				style={idx === selectedIdx
+					? 'background: var(--brand-soft); color: var(--brand-primary);'
+					: ''}
 				type="button"
 				on:click={() => {
 					console.log(item);
@@ -181,7 +184,7 @@
 							: item?.type === 'file'
 								? `${item?.collection?.name} > ${$i18n.t('File')}`
 								: item?.type === 'collection'
-									? $i18n.t('Collection')
+									? $i18n.t('Knowledge Base')
 									: ''}
 						placement="top"
 					>

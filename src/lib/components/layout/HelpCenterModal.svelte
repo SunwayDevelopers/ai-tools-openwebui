@@ -31,21 +31,15 @@
 	const FAQS: Faq[] = [
 		{
 			category: 'Getting started',
-			question: 'What is SChat.ai?',
-			answer:
-				'SChat.ai is Sunway’s internal AI assistant. It runs on models hosted inside Sunway’s own infrastructure, so your conversations, uploaded documents and knowledge bases stay within the organisation and are not sent to an external AI provider.'
-		},
-		{
-			category: 'Getting started',
 			question: 'Which model should I pick — Flash or Deepthink?',
 			answer:
-				'Flash is the default and the right choice for almost everything: questions, drafting, summarising, rewriting and quick lookups. It answers immediately.\n\nDeepthink works through a problem step by step before replying. It is noticeably slower, so use it for analysis, multi-step reasoning, comparing options, or anything where you would rather wait and get a more careful answer.\n\nYou can switch models at any time using the selector next to the send button. Switching does not clear the conversation.'
+				'Flash is the default and the right choice for almost everything: questions, drafting, summarising, rewriting and quick lookups. It answers immediately.\n\nDeepthink works through a problem step by step before replying. It is noticeably slower, so use it for analysis, multi-step reasoning, comparing options, or anything where you would rather wait and get a more careful answer.\n\nNevertheless, you can switch models any time that you see fit to answer your queries using the selector next to the send button. The choice is yours.'
 		},
 		{
 			category: 'Getting started',
 			question: 'Does it know today’s date and recent events?',
 			answer:
-				'It knows the current date. For anything recent or changing, turn on Web Search so it looks the answer up rather than relying on what it learnt during training.\n\nWithout web search it can only answer from training data, which has a cut-off, and from whatever you have attached to the conversation.'
+				'It knows the current date, but its own knowledge has a training cut-off, so it cannot know about anything that happened after that.\n\nFor anything recent or changing, just ask — it decides on its own when to search the web, then cites the pages it used. Click a citation to open the source and check it for anything that matters; web results vary in quality, and the assistant is summarising them, not vouching for them.\n\nIf it does not look something up when you expect it to, try being explicit — ask it to “check the latest” or “search for” what you need.'
 		},
 		{
 			category: 'Chats',
@@ -87,67 +81,49 @@
 			category: 'Files',
 			question: 'It cannot find something I know is in my document. Why?',
 			answer:
-				'For large documents the assistant retrieves the passages that look most relevant to your question rather than reading the file end to end. If your question is phrased differently from the wording in the document, the right passage may not surface.\n\nTwo things usually fix it: use the same terminology the document uses, and ask a narrower question. Asking about one section at a time works far better than asking for a summary of everything.\n\nIf the document is a scan, click the file to preview what was actually extracted and check the text was recognised correctly.'
+				'For large documents that exceed the context window of the AI assistant itself, it will retrieve the parts or sections of that document that look most relevant to your question rather than reading the file end to end.'
 		},
 		{
 			category: 'Files',
 			question: 'What happens to files I upload?',
 			answer:
-				'They are stored with the chat and used to answer your questions in that conversation. They are removed together with the chat — either when you delete it, or when it expires after {{RETENTION_DAYS}} days of inactivity.\n\nUploads are visible only to you unless you have added them to a shared knowledge base.'
+				'Once files are upload in a chat, AI asistant will always curate through it regardless of the relevancy of next question you asked. They are removed together with the chat — either when you delete it, or when it expires after {{RETENTION_DAYS}} days of inactivity.\n\nUploads are visible only to you unless you have added them to a shared knowledge base.'
 		},
 		{
 			category: 'Knowledge',
-			question: 'What is a Knowledge Base and when should I use one?',
+			question: 'How do I use a knowledge base my team shares?',
 			answer:
-				'A knowledge base is a reusable collection of documents. Attach it to a chat and the assistant can draw on all of it, without you re-uploading the same files every time.\n\nUse a chat upload for a one-off document. Use a knowledge base for material you or your team refer to repeatedly — policies, product documentation, standard procedures.'
+				'A knowledge base is a reusable collection of documents that your BU tenant’s admin maintains. Attach it to a chat and the assistant can draw on all of it, without you re-uploading the same files every time.\n\nType # in the message box to bring up the picker, or use the + button next to the input and choose Attach Knowledge. It stays attached for that conversation.\n\nNote: creating a knowledge base is restricted to admins only and for those whom your admins assigned to.'
 		},
 		{
 			category: 'Knowledge',
-			question: 'How do I attach a knowledge base to a chat?',
+			question: 'I’m an admin, how do I create and share a knowledge base?',
 			answer:
-				'Type # in the message box to bring up the picker, or use the + button next to the input and choose Attach Knowledge. The knowledge base stays attached for that conversation.'
-		},
-		{
-			category: 'Web search',
-			question: 'How do I get answers about current information?',
-			answer:
-				'Turn on Web Search in the message box, then ask your question. The assistant searches, reads the results and cites the pages it used — click a citation to open the source.\n\nCheck the citation for anything that matters. Web results vary in quality, and the assistant is summarising them, not vouching for them.'
+				'Open Knowledge Space (in the sidebar) and click New Knowledge Base to create one, then upload the documents it should contain. You own what you create, which gives you full control over it such as editing, adding files and sharing.\n\nOnce a knowledge base is created, it will be shared to all users within the BU tenant group you created in. For users, you cannot edit or delete it unless you’ve been granted that permission by admins.\n\nUse a knowledge base for material your team refers to repeatedly — policies, product documentation, standard procedures. A one-off document someone only needs for a single conversation is better as a chat upload.'
 		},
 		{
 			category: 'Images',
 			question: 'Can it read images and screenshots?',
 			answer:
-				'Yes. Paste or upload a screenshot, photo or scanned page and ask about it. Text in the image is extracted automatically, which makes it useful for screenshots of error messages, forms, printed tables and whiteboards.'
+				'It reads text inside an image reliably — screenshots of error messages, forms, printed tables, whiteboards with writing on them.\n\nPurely visual content — a photo, diagram or chart with little or no text in it — is a different case. What it can tell you about that depends on the image, and it is not a substitute for actually looking at it yourself. If the visual details matter, describe them in words as well as attaching the image.'
 		},
 		{
 			category: 'Images',
 			question: 'Can it generate images?',
 			answer:
-				'Yes. Turn on the image option in the message box and describe what you want.\n\nGenerated images are illustrative. Do not rely on them for anything needing accurate text, logos, charts or figures — image models reproduce those unreliably.'
+				'Yes — just describe what you want and ask for it. Once the image(s) are generated, you can also copy it by pressing the icon at top right of the image or download it into your local folder.\n\nGenerated images are illustrative. Do not rely on them for anything needing accurate text, logos, charts or figures — image models reproduce those unreliably.'
 		},
 		{
 			category: 'Privacy',
-			question: 'Is what I type private?',
+			question: 'Will the information I send in get exposed to the public?',
 			answer:
-				'Your chats are yours. Administrators cannot open other people’s conversations through the interface, and the routes that previously allowed it have been removed.\n\nThe models run on Sunway-hosted infrastructure, so your prompts are not sent to an external AI provider.'
+				'Your chats and data are only visible to you alone. Admins and other users cannot look into your conversations, not even employees from other BU tenant groups as well.\n\nAs SChat.ai and its AI models run on Sunway-hosted infrastructure, so your prompts are not sent to any external AI models or environment.'
 		},
 		{
 			category: 'Privacy',
 			question: 'What if I accidentally paste something sensitive?',
 			answer:
-				'SChat.ai detects and masks several kinds of sensitive data before a message reaches the model and before it is stored — including NRIC numbers, email addresses, Malaysian phone numbers, payment card numbers, and credentials such as API keys and private keys. These show up as [REDACTED_…] markers.\n\nTreat it as a safety net, not a licence. It cannot recognise everything, so still avoid pasting personal data, credentials or confidential material you would not put in an internal email.'
-		},
-		{
-			category: 'Settings',
-			question: 'Can I change the language or the appearance?',
-			answer:
-				'Yes — Settings → General. The interface is available in English, Bahasa Malaysia and Chinese, with System and Dark appearance options.\n\nThe interface language is separate from the language the assistant replies in. It replies in whatever language you write to it in, so you can switch mid-conversation just by changing the language you type.'
-		},
-		{
-			category: 'Settings',
-			question: 'Some features I have seen elsewhere are missing. Why?',
-			answer:
-				'This is a deliberately focused version. Features that are not part of the current rollout — voice, notes, memory, chat folders, code execution and others — are switched off rather than left half-working.\n\nSome are planned for later releases. If something you need is missing, tell us through the feedback link below; that is what decides what gets built next.'
+				'SChat.ai automatically detects and masks several kinds of sensitive data before a message reaches the model and before it is stored — including personal identifiers, payment details and credentials. These show up as [REDACTED_…] markers.\n\nTreat it as a safety net, not a licence. It cannot recognise everything, so still avoid pasting personal data, credentials or confidential material you would not put in an internal email.'
 		}
 	];
 

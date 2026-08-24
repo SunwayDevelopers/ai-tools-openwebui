@@ -158,10 +158,12 @@
 	const getMenuItemMeta = (id) => {
 		const items = {
 			notes: { label: 'Notes', href: '/notes', iconType: 'note' },
-			// Sunway: reads "Knowledge Base" in the UI, not "Workspace". The key stays
+			// Sunway: reads "Knowledge Space" in the UI, not "Workspace". The key stays
 			// 'Workspace' and the three shipped locales translate it (en-GB/ms-MY/zh-CN
 			// translation.json), which also renames the user-menu entry and the page title
-			// in one place. Knowledge is the only section left in the workspace.
+			// in one place. Knowledge is the only section left in the workspace. "Knowledge
+			// Space" is the container of every Knowledge Base; each individual KB keeps the
+			// "Knowledge Base" name (see workspace/Knowledge.svelte and its "Knowledge Space" H1).
 			workspace: { label: 'Workspace', href: '/workspace', iconType: 'workspace' },
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },

@@ -167,7 +167,7 @@
 		<div class="flex justify-between items-center">
 			<div class="flex items-center md:self-center text-xl font-medium px-0.5 gap-2 shrink-0">
 				<div>
-					{$i18n.t('Knowledge Base')}
+					{$i18n.t('Knowledge Space')}
 				</div>
 
 				<div class="text-lg font-medium text-gray-500 dark:text-gray-500">
@@ -186,7 +186,7 @@
 					<a class="brand-pill-solid" href="/workspace/knowledge/create">
 						<Plus className="size-3" strokeWidth="2.5" />
 
-						<div class=" hidden md:block">{$i18n.t('New Knowledge')}</div>
+						<div class=" hidden md:block">{$i18n.t('New Knowledge Base')}</div>
 					</a>
 				{/if}
 			</div>
@@ -256,7 +256,7 @@
 								if (item?.meta?.document) {
 									toast.error(
 										$i18n.t(
-											'Only collections can be edited, create a new knowledge base to edit/add documents.'
+											'Only Knowledge Bases can be edited — create a new Knowledge Base to add or edit documents.'
 										)
 									);
 								} else {
@@ -269,7 +269,7 @@
 									<div class="flex items-center justify-between -my-1 h-8">
 										<div class=" flex gap-2 items-center justify-between w-full">
 											<div>
-												<Badge type="success" content={$i18n.t('Collection')} />
+												<Badge type="success" content={$i18n.t('Knowledge Base')} />
 											</div>
 
 											{#if !item?.write_access}
