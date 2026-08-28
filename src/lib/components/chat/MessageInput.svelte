@@ -2296,7 +2296,9 @@
 								{@html DOMPurify.sanitize(marked($config?.license_metadata?.input_footer))}
 							</div>
 						{:else}
-							<div class="mb-1" />
+							<div class="text-xs text-gray-500 text-center line-clamp-1 mb-1">
+								SChat.ai can make mistakes. Please double-check responses.
+							</div>
 						{/if}
 					</form>
 				</div>
