@@ -3,7 +3,6 @@
 
 	const i18n = getContext('i18n');
 
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
@@ -34,17 +33,7 @@
 			on:click={onClick}
 			draggable="false"
 		>
-			<div class="self-center shrink-0">
-				<img
-					src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${model.id}&lang=${$i18n.language}`}
-					class=" size-5 rounded-full -translate-x-[0.5px]"
-					alt="logo"
-					on:error={(e) => {
-						e.currentTarget.src = '/favicon.png';
-					}}
-				/>
-			</div>
-
+			<!-- Sunway: no per-model icon (see ModelItem.svelte). -->
 			<div class="flex self-center translate-y-[0.5px]">
 				<div class=" self-center text-sm font-primary line-clamp-1">
 					{model?.name ?? model.id}

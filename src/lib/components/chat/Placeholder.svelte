@@ -148,46 +148,9 @@
 				/>
 			{:else}
 				<div class="flex flex-row justify-center gap-2.5 @sm:gap-3 w-fit px-5 max-w-xl">
-					<div class="flex shrink-0 justify-center">
-						<!-- Sunway: one avatar, not one per selected model. Every schat model resolves to
-						     the same brand icon (the red S), so upstream's overlapping per-model stack
-						     rendered N identical icons as soon as a second model was added with "+".
-						     Deduping by image is impossible client-side: /api/models strips
-						     meta.profile_image_url (backend/open_webui/main.py), so the frontend only
-						     ever has a per-model-id URL. The fix is to stop stacking. Restore upstream
-						     by iterating `models` instead of its first entry. -->
-						<div class="flex -space-x-4 mb-0.5" in:fade={{ duration: 100 }}>
-							{#each models.slice(0, 1) as model, modelIdx}
-								<Tooltip
-									content={(models[modelIdx]?.info?.meta?.tags ?? [])
-										.map((tag) => tag.name.toUpperCase())
-										.join(', ')}
-									placement="top"
-								>
-									<button
-										aria-hidden={models.length <= 1}
-										aria-label={$i18n.t('Get information on {{name}} in the UI', {
-											name: models[modelIdx]?.name
-										})}
-										on:click={() => {
-											selectedModelIdx = modelIdx;
-										}}
-									>
-										<img
-											src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${model?.id}&lang=${$i18n.language}`}
-											class=" size-9 @sm:size-10 rounded-full border-[1px] border-gray-100 dark:border-none"
-											aria-hidden="true"
-											draggable="false"
-											on:error={(e) => {
-												e.currentTarget.src = '/favicon.png';
-											}}
-										/>
-									</button>
-								</Tooltip>
-							{/each}
-						</div>
-					</div>
-
+					<!-- Sunway: no model avatar here. Models carry no brand of their own, and the
+					     only asset available was schat's brand mark (the red S) — the branding
+					     team does not want it standing in as a per-model icon in the chat UI. -->
 					<div
 						class=" text-3xl @sm:text-3xl line-clamp-1 flex items-center"
 						in:fade={{ duration: 100 }}

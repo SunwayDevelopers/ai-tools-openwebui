@@ -1119,8 +1119,10 @@
 			finishLoading();
 		}
 
+		// Sunway: hard-gated -- see the note on the <SyncStatsModal> render below.
 		// Auto-show SyncStatsModal when opened with ?sync=true (from community)
 		if (
+			false &&
 			(window.opener ?? false) &&
 			$page.url.searchParams.get('sync') === 'true' &&
 			($config?.features?.enable_community_sharing ?? false)
@@ -1216,7 +1218,12 @@
 	{/if}
 {/if}
 
-{#if $config?.features.enable_community_sharing}
+<!-- Sunway: hard-gated, same as "Share to Open WebUI Community" in ShareChatModal.svelte --
+     this whole flow (postMessage handshake with openwebui.com/chats/upload) exists only for
+     that community-sharing feature. ENABLE_COMMUNITY_SHARING now defaults false, but that is
+     PersistentConfig -- an existing DB keeps its stored value until Admin Settings is changed
+     -- so this is hard-gated too. Restore by dropping the `false &&`. -->
+{#if false && $config?.features.enable_community_sharing}
 	<SyncStatsModal bind:show={showSyncStatsModal} eventData={syncStatsEventData} />
 {/if}
 
