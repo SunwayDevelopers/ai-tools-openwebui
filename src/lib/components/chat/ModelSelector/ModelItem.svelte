@@ -5,7 +5,6 @@
 	import dayjs from '$lib/dayjs';
 
 	import { mobile, settings, user } from '$lib/stores';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { copyToClipboard, sanitizeResponseContent } from '$lib/utils';
@@ -80,27 +79,24 @@
 			</div>
 		{/if} -->
 
+		<!-- Sunway: no per-model icon. Models carry no brand of their own, and the only
+		     fallback asset was schat's brand mark (the red S) — the branding team does not
+		     want it reused as a generic model icon in the selector list. The description now
+		     sits beside the name on one line (was a second line below, which read as an
+		     orphaned indent once the icon it was aligned under was removed). -->
 		<div class="flex items-center gap-2">
-			<div class="flex items-center min-w-fit">
-				<Tooltip content={$user?.role === 'admin' ? (item?.value ?? '') : ''} placement="top-start">
-					<img
-						src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${item.model.id}&lang=${$i18n.language}`}
-						alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
-						class="rounded-full size-5 flex items-center"
-						loading="lazy"
-						on:error={(e) => {
-							e.currentTarget.src = '/favicon.png';
-						}}
-					/>
-				</Tooltip>
-			</div>
-
-			<div class="flex items-center">
+			<div class="flex items-baseline gap-1.5 min-w-0 flex-1">
 				<Tooltip content={`${item.label} (${item.value})`} placement="top-start">
-					<div class="line-clamp-1">
+					<div class="shrink-0 line-clamp-1">
 						{item.label}
 					</div>
 				</Tooltip>
+
+				{#if item.model?.info?.meta?.description}
+					<span class="truncate text-xs font-normal text-gray-500 dark:text-gray-400">
+						{item.model.info.meta.description}
+					</span>
+				{/if}
 			</div>
 
 			<div class=" shrink-0 flex items-center gap-2">
@@ -249,17 +245,6 @@
 				{/if}
 			</div>
 		</div>
-
-		<!-- Sunway: description rendered inline (SOTA style) so the tier labels carry their
-		     explanation without anyone having to hover. Replaces the ⓘ tooltip guarded off
-		     above; plain text rather than markdown — these are one-liners. -->
-		{#if item.model?.info?.meta?.description}
-			<div
-				class="pl-7 pr-1 -mt-1 text-left text-xs font-normal text-gray-600 dark:text-gray-400 line-clamp-2"
-			>
-				{item.model.info.meta.description}
-			</div>
-		{/if}
 	</div>
 
 	<div class="ml-auto pl-2 pr-1 flex items-center gap-1.5 shrink-0">

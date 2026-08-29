@@ -482,7 +482,14 @@
 			document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
 		});
 
-		showSidebar.set(!$mobile ? localStorage.sidebar === 'true' : false);
+		// Sunway: default the sidebar OPEN on desktop for a user's first-ever visit (no stored
+		// preference yet) -- upstream defaults closed here, which meant every new schat user's
+		// first impression was a hidden sidebar. Once a user explicitly opens/closes it, that
+		// choice is what persists (see the `showSidebar.subscribe` below), so this only changes
+		// the very first render, not returning users' preferences.
+		showSidebar.set(
+			!$mobile ? (localStorage.sidebar === undefined ? true : localStorage.sidebar === 'true') : false
+		);
 
 		const unsubscribers = [
 			mobile.subscribe((value) => {
@@ -748,19 +755,15 @@
 					placement="right"
 				>
 					<button
-						class="flex rounded-xl brand-nav-item transition group {isWindows
+						class="flex rounded-xl brand-nav-item transition {isWindows
 							? 'cursor-pointer'
 							: 'cursor-[e-resize]'}"
 						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
 					>
+						<!-- Sunway: collapsed-rail toggle uses the plain sidebar icon, same as the
+						     expanded footer's toggle button below — no brand mark (the red S) here. -->
 						<div class=" self-center flex items-center justify-center size-9">
-							<img
-								src="{WEBUI_BASE_URL}/static/favicon.png"
-								class="sidebar-new-chat-icon size-6 rounded-full group-hover:hidden"
-								alt=""
-							/>
-
-							<Sidebar className="size-5 hidden group-hover:flex" />
+							<Sidebar className="size-5" />
 						</div>
 					</button>
 				</Tooltip>
@@ -980,19 +983,6 @@
 			<div
 				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-3"
 			>
-				<a
-					class="flex items-center rounded-xl size-8.5 h-full justify-center brand-nav-item transition no-drag-region hidden"
-					href="/"
-					draggable="false"
-					on:click={newChatHandler}
-				>
-					<img
-						src="{WEBUI_BASE_URL}/static/favicon.png"
-						class="sidebar-new-chat-icon size-6 rounded-full"
-						alt=""
-					/>
-				</a>
-
 				<a href="/" class="flex flex-1 px-0.5" on:click={newChatHandler}>
 					<div
 						id="sidebar-webui-name"
