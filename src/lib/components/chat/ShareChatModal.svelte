@@ -165,7 +165,12 @@
 				{/if}
 
 				<div class="flex justify-end gap-1 mt-3">
-					{#if $config?.features.enable_community_sharing}
+					<!-- Sunway: "Share to Open WebUI Community" hard-gated, same as "Community
+					     Reviews" in ModelSelector/ModelItemMenu.svelte. ENABLE_COMMUNITY_SHARING now
+					     defaults false, but that is PersistentConfig -- an existing DB keeps its
+					     stored value until Admin Settings is changed -- so this is hard-gated too.
+					     Restore by dropping the `false &&`. -->
+					{#if false && $config?.features.enable_community_sharing}
 						<button
 							class="flex items-center gap-1 px-3.5 py-2 text-sm font-medium bg-gray-100 brand-nav-item text-gray-800 dark:bg-gray-850 dark:text-white brand-nav-item transition rounded-full"
 							type="button"

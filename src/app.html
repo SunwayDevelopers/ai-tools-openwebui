@@ -65,9 +65,11 @@
 					metaThemeColorTag.setAttribute('content', '#171717');
 				}
 
+				// Sunway: the loading mark is the full "SChat.ai" wordmark, not the standalone
+				// red S — branding team does not want the bare S used as a freestanding icon.
 				const preloadHref = document.documentElement.classList.contains('dark')
-					? '/static/splash-dark.png'
-					: '/static/splash.png';
+					? '/static/schat-wordmark-dark.svg'
+					: '/static/schat-wordmark.svg';
 				const preload = document.createElement('link');
 				preload.rel = 'preload';
 				preload.as = 'image';
@@ -93,10 +95,10 @@
 				const logo = document.createElement('img');
 				logo.id = 'logo';
 				logo.style =
-					'position: absolute; width: auto; height: 6rem; top: 44%; left: 50%; transform: translateX(-50%); display:block;';
+					'position: absolute; width: auto; height: 3.5rem; top: 44%; left: 50%; transform: translateX(-50%); display:block;';
 				logo.loading = 'eager';
 				logo.fetchPriority = 'high';
-				logo.src = isDarkMode ? '/static/splash-dark.png' : '/static/splash.png';
+				logo.src = isDarkMode ? '/static/schat-wordmark-dark.svg' : '/static/schat-wordmark.svg';
 
 				document.addEventListener('DOMContentLoaded', function () {
 					const splash = document.getElementById('splash-screen');
