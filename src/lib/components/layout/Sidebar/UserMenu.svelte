@@ -5,7 +5,8 @@
 	import { fade, slide } from 'svelte/transition';
 
 	import { getUsage } from '$lib/apis';
-	import { getSessionUser, userSignOut } from '$lib/apis/auths';
+	import { getSessionUser } from '$lib/apis/auths';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import {
 		showSettings,
@@ -29,7 +30,7 @@
 	import Settings from '$lib/components/icons/Settings.svelte';
 	import Code from '$lib/components/icons/Code.svelte';
 	import UserGroup from '$lib/components/icons/UserGroup.svelte';
-	import SignOut from '$lib/components/icons/SignOut.svelte';
+	import Home from '$lib/components/icons/Home.svelte';
 	import FaceSmile from '$lib/components/icons/FaceSmile.svelte';
 	import UserStatusModal from './UserStatusModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
@@ -639,23 +640,43 @@
 
 			<hr class=" border-gray-50/30 dark:border-gray-800/30 my-1 p-0" />
 
-			<button
+			<!-- Sunway: parity with the catalogue's other listed apps (e.g. SDeck), which carry
+			     a way back to the catalogue and no local Sign Out of their own -- signing out
+			     is exclusively a catalogue action there (a federated logout that revokes every
+			     WorkOS session and ends the Azure AD SSO session, not just this app's cookie),
+			     so a per-tool Sign Out only duplicates a control the catalogue already owns
+			     more completely. schat now matches: this link back is the only exit here, no
+			     local Sign Out.
+			     ALWAYS rendered, same content regardless of destination -- matching SDeck's
+			     equivalent button (SidebarHomeButton always shows Home icon + SCoreMark, only
+			     the href changes based on whether aiPlatformUrl is set). A generic Home icon
+			     in the icon slot (matching every other item in this menu, which all use a
+			     generic icon there, not a brand mark) + the logo itself standing in for the
+			     text label -- NOT a text label next to the logo, which repeats "SCore.ai"
+			     right after a logo that already reads as "SCore.ai", the redundant-looking
+			     "SCore.ai SCore.ai" an earlier version of this rendered. Falls back to schat's
+			     own "/" (new chat) when unset, same as SDeck falls back to its own
+			     /dashboard. -->
+			<a
+				href={$config?.features?.landing_page_url ?? '/'}
+				draggable="false"
 				class="flex rounded-xl py-1.5 px-3 w-full brand-nav-item transition cursor-pointer select-none"
-				type="button"
-				on:click={async () => {
-					const res = await userSignOut();
-					user.set(null);
-					localStorage.removeItem('token');
-
-					location.href = res?.redirect_url ?? '/auth';
+				on:click={() => {
 					show = false;
 				}}
 			>
 				<div class=" self-center mr-3">
-					<SignOut className="w-5 h-5" strokeWidth="1.5" />
+					<Home className="size-5" strokeWidth="1.5" />
 				</div>
-				<div class=" self-center truncate">{$i18n.t('Sign Out')}</div>
-			</button>
+				<div class=" self-center">
+					<img src="{WEBUI_BASE_URL}/static/score-ai-logo.svg" class="h-5 w-auto dark:hidden" alt="SCore.ai" />
+					<img
+						src="{WEBUI_BASE_URL}/static/score-ai-logo-dark.svg"
+						class="h-5 w-auto hidden dark:block"
+						alt="SCore.ai"
+					/>
+				</div>
+			</a>
 
 			{#if showActiveUsers && ($config?.features?.enable_public_active_users_count || role === 'admin') && usage}
 				{#if usage?.user_count}
