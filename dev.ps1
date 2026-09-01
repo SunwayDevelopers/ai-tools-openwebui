@@ -47,6 +47,44 @@ function Import-DotEnv([string]$path) {
     }
 }
 
+# Wipe every var .env.example ever documents, BEFORE each Import-DotEnv call.
+#
+# SetEnvironmentVariable(..., 'Process') persists for the life of the calling PowerShell
+# terminal -- not just this script's child processes. Ctrl+C only kills uvicorn/vite, never
+# the terminal itself, and $script:DotEnvKeys resets on every re-run (it is script-scoped,
+# not process-scoped) so it cannot remember what an EARLIER invocation set. Import-DotEnv
+# only ever ADDS/overwrites keys it finds in .env; it has no way to notice a key that WAS
+# in .env on a previous run in this same terminal and has since been removed or commented
+# out -- that value then lingers indefinitely, silently overriding a now-absent .env line
+# and any Set-EnvDefault fallback below, until the terminal is closed.
+#
+# .env.example is treated as the authoritative list of every var this system ever loads
+# from .env (per its own header comment) -- clearing exactly that set, right before every
+# reload, guarantees a var absent from .env TODAY is genuinely unset today, regardless of
+# what a previous run in this terminal left behind. Vars outside that list (e.g. anything
+# a developer exports by hand for unrelated purposes) are deliberately left alone.
+#
+# Unlike .env, a leading '#' in .env.example does NOT mean "not a real key" -- most
+# optional/PersistentConfig/dev-only vars are deliberately documented there commented out
+# (e.g. "# ENABLE_NOTES='true'") as examples, not omissions. So a line is only skipped
+# here if what remains AFTER stripping one leading '#' still isn't a VAR_NAME=... shape
+# (i.e. genuine prose, section banners) -- every documented key, commented or not, gets
+# cleared.
+function Clear-KnownDotEnvKeys([string]$examplePath) {
+    if (-not (Test-Path $examplePath)) { return }
+    foreach ($line in (Get-Content $examplePath)) {
+        $stripped = $line -replace '^\s*#\s*', ''
+        # Restricted to the ALL-CAPS shape real env var names use (not just any
+        # identifier=...) so prose that happens to contain "word=value" (e.g. a comment
+        # mentioning a Python kwarg like allow_credentials=True) isn't mistaken for one.
+        # -cmatch, not -match: PowerShell's -match is case-INSENSITIVE by default, which
+        # would let a lowercase word through the [A-Z] class anyway.
+        if ($stripped -cmatch '^([A-Z_][A-Z0-9_]*)\s*=') {
+            [System.Environment]::SetEnvironmentVariable($matches[1], $null, 'Process')
+        }
+    }
+}
+
 # Seed a backend env var UNLESS .env already defines it.
 #
 # Deliberately keyed on "came from .env" rather than "is already set in the process":
@@ -135,6 +173,7 @@ if ($needNpm) {
     Write-Host "        Done." -ForegroundColor Green
 }
 
+Clear-KnownDotEnvKeys "$root\.env.example"
 Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
