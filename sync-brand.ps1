@@ -97,14 +97,30 @@ foreach ($dir in @($staticStatic, $staticRoot, $backendStatic)) {
     [System.IO.File]::WriteAllText((Join-Path $dir 'schat-wordmark-dark.svg'), $dark, $utf8NoBom)
 }
 
+# 4) SCore.ai platform logo (light) + generated dark variant, same treatment as the schat
+#    wordmark above. Used ONLY for the "back to the catalogue" link in UserMenu.svelte --
+#    that link shows this logo exclusively when it actually points at SCore.ai (never for
+#    the local/no-catalogue fallback, which uses a generic icon instead, so the real brand
+#    mark is never shown next to a destination that isn't actually SCore.ai).
+$scoreLogo = Join-Path $BrandRepo 'logos\score-ai-logo.svg'
+$scoreSvg  = Get-Content $scoreLogo -Raw
+$scoreDark = $scoreSvg -replace 'rgb\(10\.980225%, 10\.980225%, 10\.980225%\)', 'rgb(100%, 100%, 100%)'
+foreach ($dir in @($staticStatic, $staticRoot, $backendStatic)) {
+    Copy-Item $scoreLogo (Join-Path $dir 'score-ai-logo.svg') -Force
+    [System.IO.File]::WriteAllText((Join-Path $dir 'score-ai-logo-dark.svg'), $scoreDark, $utf8NoBom)
+}
+
 Write-Host ''
 Write-Host "Synced @sunway/brand-assets v$version ($commit)"
 Write-Host "  fonts    : $fontCount SunwaySans woff2 -> static/assets/fonts/"
 Write-Host "  icons    : $($slots.Count) slots + top-level favicon -> red-'S' mark"
 Write-Host "  wordmark : schat-wordmark.svg + schat-wordmark-dark.svg"
+Write-Host "  platform : score-ai-logo.svg + score-ai-logo-dark.svg"
 Write-Host "  targets  : static/static/, static/, backend/open_webui/static/ (backend default STATIC_DIR)"
 Write-Host ''
 Write-Host "Note: tab + app icons use the canonical brand favicon.png (red 'S'); the wordmark"
-Write-Host "      (schat-wordmark.svg + dark variant) is used on the login + sidebar header."
+Write-Host "      (schat-wordmark.svg + dark variant) is used on the login + sidebar header, and"
+Write-Host "      the platform logo (score-ai-logo.svg + dark variant) on the catalogue link in"
+Write-Host "      UserMenu.svelte."
 Write-Host "Upgrade path: add @sunway/brand-assets as a pinned git dependency and call this script"
 Write-Host "      from a 'prebuild' npm hook so 'npm run build' always re-syncs."

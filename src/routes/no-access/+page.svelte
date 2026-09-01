@@ -73,15 +73,20 @@
 			<!-- Deliberately a link, not a redirect. The visitor holds a VALID session here —
 			     they are authenticated but hold no membership — so bouncing them to the
 			     catalogue would only send them back, and signing in again cannot help. Only
-			     an admin granting access can. -->
-			{#if $config?.features?.landing_page_url}
-				<a
-					class="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition brand-nav-item dark:border-gray-700 dark:text-gray-200 brand-nav-item"
-					href={$config.features.landing_page_url}
-				>
-					Back to catalogue
-				</a>
-			{/if}
+			     an admin granting access can.
+			     ALWAYS rendered, same label regardless of destination -- matches
+			     UserMenu.svelte's equivalent link and SDeck's precedent (its home button
+			     never swaps label/icon based on whether a catalogue is configured, only the
+			     href changes). Falls back to "/" when unset: with no catalogue, that still
+			     does something meaningful -- if an admin granted access in the meantime, "/"
+			     now lets them in for real; if not, they land back on this exact page, which
+			     is a reasonable outcome either way for what is functionally a retry. -->
+			<a
+				class="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition brand-nav-item dark:border-gray-700 dark:text-gray-200 brand-nav-item"
+				href={$config?.features?.landing_page_url ?? '/'}
+			>
+				SCore.ai
+			</a>
 		</div>
 
 		{#if signOutError}
