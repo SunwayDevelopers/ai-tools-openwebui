@@ -2293,7 +2293,7 @@
 							</div>
 						{:else}
 							<div class="text-xs text-gray-500 text-center line-clamp-1 mb-1">
-								SChat.ai can make mistakes. Please double-check responses.
+								SChat.ai can make mistakes and do not input any personal identifiable information. Please double-check responses.
 							</div>
 						{/if}
 					</form>
