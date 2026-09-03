@@ -10,6 +10,7 @@ from open_webui.config import (
     DEFAULT_ARENA_MODEL,
 )
 from open_webui.env import BYPASS_MODEL_ACCESS_CONTROL, GLOBAL_LOG_LEVEL
+from open_webui.filters import get_builtin_filter
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.functions import Functions
 from open_webui.models.groups import Groups
@@ -272,9 +273,10 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
     # Sunway: the function-module pre-warm loop was removed here (hardening plan Item 2). It
     # called get_function_module_from_cache(), which `exec()`d a `function` row's source and
     # populated request.app.state.FUNCTIONS. That table can no longer be populated, so the
-    # loop had nothing to warm. The two consumers below read FUNCTIONS and skip on a miss,
-    # which is already what happens today -- model['actions'] and model['filters'] come back
-    # empty either way.
+    # loop had nothing to warm. Actions have no built-in-registry replacement, so
+    # model['actions'] still comes back empty. Filters fall back to get_builtin_filter()
+    # below (mirroring utils/filter.py's get_function_module()), so a built-in like
+    # schat_guardrails resolves instead of logging a spurious "failed to load".
 
     # Apply global model defaults to all models
     # Per-model overrides take precedence over global defaults
@@ -346,7 +348,7 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
                 log.info(f'Filter not found: {filter_id}')
                 continue
 
-            function_module = request.app.state.FUNCTIONS.get(filter_id)
+            function_module = get_builtin_filter(filter_id) or request.app.state.FUNCTIONS.get(filter_id)
             if function_module is None:
                 log.info(f'Failed to load filter module: {filter_id}')
                 continue
