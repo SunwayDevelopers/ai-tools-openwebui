@@ -3,7 +3,7 @@
 #   First run (or -Rebuild): creates .venv, pip install, npm install automatically.
 #   Subsequent runs:         skips setup, starts infrastructure straight away.
 #
-#   postgres / qdrant / minio / valkey -> Docker (detached, volumes persist)
+#   postgres / qdrant / minio / redis -> Docker (detached, volumes persist)
 #   (docling and searxng are NOT started -- dev uses the team's GPU docling-serve and
 #    self-hosted SearXNG on the AI server; see the CONTENT_EXTRACTION_ENGINE and
 #    web-search blocks below to run either one locally again)
@@ -100,9 +100,9 @@ function Set-EnvDefault([string]$name, [string]$value) {
 # -- stop ----------------------------------------------------------------------
 
 if ($Stop) {
-    Write-Host "Stopping Docker infra (postgres, qdrant, searxng, minio, valkey)..." -ForegroundColor Yellow
+    Write-Host "Stopping Docker infra (postgres, qdrant, searxng, minio, redis)..." -ForegroundColor Yellow
     # docling is still named here so a locally-started container gets stopped too.
-    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant docling searxng minio valkey
+    docker compose -f "$root\docker-compose.dev.yml" stop postgres qdrant docling searxng minio redis
     exit $LASTEXITCODE
 }
 
@@ -178,7 +178,7 @@ Import-DotEnv "$root\.env"
 
 # -- Docker infrastructure -----------------------------------------------------
 
-Write-Host "[1/2] Starting Docker infra (postgres, qdrant, minio, valkey)..." -ForegroundColor Yellow
+Write-Host "[1/2] Starting Docker infra (postgres, qdrant, minio, redis)..." -ForegroundColor Yellow
 # 'docling' is deliberately absent: dev extracts via the team's GPU docling-serve on the
 # AI server, so the local CPU container (7GB image) was idle waste. To run it locally
 # again: docker compose -f docker-compose.dev.yml up -d docling  AND point
@@ -187,7 +187,7 @@ Write-Host "[1/2] Starting Docker infra (postgres, qdrant, minio, valkey)..." -F
 # self-hosted SearXNG on the AI server. To run it locally again:
 # docker compose -f docker-compose.dev.yml up -d searxng  AND point
 # Admin Settings -> Web Search -> SearXNG Query URL back at http://localhost:8888/search.
-docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant minio valkey createbuckets
+docker compose -f "$root\docker-compose.dev.yml" up -d postgres qdrant minio redis createbuckets
 if ($LASTEXITCODE -ne 0) { Write-Error "docker compose up failed."; exit 1 }
 
 Write-Host "      Waiting for postgres to be healthy..." -ForegroundColor DarkGray
@@ -287,9 +287,9 @@ Set-EnvDefault S3_ACCESS_KEY_ID              'minioadmin'   # MINIO_ROOT_USER (c
 Set-EnvDefault S3_SECRET_ACCESS_KEY          'minioadmin'   # MINIO_ROOT_PASSWORD (compose default)
 Set-EnvDefault S3_BUCKET_NAME                'open-webui'
 Set-EnvDefault S3_REGION_NAME                'us-east-1'     # any value; MinIO ignores it
-# Cache + websocket manager via the valkey container (Redis-compatible, so the
-# redis:// scheme applies). Without this, sessions/websocket/task state live in
-# process memory and don't survive a restart or scale past one replica.
+# Cache + websocket manager via the redis container. Without this,
+# sessions/websocket/task state live in process memory and don't survive a
+# restart or scale past one replica.
 Set-EnvDefault REDIS_URL                     'redis://localhost:6379/0'
 Set-EnvDefault ENABLE_WEBSOCKET_SUPPORT      'true'
 Set-EnvDefault WEBSOCKET_MANAGER             'redis'
