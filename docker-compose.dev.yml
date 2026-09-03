@@ -111,17 +111,17 @@ services:
     volumes:
       - docling_models:/models
 
-  valkey:
-    image: valkey/valkey:8-alpine
-    container_name: open-webui-valkey
+  redis:
+    image: redis:7-alpine
+    container_name: open-webui-redis
     restart: unless-stopped
-    command: ['valkey-server', '--save', '60', '1', '--loglevel', 'warning']
+    command: ['redis-server', '--save', '60', '1', '--loglevel', 'warning']
     ports:
       - '6379:6379'
     volumes:
-      - valkey_data:/data
+      - redis_data:/data
     healthcheck:
-      test: ['CMD', 'valkey-cli', 'ping']
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 3s
       retries: 5
@@ -130,5 +130,5 @@ volumes:
   postgres_data: {}
   qdrant_data: {}
   minio_data: {}
-  valkey_data: {}
+  redis_data: {}
   docling_models: {}
