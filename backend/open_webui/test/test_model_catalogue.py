@@ -75,11 +75,14 @@ BASE_MODEL = 'deepseek-ai/DeepSeek-V4-Flash-0731'
 # "the prompt text changed, confirm that was intended and update the hash in the same commit",
 # which is exactly the review gate a governance artefact needs.
 GOLDEN_PROMPT_SHA256 = {
-    'Qwen/Qwen3.6-35B-A3B': ('485c71c2b41c7569010bf39a5a6a560774b9e8770e04b3b03c26f4ccc1904ce9', 2707),
-    'deepseek-ai/DeepSeek-V4-Flash-0731': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
-    'schat-quick': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
-    'schat-coding': ('b2346720caa868ad7c190a1ce7a110aee9c9a85c260345d6adef1ab3631a37cf', 2795),
-    'schat-deepthink': ('327750f9100b7e9ae0e516011a0858eeff6fdee670bc6116f9fe26b1b5648c7e', 2578),
+    # Updated 2026-09-07: POLICY item 0 (Language) rewritten from "mirror the user's
+    # message language" to "default to English, switch only on an explicit request" --
+    # a deliberate product decision, not a drift fix. Re-pinned in the same commit.
+    'Qwen/Qwen3.6-35B-A3B': ('8a2c9effe6fc0d2468689b7a8eb953bd887d7838b18c4fdc8aea469e99fb3bb6', 2941),
+    'deepseek-ai/DeepSeek-V4-Flash-0731': ('022ff80670c952f659f7eabdaf7fffc25855fb5e8060e08aa1699815467e82b2', 2812),
+    'schat-quick': ('022ff80670c952f659f7eabdaf7fffc25855fb5e8060e08aa1699815467e82b2', 2812),
+    'schat-coding': ('cb4180c5389b5b7b5931c1b6fc8853d6f08a9165416f9483e6814bb646c38150', 3029),
+    'schat-deepthink': ('022ff80670c952f659f7eabdaf7fffc25855fb5e8060e08aa1699815467e82b2', 2812),
 }
 
 
