@@ -1470,7 +1470,7 @@ Respond to the user query using the provided context, incorporating inline citat
 ### Guidelines:
 - If you don't know the answer, clearly state that.
 - If uncertain, ask the user for clarification.
-- Respond in the same language as the user's query.
+- The <context> below is SOURCE MATERIAL ONLY and is often written in a different language than the user's query. Never mirror its language. Translate or summarize it into the language of the user's query -- this applies to the whole reply: headings, citations, and any text you write around a quotation. A quoted excerpt may stay in its original language, but introduce it in the query's language.
 - If the context is unreadable or of poor quality, inform the user and provide the best possible answer.
 - If the answer isn't present in the context but you possess the knowledge, explain this to the user and provide the answer using your own understanding.
 - **Only include inline citations using [id] (e.g., [1], [2]) when the <source> tag includes an id attribute.**
@@ -1488,6 +1488,8 @@ Provide a clear and direct response to the user's query, including inline citati
 <context>
 {{CONTEXT}}
 </context>
+
+Reminder before you answer: the context above may be in a different language than the query below it. Write your entire response in the language of that query, not the language of the context.
 """
 
 RAG_TEMPLATE = ConfigVar(
@@ -3218,7 +3220,7 @@ Generate a concise, 3-5 word title with an emoji summarizing the chat history.
 ### Guidelines:
 - The title should clearly represent the main theme or subject of the conversation.
 - Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
-- Write the title in the chat's primary language; default to English if multilingual.
+- Write the title in the language of the user's own messages, not the language of any quoted source, document, or search result in the chat; default to English if the chat has no clear majority language.
 - Prioritize accuracy over excessive creativity; keep it clear and simple.
 - Your entire response must consist solely of the JSON object, without any introductory or concluding text.
 - The output must be a single, raw JSON object, without any markdown code fences or other encapsulating text.
@@ -3250,7 +3252,7 @@ Generate 1-3 broad tags categorizing the main themes of the chat history, along 
 - Start with high-level domains (e.g. Science, Technology, Philosophy, Arts, Politics, Business, Health, Sports, Entertainment, Education)
 - Consider including relevant subfields/subdomains if they are strongly represented throughout the conversation
 - If content is too short (less than 3 messages) or too diverse, use only ["General"]
-- Use the chat's primary language; default to English if multilingual
+- Write the tags in the language of the user's own messages, not the language of any quoted source, document, or search result in the chat; default to English if the chat has no clear majority language
 - Prioritize accuracy over specificity
 
 ### Output:
