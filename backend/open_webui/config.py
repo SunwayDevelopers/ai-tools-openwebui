@@ -648,7 +648,7 @@ You have access to a Python code interpreter via: `<code_interpreter type="code"
 - After obtaining output, **provide a concise analysis, interpretation, or next steps** to help the user understand the findings.
 - If results are unclear or unexpected, refine the code and re-execute. Iterate until you deliver meaningful insights.
 - **If a link to an image, audio, or any file appears in the output, display it exactly as-is** in your response so the user can access it. Do not modify the link.
-- Respond in the chat's primary language. Default to English if multilingual.
+- Respond in English by default. Use a different language only if the user has explicitly asked to be answered in one.
 
 Ensure the code interpreter is effectively utilized to achieve the highest-quality analysis for the user."""
 
@@ -1470,7 +1470,7 @@ Respond to the user query using the provided context, incorporating inline citat
 ### Guidelines:
 - If you don't know the answer, clearly state that.
 - If uncertain, ask the user for clarification.
-- The <context> below is SOURCE MATERIAL ONLY and is often written in a different language than the user's query. Never mirror its language. Translate or summarize it into the language of the user's query -- this applies to the whole reply: headings, citations, and any text you write around a quotation. A quoted excerpt may stay in its original language, but introduce it in the query's language.
+- The <context> below is SOURCE MATERIAL ONLY and is often in a different language than your reply. Never mirror its language. Translate or summarize it into English, unless the user has explicitly requested a different reply language -- this applies to the whole reply: headings, citations, and any text you write around a quotation. A quoted excerpt may stay in its original language, but introduce it in your reply's language.
 - If the context is unreadable or of poor quality, inform the user and provide the best possible answer.
 - If the answer isn't present in the context but you possess the knowledge, explain this to the user and provide the answer using your own understanding.
 - **Only include inline citations using [id] (e.g., [1], [2]) when the <source> tag includes an id attribute.**
@@ -1489,7 +1489,7 @@ Provide a clear and direct response to the user's query, including inline citati
 {{CONTEXT}}
 </context>
 
-Reminder before you answer: the context above may be in a different language than the query below it. Write your entire response in the language of that query, not the language of the context.
+Reminder before you answer: the context above may be in a different language than your reply. Default to English unless the user has explicitly asked you to answer in a different language -- do not switch language just because the context above is in one.
 """
 
 RAG_TEMPLATE = ConfigVar(
@@ -3220,7 +3220,7 @@ Generate a concise, 3-5 word title with an emoji summarizing the chat history.
 ### Guidelines:
 - The title should clearly represent the main theme or subject of the conversation.
 - Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
-- Write the title in the language of the user's own messages, not the language of any quoted source, document, or search result in the chat; default to English if the chat has no clear majority language.
+- Write the title in English by default. Use a different language only if the user has explicitly asked to be answered in one earlier in the chat -- never in the language of a quoted source, document, or search result.
 - Prioritize accuracy over excessive creativity; keep it clear and simple.
 - Your entire response must consist solely of the JSON object, without any introductory or concluding text.
 - The output must be a single, raw JSON object, without any markdown code fences or other encapsulating text.
@@ -3252,7 +3252,7 @@ Generate 1-3 broad tags categorizing the main themes of the chat history, along 
 - Start with high-level domains (e.g. Science, Technology, Philosophy, Arts, Politics, Business, Health, Sports, Entertainment, Education)
 - Consider including relevant subfields/subdomains if they are strongly represented throughout the conversation
 - If content is too short (less than 3 messages) or too diverse, use only ["General"]
-- Write the tags in the language of the user's own messages, not the language of any quoted source, document, or search result in the chat; default to English if the chat has no clear majority language
+- Write the tags in English by default. Use a different language only if the user has explicitly asked to be answered in one earlier in the chat -- never in the language of a quoted source, document, or search result
 - Prioritize accuracy over specificity
 
 ### Output:
@@ -3275,7 +3275,7 @@ Generate a detailed prompt for am image generation task based on the given langu
 ### Guidelines:
 - Be descriptive and detailed, focusing on the most important aspects of the image.
 - Avoid making assumptions or adding information not present in the image.
-- Use the chat's primary language; default to English if multilingual.
+- Write the prompt in English by default. Use a different language only if the user has explicitly asked to be answered in one.
 - If the image is too complex, focus on the most prominent elements.
 
 ### Output:
@@ -3303,7 +3303,7 @@ Suggest 3-5 relevant follow-up questions or prompts that the user might naturall
 - Make questions concise, clear, and directly related to the discussed topic(s).
 - Only suggest follow-ups that make sense given the chat content and do not repeat what was already covered.
 - If the conversation is very short or not specific, suggest more general (but relevant) follow-ups the user might ask.
-- Use the conversation's primary language; default to English if multilingual.
+- Write the follow-up questions in English by default. Use a different language only if the user has explicitly asked to be answered in one.
 - Response must be a JSON object with a "follow_ups" key containing an array of strings, no extra text or formatting.
 ### Output:
 JSON format: { "follow_ups": ["Question 1?", "Question 2?", "Question 3?"] }
