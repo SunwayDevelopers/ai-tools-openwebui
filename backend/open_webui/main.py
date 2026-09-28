@@ -2091,39 +2091,6 @@ async def chat_completion(
         try:
             form_data, metadata, events = await process_chat_payload(request, form_data, user, metadata, model)
 
-            # Sunway: live "high demand" status while this request queues for an admission slot
-            # (see CHAT_COMPLETION_MAX_CONCURRENCY in env.py). Only set up when we already know
-            # queueing is likely, so a normal fast request pays no cost. The callback is handed
-            # to generate_chat_completion via request.state (not a parameter -- see the comment
-            # on the admission block in routers/openai.py for why) and re-invoked every few
-            # seconds with an updated position/ETA until admitted or timed out.
-            #
-            # update_db=False: this is a transient, self-superseding ping (only the latest
-            # position matters), not something worth a Chats DB write every few seconds during
-            # exactly the moment the DB is already busiest.
-            if openai.chat_completion_admission_would_wait():
-                try:
-                    event_emitter = await get_event_emitter(metadata, update_db=False)
-                except Exception:
-                    event_emitter = None
-                    log.debug('Failed to get event emitter for high-demand status (non-fatal)', exc_info=True)
-
-                if event_emitter:
-
-                    async def _emit_high_demand_status(message: str):
-                        await event_emitter(
-                            {
-                                'type': 'status',
-                                'data': {
-                                    'action': 'high_demand',
-                                    'description': message,
-                                    'done': False,
-                                },
-                            }
-                        )
-
-                    request.state.chat_completion_status_callback = _emit_high_demand_status
-
             response = await chat_completion_handler(request, form_data, user)
 
             # When the upstream provider returns an error (e.g. HTTP 400
