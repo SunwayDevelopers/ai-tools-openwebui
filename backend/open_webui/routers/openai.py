@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
+import itertools
 import json
 import logging
 import re
+from typing import Awaitable, Callable, Optional
 from urllib.parse import quote, urlparse
 
 import aiohttp
@@ -26,6 +29,9 @@ from open_webui.env import (
     AIOHTTP_CLIENT_TIMEOUT,
     AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
     BYPASS_MODEL_ACCESS_CONTROL,
+    CHAT_COMPLETION_ESTIMATED_RATE,
+    CHAT_COMPLETION_MAX_CONCURRENCY,
+    CHAT_COMPLETION_QUEUE_TIMEOUT,
     ENABLE_FORWARD_USER_INFO_HEADERS,
     ENABLE_OPENAI_API_PASSTHROUGH,
     FORWARD_SESSION_INFO_HEADER_CHAT_ID,
@@ -55,6 +61,96 @@ from open_webui.utils.session_pool import (
 from pydantic import BaseModel, ConfigDict
 
 log = logging.getLogger(__name__)
+
+# Sunway: bounds chat completions in flight to any OpenAI-compatible backend, process-wide.
+# See CHAT_COMPLETION_MAX_CONCURRENCY / _QUEUE_TIMEOUT in env.py for why -- this is the
+# single choke point every completion passes through (generate_chat_completion below).
+# 0 disables the cap (pre-existing unbounded behaviour); a value <= 0 makes an
+# asyncio.Semaphore raise, so guard it here rather than at every call site.
+_CHAT_COMPLETION_SEMAPHORE = (
+    asyncio.Semaphore(CHAT_COMPLETION_MAX_CONCURRENCY) if CHAT_COMPLETION_MAX_CONCURRENCY > 0 else None
+)
+
+# Sunway: live queue-position tracking, layered on top of the semaphore above -- it does NOT
+# gate anything itself, it only lets a queued request report roughly how far back it is.
+# `_admission_ticket_counter` hands each newly-queued request a ticket; `_admission_now_serving`
+# advances by one every time a ticketed request leaves the queue (admitted OR gave up). A
+# waiter's live position is `my_ticket - _admission_now_serving`. Simple ints, mutated only
+# between `await` points, so plain reads/writes are safe on a single event loop without a lock --
+# this is a display estimate, not the real gate (that's still the Semaphore), so the rare
+# imprecision from e.g. a give-up not landing in perfect arrival order costs nothing but an
+# off-by-a-few number shown to the user, never a correctness bug.
+#
+# Per-pod, like the semaphore it rides on: at replicaCount 1 (current prod) this is the whole
+# picture; once there's more than one replica, a position/ETA only reflects this pod's share of
+# the queue, not the true global figure. Re-visit if/when replica count > 1 matters for this.
+_admission_ticket_counter = itertools.count()
+_admission_now_serving = 0
+
+
+async def _release_chat_completion_slot_after(stream):
+    """Sunway: releases the admission slot only once a streamed completion actually finishes
+    (or errors / the client disconnects), not when headers first come back. Most completions
+    stream, and the generation itself -- not the connect -- is the part that holds the slot
+    for a while; releasing early would let the cap undercount exactly the case it exists for.
+    """
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        _CHAT_COMPLETION_SEMAPHORE.release()
+
+
+def chat_completion_admission_would_wait() -> bool:
+    """Sunway: True if a chat completion started right now would have to queue for a free
+    admission slot (see CHAT_COMPLETION_MAX_CONCURRENCY in env.py) instead of being admitted
+    immediately.
+
+    Reads asyncio.Semaphore's internal counter, which isn't public API but has been stable
+    across Python versions in practice; cheaper and less invasive than threading a callback
+    through every caller (routers/tasks.py's background jobs included) just to expose one
+    boolean. A stale read (TOCTOU: a slot could free up or fill in the moment between this
+    check and the real acquire) only ever costs a redundant or missed status message, never
+    correctness -- the actual admission control below is still the real asyncio.Semaphore.
+    """
+    return _CHAT_COMPLETION_SEMAPHORE is not None and _CHAT_COMPLETION_SEMAPHORE._value <= 0
+
+
+def _format_queue_status_message(position: int, eta_seconds: float) -> str:
+    """Sunway: human copy for the live "high demand" status shown while a request queues.
+    ETA is capped at CHAT_COMPLETION_QUEUE_TIMEOUT so it never promises a longer wait than
+    we'll actually honour -- past that we give up and raise MODEL_BUSY instead, so anything
+    beyond the cap just reads as "a minute or so" rather than a specific, possibly-broken number.
+    """
+    if position <= 0:
+        return 'High demand right now — hang tight, this may take a little longer than usual'
+
+    capped = min(eta_seconds, CHAT_COMPLETION_QUEUE_TIMEOUT) if CHAT_COMPLETION_QUEUE_TIMEOUT > 0 else eta_seconds
+    seconds = max(1, round(capped))
+    eta_text = f'{seconds}s' if seconds < 60 else 'a minute or so'
+    who = 'person' if position == 1 else 'people'
+    return f'High demand right now — about {position} {who} ahead of you, roughly {eta_text}'
+
+
+async def _run_queue_status_loop(
+    status_callback: Callable[[str], Awaitable[None]],
+    my_ticket: int,
+    interval: float = 4.0,
+) -> None:
+    """Sunway: re-announces this request's queue position/ETA every `interval` seconds until
+    cancelled. The caller starts this alongside the real `_CHAT_COMPLETION_SEMAPHORE.acquire()`
+    wait and cancels it the instant that resolves (success or timeout) -- see the admission
+    block in generate_chat_completion. Fires immediately on the first loop iteration so the
+    first "you're queued" notice isn't delayed by a full interval.
+    """
+    while True:
+        position = max(0, my_ticket - _admission_now_serving)
+        eta_seconds = position / CHAT_COMPLETION_ESTIMATED_RATE
+        try:
+            await status_callback(_format_queue_status_message(position, eta_seconds))
+        except Exception:
+            log.debug('Queue status callback failed (non-fatal)', exc_info=True)
+        await asyncio.sleep(interval)
 
 
 ##########################################
@@ -1097,6 +1193,53 @@ async def generate_chat_completion(
     streaming = False
     response = None
 
+    # Sunway: admission control -- see CHAT_COMPLETION_MAX_CONCURRENCY / _QUEUE_TIMEOUT in
+    # env.py. Done before the try/except below on purpose: a queue-timeout here should
+    # surface as MODEL_BUSY untouched, not get relabelled SERVER_CONNECTION_ERROR by the
+    # generic handler further down.
+    #
+    # `status_callback` is read off request.state rather than added as a parameter here on
+    # purpose: this function is a mounted FastAPI route (@router.post('/chat/completions')),
+    # and adding an arbitrary Callable parameter to a routed function breaks FastAPI's schema
+    # generation. request.state is the existing pattern this same function already uses for
+    # internal-only context (see bypass_filter / bypass_system_prompt above) -- only a
+    # server-side caller that explicitly sets it (main.py's process_chat) ever populates it.
+    if _CHAT_COMPLETION_SEMAPHORE is not None:
+        status_callback: Optional[Callable[[str], Awaitable[None]]] = getattr(
+            request.state, 'chat_completion_status_callback', None
+        )
+        notify_task = None
+        my_ticket = None
+        if chat_completion_admission_would_wait():
+            my_ticket = next(_admission_ticket_counter)
+            if status_callback is not None:
+                notify_task = asyncio.create_task(_run_queue_status_loop(status_callback, my_ticket))
+
+        try:
+            await asyncio.wait_for(
+                _CHAT_COMPLETION_SEMAPHORE.acquire(),
+                timeout=CHAT_COMPLETION_QUEUE_TIMEOUT if CHAT_COMPLETION_QUEUE_TIMEOUT > 0 else None,
+            )
+        except asyncio.TimeoutError:
+            log.warning(
+                'Chat completion admission queue timed out after %ss (CHAT_COMPLETION_MAX_CONCURRENCY=%s)',
+                CHAT_COMPLETION_QUEUE_TIMEOUT,
+                CHAT_COMPLETION_MAX_CONCURRENCY,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=ERROR_MESSAGES.MODEL_BUSY,
+                headers={'Retry-After': str(max(CHAT_COMPLETION_QUEUE_TIMEOUT, 1))},
+            )
+        finally:
+            if my_ticket is not None:
+                global _admission_now_serving
+                _admission_now_serving += 1
+            if notify_task is not None:
+                notify_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await notify_task
+
     try:
         session = await get_session()
 
@@ -1132,8 +1275,11 @@ async def generate_chat_completion(
                     )
 
             streaming = True
+            stream = stream_wrapper(r, content_handler=stream_chunks_handler)
+            if _CHAT_COMPLETION_SEMAPHORE is not None:
+                stream = _release_chat_completion_slot_after(stream)
             return StreamingResponse(
-                stream_wrapper(r, content_handler=stream_chunks_handler),
+                stream,
                 status_code=r.status,
                 headers=_clean_proxy_headers(r.headers),
             )
@@ -1155,6 +1301,19 @@ async def generate_chat_completion(
                 response = convert_responses_result(response)
 
             return response
+    except asyncio.TimeoutError:
+        # Sunway: the backend didn't answer within AIOHTTP_CLIENT_TIMEOUT. Kept distinct from
+        # the generic connection-error branch below on purpose -- this means the backend is
+        # alive but saturated, not down, and SERVER_CONNECTION_ERROR reads like the latter.
+        log.warning(
+            'Chat completion timed out waiting on model backend (AIOHTTP_CLIENT_TIMEOUT=%ss)', AIOHTTP_CLIENT_TIMEOUT
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=ERROR_MESSAGES.MODEL_BUSY,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception(e)
 
@@ -1164,7 +1323,13 @@ async def generate_chat_completion(
         )
     finally:
         if not streaming:
-            await cleanup_response(r)
+            try:
+                await cleanup_response(r)
+            finally:
+                # Sunway: unconditional even if cleanup_response itself raises -- a slot
+                # leaked here never comes back until the pod restarts.
+                if _CHAT_COMPLETION_SEMAPHORE is not None:
+                    _CHAT_COMPLETION_SEMAPHORE.release()
 
 
 async def embeddings(request: Request, form_data: dict, user):
