@@ -105,7 +105,7 @@ class ERROR_MESSAGES(str, Enum):
     # server is broken", which is misleading when the real cause is everyone being busy at
     # once. Used when the admission queue is full or a completion times out waiting on a
     # saturated model backend (see CHAT_COMPLETION_MAX_CONCURRENCY / _QUEUE_TIMEOUT in env.py).
-    MODEL_BUSY = 'SChat.ai is experiencing high demand right now. Please wait a moment and try again.'
+    MODEL_BUSY = 'SChat is experiencing high demand right now. Please wait a moment and try again.'
     REQUIRED_FIELD_EMPTY = lambda name='': f'Required field {name} is empty'
     OAUTH_NOT_CONFIGURED = lambda name='': f"Provider '{name}' is not configured"
 
