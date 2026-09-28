@@ -334,12 +334,9 @@ async def upload_file(
     # Throttle per user before doing any work: each upload triggers extraction +
     # embedding, so a burst from one user can starve the shared pipeline for everyone.
     if upload_rate_limiter.is_limited(user.id):
-        # Sunway: Retry-After so a client (or a load-test script) can tell "throttled, try
-        # again shortly" apart from a real failure -- see FILE_UPLOAD_RATE_LIMIT in env.py.
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
-            headers={'Retry-After': str(FILE_UPLOAD_RATE_LIMIT_WINDOW)},
         )
 
     return await upload_file_handler(
