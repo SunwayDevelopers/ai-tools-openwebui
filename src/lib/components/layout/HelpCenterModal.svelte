@@ -31,9 +31,9 @@
 	const FAQS: Faq[] = [
 		{
 			category: 'Getting started',
-			question: 'Which model should I pick — Flash or Deepthink?',
+			question: 'Which model should I pick — Deepthink or Flash?',
 			answer:
-				'Flash is the default and the right choice for almost everything: questions, drafting, summarising, rewriting and quick lookups. It answers immediately.\n\nDeepthink works through a problem step by step before replying. It is noticeably slower, so use it for analysis, multi-step reasoning, comparing options, or anything where you would rather wait and get a more careful answer.\n\nNevertheless, you can switch models any time that you see fit to answer your queries using the selector next to the send button. The choice is yours.'
+				'Deepthink is the default. It works through a problem step by step before replying, so it is noticeably slower — use it for analysis, multi-step reasoning, comparing options, or anything where you would rather wait and get a more careful answer.\n\nFlash is the quicker choice for almost everything else: questions, drafting, summarising, rewriting and quick lookups. It answers immediately.\n\nNevertheless, you can switch models any time that you see fit to answer your queries using the selector next to the send button. The choice is yours.'
 		},
 		{
 			category: 'Getting started',
