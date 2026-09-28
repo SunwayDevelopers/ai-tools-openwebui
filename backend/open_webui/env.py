@@ -525,6 +525,51 @@ try:
 except (ValueError, TypeError):
     AIOHTTP_CLIENT_TIMEOUT = 300
 
+# Sunway: admission cap on chat completions in flight, process-wide (routers/openai.py
+# generate_chat_completion). The Sep 2026 prod load test (see sunway-schat-notes.md)
+# measured a FLAT ~4.9 completions/sec ceiling at 50, 200 and 300 concurrent users alike --
+# that ceiling belongs to the model-serving backend (single replica, Recreate strategy) and
+# isn't something this repo can raise. What we control is what happens to a request once
+# the backend is saturated: today, every request piles onto the backend unbounded and just
+# waits out its own AIOHTTP_CLIENT_TIMEOUT clock in silence -- fine at 50 real users
+# (measured ~20 in flight, comfortable), ugly at 200-300 (150-228 in flight, 30-90s+ waits,
+# one run stalled ~40s). This semaphore bounds how many completions this pod holds open at
+# once; requests past the cap wait for a slot instead of piling on unbounded (see
+# CHAT_COMPLETION_QUEUE_TIMEOUT below for how long they wait before we give up honestly).
+# Default 80: comfortably above the ~50-in-flight "everyone submits at once" spike the report
+# flags as the one real risk at expected launch load, well below the 150+ band where waits
+# turn into 30s+ and the odd full stall. Re-derive once replica count or backend concurrency
+# changes -- this number is tied to the Sep 2026 single-replica measurement, not a law of
+# nature. 0 disables the cap (unbounded, upstream/pre-existing behaviour).
+try:
+    CHAT_COMPLETION_MAX_CONCURRENCY = int(os.getenv('CHAT_COMPLETION_MAX_CONCURRENCY', '80'))
+except (ValueError, TypeError):
+    CHAT_COMPLETION_MAX_CONCURRENCY = 80
+
+# Sunway: max seconds a chat completion may wait for an admission slot (above) before this
+# pod gives up and returns a clear "high demand" error instead of the request silently
+# waiting on top of whatever it then waits for the backend itself. Chosen to comfortably
+# absorb the measured 50-user spike (~10s) and the 200-user median (~33s) while bailing out
+# well before it compounds with AIOHTTP_CLIENT_TIMEOUT (300s) or the 90-132s tail seen at
+# 300 users. 0 disables the wait cap (wait indefinitely for a slot).
+try:
+    CHAT_COMPLETION_QUEUE_TIMEOUT = int(os.getenv('CHAT_COMPLETION_QUEUE_TIMEOUT', '45'))
+except (ValueError, TypeError):
+    CHAT_COMPLETION_QUEUE_TIMEOUT = 45
+
+# Sunway: rough completions/sec used ONLY to turn a queue position into an estimated wait shown
+# to a queued user (the live "high demand" status in routers/openai.py). Never used for the
+# actual admission gate -- CHAT_COMPLETION_MAX_CONCURRENCY does that; a stale value here only
+# makes the displayed ETA wrong, never the real wait. Seed value is the flat ceiling measured in
+# the Sep 2026 prod load test (see sunway-schat-notes.md) -- re-derive whenever that changes
+# (more replicas, more backend concurrency, a re-run of the test).
+try:
+    CHAT_COMPLETION_ESTIMATED_RATE = float(os.getenv('CHAT_COMPLETION_ESTIMATED_RATE', '4.9'))
+except (ValueError, TypeError):
+    CHAT_COMPLETION_ESTIMATED_RATE = 4.9
+if CHAT_COMPLETION_ESTIMATED_RATE <= 0:
+    CHAT_COMPLETION_ESTIMATED_RATE = 4.9
+
 
 AIOHTTP_CLIENT_SESSION_SSL = os.getenv('AIOHTTP_CLIENT_SESSION_SSL', 'True').lower() == 'true'
 
