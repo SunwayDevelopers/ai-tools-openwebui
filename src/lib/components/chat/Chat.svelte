@@ -180,6 +180,19 @@
 
 	let taskIds = null;
 
+	// Sunway: frontend-only "taking longer than usual" handling (no backend signal — see
+	// sendMessageSocket / chatEventHandler below). SLOW_RESPONSE_THRESHOLD_MS is the one
+	// number both pieces share: past it, a still-silent wait shows the nudge, and an error
+	// that arrives after it gets a friendlier message instead of the raw one. Deliberately
+	// generous — Deepthink (the default model) can legitimately take a while to produce a
+	// first token even unloaded, and a lower bar would fire on normal reasoning latency, not
+	// just genuine overload. messageResponseStartTimes is keyed by response message id so
+	// chatEventHandler (a different function, driven by socket events) can read how long a
+	// message has been waiting when its error arrives; cleared once read so it doesn't grow
+	// across a long session.
+	const SLOW_RESPONSE_THRESHOLD_MS = 12000;
+	const messageResponseStartTimes: Record<string, number> = {};
+
 	// Chat Input
 	let prompt = '';
 	let chatFiles = [];
@@ -603,7 +616,31 @@
 						}
 					}, 100);
 				} else if (type === 'chat:message:error') {
-					message.error = data.error;
+					// Sunway: frontend-only friendlier error, paired with the nudge above (same
+					// SLOW_RESPONSE_THRESHOLD_MS). A failure that took a long time to arrive is
+					// more likely an overload/timeout than the specific reason in data.error --
+					// today (no backend admission control deployed) that's a generic,
+					// unhelpfully-worded "Open WebUI: Server Connection Error" regardless of
+					// cause. Only swap the message for THIS slow case: a FAST failure is much
+					// more likely a real, specific problem (bad request, access denied, model
+					// not found), so its original message is left untouched -- replacing it too
+					// would hide genuinely useful detail. messageResponseStartTimes is only set
+					// by sendMessageSocket for the primary model in this turn, so a message
+					// without a recorded start time (e.g. a non-primary model in a multi-model
+					// fan-out) always falls back to the original, unmodified behaviour.
+					const startedAt = messageResponseStartTimes[event.message_id];
+					delete messageResponseStartTimes[event.message_id];
+
+					if (startedAt && Date.now() - startedAt >= SLOW_RESPONSE_THRESHOLD_MS) {
+						console.error('Original chat:message:error (slow response):', data.error);
+						message.error = {
+							content: $i18n.t(
+								"SChat.ai took longer than usual and couldn't finish this response. Please try again."
+							)
+						};
+					} else {
+						message.error = data.error;
+					}
 				} else if (type === 'chat:message:follow_ups') {
 					message.followUps = data.follow_ups;
 
@@ -2372,6 +2409,31 @@
 			})
 		);
 		await tick();
+
+		// Sunway: frontend-only "taking longer than usual" nudge — no backend signal, just a
+		// client-side stopwatch (see SLOW_RESPONSE_THRESHOLD_MS above, shared with the
+		// friendlier-error handling in chatEventHandler's 'chat:message:error' branch).
+		// Checked at FIRE TIME rather than cancelled from every event branch in
+		// chatEventHandler: if content, a real status, or a done/error state has already
+		// landed for this message by the time the timer fires, it's a no-op. Only fires into
+		// a still-completely-silent wait, so it never duplicates or contradicts a real signal
+		// — once any server status exists, this defers to it.
+		messageResponseStartTimes[responseMessageId] = Date.now();
+		setTimeout(() => {
+			const msg = history.messages[responseMessageId];
+			if (msg && !msg.done && !msg.content && !msg.statusHistory?.length) {
+				msg.statusHistory = [
+					{
+						action: 'client_wait_nudge',
+						description: $i18n.t(
+							"SChat.ai is taking a little longer than usual to respond. Please wait a moment — we're still working on it."
+						),
+						done: false
+					}
+				];
+				history = history;
+			}
+		}, SLOW_RESPONSE_THRESHOLD_MS);
 
 		let userLocation;
 		if ($settings?.userLocation) {
