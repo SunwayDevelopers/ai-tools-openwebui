@@ -1616,6 +1616,49 @@ WORKOS_ORGANIZATION_ID_EDU = (os.environ.get('WORKOS_ORGANIZATION_ID_EDU') or ''
 # an env var here would just be a second place for the two apps to disagree.
 WORKOS_EDU_EMAIL_DOMAIN = 'sunway.edu.my'
 
+# Per-address exceptions to the domain rule above, as `email=org_id` pairs separated
+# by `;`:
+#
+#   WORKOS_ORG_OVERRIDES='someone@sunway.edu.my=org_01KS1Y...;other@x.my=org_01AB...'
+#
+# WHY THIS EXISTS. The domain split assumes one person's address belongs to the org
+# that owns its domain. That holds for everyone except the handful of people whose
+# identity was created under the *other* org — for them the silent probe is pinned at
+# an org they are not in, WorkOS answers `login_required`, and they are bounced to the
+# landing page with no error anyone can act on. The domain rule stays the default
+# because it is right for almost everybody; this is the escape hatch for the rest.
+#
+# An env var rather than a literal: these are individual people, so the list changes
+# without warning, and a code literal would mean a rebuild per exception and a staff
+# member's address committed to git history.
+#
+# Parsed defensively — a malformed entry is dropped rather than taking sign-in down
+# at import. Keys are lower-cased because the lookup compares against a lower-cased
+# login_hint; an override typed with capitals would otherwise never match.
+WORKOS_ORG_OVERRIDES = (os.environ.get('WORKOS_ORG_OVERRIDES') or '').strip()
+
+
+def _parse_org_overrides(raw: str) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for pair in raw.split(';'):
+        pair = pair.strip()
+        if not pair or '=' not in pair:
+            continue
+        email, org_id = pair.split('=', 1)
+        email, org_id = email.strip().lower(), org_id.strip()
+        if email and org_id:
+            overrides[email] = org_id
+    return overrides
+
+
+WORKOS_ORG_OVERRIDE_MAP = _parse_org_overrides(WORKOS_ORG_OVERRIDES)
+if WORKOS_ORG_OVERRIDES and not WORKOS_ORG_OVERRIDE_MAP:
+    log.warning(
+        "WORKOS_ORG_OVERRIDES is set but no valid `email=org_id` pair was parsed from "
+        "it; every sign-in will use the email-domain rule. Expected form: "
+        "'a@example.com=org_123;b@example.com=org_456'."
+    )
+
 
 # --- Sunway: security response header defaults --------------------------------
 # Baseline security headers, defaulted IN CODE rather than left to each manifest.
