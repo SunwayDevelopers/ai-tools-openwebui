@@ -80,6 +80,7 @@ from open_webui.env import (
     WEBUI_AUTH_COOKIE_SECURE,
     WEBUI_NAME,
     WORKOS_EDU_EMAIL_DOMAIN,
+    WORKOS_ORG_OVERRIDE_MAP,
     WORKOS_ORGANIZATION_ID,
     WORKOS_ORGANIZATION_ID_EDU,
 )
@@ -204,7 +205,18 @@ def _workos_organization_for(login_hint: Optional[str]) -> Optional[str]:
     WORKOS_ORGANIZATION_ID in env.py for why an unpinned probe is unusable."""
     if not login_hint or '@' not in login_hint:
         return None
-    domain = login_hint.rsplit('@', 1)[1].lower()
+
+    address = login_hint.lower()
+    # Per-address exception first: the domain rule is right for almost everyone, but a
+    # few identities were created under the org that does NOT own their domain, and for
+    # them the domain rule pins the probe at an org they are not in — which surfaces as
+    # a silent bounce to the landing page, not an error. See WORKOS_ORG_OVERRIDES.
+    override = WORKOS_ORG_OVERRIDE_MAP.get(address)
+    if override:
+        log.info('WorkOS org for %s resolved by override', address)
+        return override
+
+    domain = address.rsplit('@', 1)[1]
     if domain == WORKOS_EDU_EMAIL_DOMAIN:
         return WORKOS_ORGANIZATION_ID_EDU
     return WORKOS_ORGANIZATION_ID
@@ -1709,6 +1721,15 @@ class OAuthManager:
 
         login_hint = _sanitize_login_hint(login_hint)
         organization_id = _workos_organization_for(login_hint)
+        # Which org a probe was pinned to is the single most useful fact when a silent
+        # sign-in fails: `login_required` means "not signed in to THIS org", and without
+        # this line there is no record of which org that was.
+        if prompt == 'none':
+            log.info(
+                'silent probe for %s pinned to organization_id=%s',
+                login_hint or '<no hint>',
+                organization_id or '<unpinned>',
+            )
 
         if prompt == 'none' and not organization_id:
             # A silent probe we cannot pin to an organization does NOT come back as
