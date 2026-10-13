@@ -1635,29 +1635,6 @@ WORKOS_EDU_EMAIL_DOMAIN = 'sunway.edu.my'
 # Parsed defensively — a malformed entry is dropped rather than taking sign-in down
 # at import. Keys are lower-cased because the lookup compares against a lower-cased
 # login_hint; an override typed with capitals would otherwise never match.
-WORKOS_ORG_OVERRIDES = (os.environ.get('WORKOS_ORG_OVERRIDES') or '').strip()
-
-
-def _parse_org_overrides(raw: str) -> dict[str, str]:
-    overrides: dict[str, str] = {}
-    for pair in raw.split(';'):
-        pair = pair.strip()
-        if not pair or '=' not in pair:
-            continue
-        email, org_id = pair.split('=', 1)
-        email, org_id = email.strip().lower(), org_id.strip()
-        if email and org_id:
-            overrides[email] = org_id
-    return overrides
-
-
-WORKOS_ORG_OVERRIDE_MAP = _parse_org_overrides(WORKOS_ORG_OVERRIDES)
-if WORKOS_ORG_OVERRIDES and not WORKOS_ORG_OVERRIDE_MAP:
-    log.warning(
-        "WORKOS_ORG_OVERRIDES is set but no valid `email=org_id` pair was parsed from "
-        "it; every sign-in will use the email-domain rule. Expected form: "
-        "'a@example.com=org_123;b@example.com=org_456'."
-    )
 
 
 # --- Sunway: security response header defaults --------------------------------

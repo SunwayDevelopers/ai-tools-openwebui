@@ -80,7 +80,6 @@ from open_webui.env import (
     WEBUI_AUTH_COOKIE_SECURE,
     WEBUI_NAME,
     WORKOS_EDU_EMAIL_DOMAIN,
-    WORKOS_ORG_OVERRIDE_MAP,
     WORKOS_ORGANIZATION_ID,
     WORKOS_ORGANIZATION_ID_EDU,
 )
@@ -211,10 +210,6 @@ def _workos_organization_for(login_hint: Optional[str]) -> Optional[str]:
     # few identities were created under the org that does NOT own their domain, and for
     # them the domain rule pins the probe at an org they are not in — which surfaces as
     # a silent bounce to the landing page, not an error. See WORKOS_ORG_OVERRIDES.
-    override = WORKOS_ORG_OVERRIDE_MAP.get(address)
-    if override:
-        log.info('WorkOS org for %s resolved by override', address)
-        return override
 
     domain = address.rsplit('@', 1)[1]
     if domain == WORKOS_EDU_EMAIL_DOMAIN:
