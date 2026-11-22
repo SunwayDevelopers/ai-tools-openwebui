@@ -121,7 +121,7 @@ Known traps:
 - **`/static` shows upstream branding**: `STATIC_DIR` is unset.
 - **Security headers**: `PERMISSIONS_POLICY` must have no spaces after commas, or it is silently ignored.
 - **Retention**: chats are capped at 30 per user and expire after 30 days (`utils/retention.py`). `scripts/reap_orphan_files.py` removes files left behind by old deletions (dry-run by default, `--purge` to delete).
-- **Load**: production saturates at about five chat completions per second on one replica (see the production load test page in Confluence). There is no admission control on `main` or `staging`: it exists only on the `feat/uiux-polish` branch (commit `c43943183`, with a frontend "taking longer than usual" message in `33f3559`) and was reverted from `main` on 2026-09-28 ⟦confirm why⟧. Under overload requests queue and then fail with a generic connection error.
+- **Load**: production saturates at about five chat completions per second on one replica (see the production load test page in Confluence). There is no admission control on `main` or `staging`: it exists only on the `feat/high-usage` branch (commit `c43943183`, with a frontend "taking longer than usual" message in `33f3559`) and was reverted from `main` on 2026-09-28. Under overload requests queue and then fail with a generic connection error.
 
 ---
 
@@ -142,7 +142,7 @@ Model hosting is moving to the shared namespace `project-llm-deployment`. When a
 
 ## 8. Open items (verify, then delete from this list)
 
-- Branches: `main` is production, `staging` is the experiment line. As of 2026-11-22 the two have identical code, but the **staging deployment** still runs image `33f3559`, built from `feat/uiux-polish`, which has admission control and the high-usage message that neither branch contains. Redeploying staging from `staging` drops them unless they are ported first. ⟦decide: port or retire⟧
+- Branches: `main` is production, `staging` is the experiment line. As of 2026-11-22 the two have identical code, but the **staging deployment** still runs image `33f3559`, built from `feat/high-usage`, which has admission control and the high-usage message that neither branch contains. Redeploying staging from `staging` drops them unless they are ported first. ⟦decide: port or retire⟧
 - ⟦ArgoCD or manual sync⟧
 - ⟦tenant migration procedure, owner, and which tenants have `guardrail_event`⟧
 - ⟦live check that `ENABLE_PERSISTENT_CONFIG` is `false` in both environments⟧
