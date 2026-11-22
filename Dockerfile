@@ -29,6 +29,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 # Cache mount for npm's download cache, so a lockfile change re-links from cache instead
 # of re-fetching every tarball.
 RUN --mount=type=cache,target=/root/.npm npm ci --force
