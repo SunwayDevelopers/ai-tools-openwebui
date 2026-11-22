@@ -918,11 +918,18 @@ Three limits that must be stated rather than implied:
 1. **It fails open.** On an internal error the message passes through unredacted. This is a
    deliberate trade — a guardrail that fails closed becomes an outage, and an outage gets the
    guardrail switched off — but it makes redaction **best-effort, not a guarantee**.
-2. **It protects the provider hop, not storage.** The chat record is written by a separate
-   request carrying the browser's own unredacted copy, so personal data typed by a user is
-   retained in the database even when the provider received a redacted version.
-3. **Coverage is incomplete and measured.** The NRIC pattern matches one of four common written
-   forms; the phone pattern matches mobiles but no landlines. Both are being extended.
+2. **Storage redaction is a separate switch.** The chat record is written by a separate request
+   carrying the browser's own unredacted copy. Since §3.17 that copy is redacted through the same
+   filter instance at all three chat write paths (`ENABLE_STORAGE_REDACTION`, plain env, default
+   on, not set in either manifest). If that flag is turned off, personal data typed by a user is
+   again retained in the database even though the provider received a redacted version.
+   (Corrected 2026-11-18: this item previously described the pre-§3.17 state.) Data stored
+   before the fix, and its backups, are untouched.
+3. **Coverage is incomplete and measured.** The NRIC pattern matches the hyphenated form
+   (including typographic dash variants); the unhyphenated 12-digit form is deliberately not
+   matched. The phone pattern matches Malaysian mobiles but no landlines. Names, addresses and
+   free-text descriptions of a person are not detected. Document and web content is not scanned
+   for injection unless `scan_documents_for_injection` is switched on (default off).
 
 **The stated limits are now tested, and the tests are the record.** Until recently nothing
 exercised this filter, in a repository whose CI runs no tests at all — so the control was
